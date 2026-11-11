@@ -11,6 +11,7 @@ from nephthys.core.permissions import Actor
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import flows
 from nephthys.discord_ops import threads
+from nephthys.macros import run_macro
 
 log = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class CommunityHelp(commands.Cog):
         self, message: discord.Message, ticket: Ticket, actor: Actor
     ) -> bool:
         """Run a staff `?macro`. Returns True if the message was a macro."""
-        return False
+        return await run_macro(self.bot, message, ticket, actor)
 
     @commands.Cog.listener()
     async def on_raw_message_delete(

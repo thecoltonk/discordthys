@@ -94,7 +94,7 @@ async def create_ticket(
     *,
     author: Actor,
     channel_id: int,
-    message_id: int,
+    message_id: int | None,
     thread_id: int,
     title: str | None,
     description: str,

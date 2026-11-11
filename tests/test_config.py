@@ -113,3 +113,27 @@ def test_ai_settings():
         make_settings(AI_ANSWER_MODE="loud")
     with pytest.raises(ConfigError):
         make_settings(AI_ANSWER_MIN_CONFIDENCE="1.5")
+
+
+def test_tickets_settings():
+    s = make_settings()
+    assert not s.tickets_enabled
+    assert s.ticket_number_start == 26
+    assert s.tickets_max_open_per_user == 2
+    assert s.ticket_categories_file == "copy/ticket_categories.toml"
+    s = make_settings(
+        TICKETS_CHANNEL_ID="600", STORE_ROLE_ID="301", TICKET_NUMBER_START="100"
+    )
+    assert (
+        s.tickets_enabled
+        and s.tickets_channel_id == 600
+        and s.ticket_number_start == 100
+    )
+    assert s.role_id_for("store") == 301
+    assert s.role_id_for("mod") == s.staff_role_id  # falls back to Staff
+    assert s.role_id_for("staff") == 300
+    assert s.role_id_for("12345") == 12345
+    with pytest.raises(ConfigError):
+        make_settings(TICKET_NUMBER_START="0")
+    with pytest.raises(ConfigError):
+        make_settings(TICKETS_MAX_OPEN_PER_USER="-1")

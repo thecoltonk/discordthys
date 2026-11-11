@@ -15,11 +15,13 @@ async def migrated_db():
     """Rebuild the test schema from the init migration once per session."""
     from nephthys.database.raw_migration import postgresql_code_block
     from nephthys.database.tables import Ticket
-    from nephthys.piccolo_migrations.cloudsail_001_init import FORWARDS
+    from nephthys.piccolo_migrations import cloudsail_001_init
+    from nephthys.piccolo_migrations import cloudsail_002_cards_categories_ai
 
     await Ticket.raw("DROP SCHEMA IF EXISTS public CASCADE")
     await Ticket.raw("CREATE SCHEMA public")
-    await Ticket.raw(postgresql_code_block(FORWARDS))
+    for migration in (cloudsail_001_init, cloudsail_002_cards_categories_ai):
+        await Ticket.raw(postgresql_code_block(migration.FORWARDS))
     yield
 
 
@@ -29,6 +31,7 @@ async def db(migrated_db):
     from nephthys.database.tables import Ticket
 
     await Ticket.raw(
-        "TRUNCATE app_user, ticket, bot_message, sticky_message RESTART IDENTITY CASCADE"
+        "TRUNCATE app_user, ticket, bot_message, sticky_message, ai_suggestion "
+        "RESTART IDENTITY CASCADE"
     )
     yield

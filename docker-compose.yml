@@ -17,6 +17,9 @@ services:
     ports:
       # /health and /metrics, reachable from the host only
       - "127.0.0.1:${HEALTH_PORT:-3000}:${PORT:-3000}"
+    volumes:
+      # Knowledge base for the AI assistant: edit files on the host, no rebuild needed
+      - ./kb:/app/kb:ro
     networks: [internal]
     logging:
       driver: json-file

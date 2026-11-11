@@ -69,6 +69,12 @@ def stats_embed(summary: StatsSummary, days: int) -> discord.Embed:
         name=f"Waiting > {WAITING_THRESHOLD.days} days",
         value=str(summary.waiting_over_threshold),
     )
+    if summary.by_category:
+        embed.add_field(
+            name="Opened by category",
+            value=", ".join(f"{k} {v}" for k, v in summary.by_category.items())[:1024],
+            inline=False,
+        )
     leaderboard = (
         "\n".join(
             f"{i}. <@{e.user.discord_id}> — {e.count}"

@@ -12,8 +12,13 @@ A Discord support bot for **The Cloudsail Project**'s `#community-help` channel.
 - Every top-level message in `#community-help` becomes a ticket. The bot opens a thread on it and posts an auto-reply with a **Mark as resolved** button.
 - Anyone can help. The **first staff reply claims** the ticket.
 - The original poster or any staff member can resolve. Resolving adds ✅ to the question, posts a closing message with **Re-open**, and archives the thread. If the poster replies after it's resolved, the ticket re-opens.
-- Staff macros: `?faq`, `?ip`, `?resolve`, `?reopen`.
-- Staff slash commands: `/waiting`, `/stats`.
+- Staff slash commands:
+  - inside ticket threads: `/faq`, `/ip`, `/resolve`, `/reopen`;
+  - anywhere: `/waiting`, `/stats`.
+- Staff ticket cards in the staff channel (status, claimer, category picker), plus a daily summary.
+- Optional AI, off unless `AI_API_KEY` is set:
+  - auto-categorises new tickets;
+  - suggests answers grounded only in [`kb/`](kb/). It runs in shadow mode by default: suggestions go to staff only, with 👍/👎 buttons.
 - A sticky "how it works" message stays at the bottom of the channel.
 
 ## Development

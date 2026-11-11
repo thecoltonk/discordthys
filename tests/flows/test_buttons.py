@@ -40,7 +40,31 @@ async def test_slash_commands_serialize():
     for ext in EXTENSIONS:
         await bot.load_extension(ext)
     payloads = {c.name: c.to_dict(bot.tree) for c in bot.tree.get_commands()}
-    assert set(payloads) == {"waiting", "stats"}
+    assert set(payloads) == {"waiting", "stats", "faq", "ip", "resolve", "reopen"}
     days = payloads["stats"]["options"][0]
     assert days["min_value"] == 1 and days["max_value"] == 365
     await bot.close()
+
+
+def test_scheduled_jobs():
+    from apscheduler.triggers.cron import CronTrigger
+
+    bot = SupportBot(make_settings(STALE_TICKET_DAYS="3"), connect_db=False)
+    bot.configure_jobs()
+    jobs = {job.func.__name__: job for job in bot.scheduler.get_jobs()}
+    assert set(jobs) == {"run_stale_close", "run_daily_summary"}
+    trigger = jobs["run_daily_summary"].trigger
+    assert isinstance(trigger, CronTrigger)
+    assert str(trigger.timezone) == "America/Phoenix"
+    fields = {f.name: str(f) for f in trigger.fields}
+    assert (fields["hour"], fields["minute"]) == ("9", "0")
+
+    quiet = SupportBot(make_settings(STAFF_CHANNEL_ID=""), connect_db=False)
+    quiet.configure_jobs()
+    assert quiet.scheduler.get_jobs() == []
+
+
+def test_ai_client_only_with_key():
+    assert SupportBot(make_settings(), connect_db=False).ai_client is None
+    bot = SupportBot(make_settings(AI_API_KEY="k", AI_MODEL="m"), connect_db=False)
+    assert bot.ai_client is not None and bot.ai_client.model == "m"

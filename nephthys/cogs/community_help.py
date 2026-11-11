@@ -7,12 +7,9 @@ from discord.ext import commands
 
 from nephthys.bot import SupportBot
 from nephthys.core import tickets
-from nephthys.core.permissions import Actor
-from nephthys.database.tables import Ticket
 from nephthys.discord_ops import flows
 from nephthys.discord_ops import threads
 from nephthys.discord_ops.sticky import StickyManager
-from nephthys.macros import run_macro
 
 log = logging.getLogger(__name__)
 
@@ -66,20 +63,12 @@ class CommunityHelp(commands.Cog):
         if not ticket:
             return  # a thread we didn't create
         actor = threads.actor_from_user(message.author, self.settings.staff_role_id)
-        if await self.maybe_run_macro(message, ticket, actor):
-            return
         await flows.record_reply(self.bot, message, ticket, actor)
 
     async def after_new_question(self) -> None:
         """Keep the sticky "how it works" message at the bottom."""
         if self.sticky is not None:
             self.sticky.schedule()
-
-    async def maybe_run_macro(
-        self, message: discord.Message, ticket: Ticket, actor: Actor
-    ) -> bool:
-        """Run a staff `?macro`. Returns True if the message was a macro."""
-        return await run_macro(self.bot, message, ticket, actor)
 
     @commands.Cog.listener()
     async def on_raw_message_delete(
@@ -99,7 +88,7 @@ class CommunityHelp(commands.Cog):
     @commands.Cog.listener()
     async def on_raw_thread_delete(self, payload: discord.RawThreadDeleteEvent) -> None:
         if payload.parent_id == self.settings.community_channel_id:
-            await flows.handle_thread_deleted(payload.thread_id)
+            await flows.handle_thread_deleted(self.bot, payload.thread_id)
 
 
 async def setup(bot: SupportBot) -> None:

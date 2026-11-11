@@ -15,6 +15,7 @@ from nephthys.core import tickets
 from nephthys.core.permissions import Actor
 from nephthys.core.transcript import TRANSCRIPT
 from nephthys.database.tables import Ticket
+from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
 from nephthys.discord_ops.heartbeat import send_heartbeat
 from nephthys.errors.errors import PermissionDenied
@@ -78,7 +79,11 @@ async def open_ticket(bot: "SupportBot", message: discord.Message) -> Ticket | N
     async with threads.best_effort("send_auto_reply"):
         await threads.send_auto_reply(bot, thread, ticket)
     await threads.add_reaction(bot, ticket, settings.open_reaction)
-    await threads.send_staff_feed(bot, ticket, message.author)
+    await staff_card.post_staff_card(bot, ticket)
+    if bot.ai_client is not None:
+        from nephthys.discord_ops.ai_flow import process_new_ticket
+
+        bot.spawn(process_new_ticket(bot, ticket.id), name=f"ai-ticket-{ticket.id}")
     return ticket
 
 
@@ -95,6 +100,7 @@ async def record_reply(
     result = await tickets.record_message(ticket, actor, at=message.created_at)
     if result.claimed:
         TICKETS_CLAIMED.inc()
+        await staff_card.refresh_staff_card(bot, ticket.id)
     if result.should_reopen:
         try:
             reopened = await tickets.reopen(ticket.id, actor)
@@ -102,6 +108,7 @@ async def record_reply(
             return  # someone else re-opened it first
         TICKETS_REOPENED.labels(source="auto").inc()
         await threads.post_reopened(bot, reopened, reopened_by=message.author)
+        await staff_card.refresh_staff_card(bot, ticket.id)
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +133,7 @@ async def resolve_ticket(
         resolved_by=user,
         stale_days=bot.settings.stale_ticket_days,
     )
+    await staff_card.refresh_staff_card(bot, ticket_id)
     return result.ticket
 
 
@@ -140,6 +148,7 @@ async def reopen_ticket(
     ticket = await tickets.reopen(ticket_id, actor)
     TICKETS_REOPENED.labels(source=source).inc()
     await threads.post_reopened(bot, ticket, reopened_by=user)
+    await staff_card.refresh_staff_card(bot, ticket_id)
     return ticket
 
 
@@ -217,17 +226,50 @@ async def handle_question_deleted(bot: "SupportBot", message_id: int) -> None:
         return
     thread = await threads.get_thread(bot, ticket.thread_id)
     if thread is None:
+        await staff_card.delete_staff_card(bot, ticket)
         await tickets.delete_ticket(ticket.id)
         return
     if await threads.thread_has_human_replies(thread):
         log.info(f"Question for ticket id={ticket.id} deleted; keeping thread")
         return
+    await staff_card.delete_staff_card(bot, ticket)
     await tickets.delete_ticket(ticket.id)
     async with threads.best_effort("delete_thread"):
         await thread.delete(reason="Question deleted before anyone replied")
 
 
-async def handle_thread_deleted(thread_id: int) -> None:
+async def handle_thread_deleted(bot: "SupportBot", thread_id: int) -> None:
     ticket = await tickets.get_ticket_by_thread(thread_id)
     if ticket:
+        await staff_card.delete_staff_card(bot, ticket)
         await tickets.delete_ticket(ticket.id)
+
+
+# ---------------------------------------------------------------------------
+# Categories (staff card select menu)
+# ---------------------------------------------------------------------------
+
+
+async def set_category_from_interaction(
+    interaction: discord.Interaction[Any], ticket_id: int, category: str
+) -> None:
+    bot = cast("SupportBot", interaction.client)
+    actor = threads.actor_from_user(interaction.user, bot.settings.staff_role_id)
+    if not actor.is_staff:
+        await interaction.response.send_message(TRANSCRIPT.staff_only, ephemeral=True)
+        return
+    try:
+        ticket = await tickets.set_category(
+            ticket_id,
+            category,
+            source="staff",
+            allowed=bot.settings.ticket_categories,
+        )
+    except (tickets.InvalidCategoryError, TicketNotFoundError):
+        await interaction.response.send_message(
+            TRANSCRIPT.ticket_missing, ephemeral=True
+        )
+        return
+    # Re-render the card in place as the interaction response
+    embed, view = await staff_card.render(bot, ticket)
+    await interaction.response.edit_message(embed=embed, view=view)

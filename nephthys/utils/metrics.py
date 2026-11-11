@@ -18,3 +18,11 @@ MACROS_RUN = Counter("cloudsail_macros_run_total", "Macros run", ["name"])
 DISCORD_ERRORS = Counter(
     "cloudsail_discord_errors_total", "Failed Discord API side effects", ["action"]
 )
+AI_CATEGORIES = Counter(
+    "cloudsail_ai_categorisations_total", "AI categorisation attempts", ["result"]
+)
+AI_ANSWERS = Counter(
+    "cloudsail_ai_answers_total",
+    "AI answer attempts",
+    ["mode", "result"],  # result: posted | <skip reason>
+)

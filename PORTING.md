@@ -23,6 +23,18 @@
 | Package name | Kept as `nephthys`. |
 | Column naming | snake_case in the fresh init migration. |
 
+### Follow-up changes (after #1)
+
+These supersede the matching rows above and the macro / staff-feed sections below:
+
+| Topic | Now |
+|---|---|
+| Staff tools | `?macros` are gone. Staff use the `/faq`, `/ip`, `/resolve` and `/reopen` slash commands, which only work inside ticket threads. `/faq` and `/ip` **don't** count as a staff reply. |
+| Staff feed | Replaced by **Nephthys-style staff ticket cards**. Each card shows the question, the author with their past-ticket count, status and claimer, a category select, and a thread link. The card is edited on claim, resolve and re-open. |
+| Categories | `TICKET_CATEGORIES` (default Gameplay, Bug, Claims, Economy, Store, Other). The category is stored on the ticket and shown in `/stats` and the daily summary. |
+| Daily summary | Posted to `STAFF_CHANNEL_ID` at `DAILY_SUMMARY_TIME` / `DAILY_SUMMARY_TIMEZONE` (default 09:00 America/Phoenix). |
+| AI (optional) | An OpenAI-compatible client (Hack Club AI by default). It auto-categorises new tickets, and its answers are grounded only in `kb/*.md`. Shadow mode is the default; public mode is opt-in. |
+
 ---
 
 ## 0. TL;DR
@@ -176,7 +188,7 @@ Legend: **KEEP** (as-is or with light edits) · **PORT** (the logic stays, the S
 
 Commands are synced to `GUILD_ID` on startup, so they appear instantly.
 
-### 2.9 Macros
+### 2.9 Macros (replaced by slash commands after #1; see "Follow-up changes")
 
 Staff only, in a ticket thread, and the first word starts with `?`. The invoking message is deleted (needs Manage Messages).
 

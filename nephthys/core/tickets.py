@@ -323,3 +323,59 @@ async def get_bot_messages(
     if kind is not None:
         query = query.where(BotMessage.kind == kind)
     return await query.order_by(BotMessage.id)
+
+
+# ---------------------------------------------------------------------------
+# Categories
+# ---------------------------------------------------------------------------
+
+
+class InvalidCategoryError(ValueError):
+    pass
+
+
+async def set_category(
+    ticket_id: int, category: str, *, source: str, allowed: tuple[str, ...]
+) -> Ticket:
+    """Set a ticket's category (staff choice always wins)."""
+    if category not in allowed:
+        raise InvalidCategoryError(category)
+    await Ticket.update(
+        {Ticket.category: category, Ticket.category_source: source}
+    ).where(Ticket.id == ticket_id)
+    return await require_ticket(ticket_id)
+
+
+async def set_ai_category(
+    ticket_id: int, category: str, *, allowed: tuple[str, ...]
+) -> bool:
+    """Apply an AI-suggested category only if nobody has categorised it yet."""
+    if category not in allowed:
+        raise InvalidCategoryError(category)
+    rows = (
+        await Ticket.update({Ticket.category: category, Ticket.category_source: "ai"})
+        .where((Ticket.id == ticket_id) & Ticket.category.is_null())
+        .returning(Ticket.id)
+    )
+    return bool(rows)
+
+
+# ---------------------------------------------------------------------------
+# Staff cards
+# ---------------------------------------------------------------------------
+
+
+async def set_staff_card(ticket_id: int, channel_id: int, message_id: int) -> None:
+    await Ticket.update(
+        {
+            Ticket.staff_card_channel_id: channel_id,
+            Ticket.staff_card_message_id: message_id,
+        }
+    ).where(Ticket.id == ticket_id)
+
+
+async def count_past_tickets(ticket: Ticket) -> int:
+    """How many tickets the same person opened before this one."""
+    return await Ticket.count().where(
+        (Ticket.opened_by == fk_id(ticket.opened_by)) & (Ticket.id < ticket.id)
+    )

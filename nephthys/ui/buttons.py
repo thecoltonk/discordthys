@@ -267,6 +267,16 @@ def staff_card_view(
     return view
 
 
+def link_only_view(thread_url: str) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    view.add_item(
+        discord.ui.Button(
+            label=get_copy().card.open_thread_button, url=thread_url, emoji="🧵"
+        )
+    )
+    return view
+
+
 def shadow_feedback_view(suggestion_id: int) -> discord.ui.View:
     view = discord.ui.View(timeout=None)
     view.add_item(AIFeedbackButton(suggestion_id, "up"))

@@ -1,4 +1,4 @@
-"""Staff slash commands used inside #community-help ticket threads.
+"""Staff slash commands used inside ticket threads (#community-help and #tickets).
 
 /faq and /ip post on staff's behalf but do NOT count as a staff reply: they
 don't claim the ticket and don't clear "waiting". /resolve and /reopen run the
@@ -60,10 +60,8 @@ class TicketCommands(commands.Cog):
             return None
         channel = interaction.channel
         ticket = None
-        if (
-            isinstance(channel, discord.Thread)
-            and channel.parent_id == settings.community_channel_id
-        ):
+        ticket_parents = {settings.community_channel_id, settings.tickets_channel_id}
+        if isinstance(channel, discord.Thread) and channel.parent_id in ticket_parents:
             ticket = await tickets.get_ticket_by_thread(channel.id)
         if ticket is None:
             await respond_text(

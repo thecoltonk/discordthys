@@ -33,6 +33,7 @@ from tests.ai.fake_client import FakeChatClient
 from tests.fakes import FakeBot
 from tests.fakes import make_interaction
 from tests.fakes import make_message
+from tests.fakes import make_text_channel
 from tests.fakes import make_user
 from tests.helpers import make_settings
 
@@ -130,6 +131,7 @@ async def run_everything(bot: FakeBot, kb_dir: Path) -> list[Any]:
             KB_DIR=str(kb_dir),
             AI_ANSWER_MODE="public",
             STALE_TICKET_DAYS="3",
+            TICKETS_CHANNEL_ID="600",
         ),
     )
     public = await answer_ticket(
@@ -162,10 +164,93 @@ def kb_dir(tmp_path: Path) -> Path:
 
 def ai_bot(kb_dir: Path, **env: str) -> FakeBot:
     bot = FakeBot(
-        make_settings(AI_API_KEY="k", AI_MODEL="m", KB_DIR=str(kb_dir), **env)
+        make_settings(
+            AI_API_KEY="k",
+            AI_MODEL="m",
+            KB_DIR=str(kb_dir),
+            TICKETS_CHANNEL_ID="600",
+            **env,
+        )
     )
     bot.ai_client = FakeChatClient(category='{"category": "Claims"}')
+    make_text_channel(bot, 600)
     return bot
+
+
+async def run_tickets_everything(bot: FakeBot, interactions: list[Any]) -> None:
+    """Every #tickets message path: panel, create, picks, alert, first message,
+    claim, close + CSAT, reopen, limit, escalate (+quote, already escalated)."""
+    from nephthys.cogs.tickets import Tickets
+    from nephthys.core import private_tickets as pt
+    from nephthys.ui.ticket_buttons import CategoryButton
+    from nephthys.ui.ticket_buttons import CloseTicketButton
+    from nephthys.ui.ticket_buttons import CreateTicketButton
+    from nephthys.ui.ticket_buttons import CSATButton
+    from nephthys.ui.ticket_buttons import SubcategoryButton
+
+    def interaction(user: Any, **kwargs: Any) -> Any:
+        i = make_interaction(bot, user, **kwargs)
+        interactions.append(i)
+        return i
+
+    cog = Tickets(cast(Any, bot))
+    help_cog = CommunityHelp(cast(Any, bot))
+    commands = TicketCommands(cast(Any, bot))
+    assert cog.sticky is not None
+    await cog.sticky.ensure()
+    player, mod, rando = make_user(name="P"), make_user(staff=True), make_user()
+
+    await CreateTicketButton().callback(interaction(player))
+    channel = bot.world.text_channels[600]
+    thread, _ = channel.created_threads[-1]
+    ticket = await tickets.get_ticket_by_thread(thread.id)
+    assert ticket
+    await CategoryButton(ticket.id, "server_issue").callback(interaction(rando))
+    await CategoryButton(ticket.id, "server_issue").callback(interaction(player))
+    await CategoryButton(ticket.id, "store").callback(interaction(player))
+    await CategoryButton(ticket.id, "nope").callback(interaction(player))
+    await SubcategoryButton(ticket.id, "server_issue", "urgent").callback(
+        interaction(player)
+    )
+    await cog.on_message(make_message(bot, player, "it broke", channel=thread))
+    await cog.on_message(make_message(bot, mod, "looking", channel=thread))
+    await CloseTicketButton(ticket.id).callback(interaction(rando))
+    await CloseTicketButton(ticket.id).callback(interaction(player))
+    await CloseTicketButton(ticket.id).callback(interaction(player))
+    await CSATButton(ticket.id, 5).callback(interaction(mod))
+    await CSATButton(ticket.id, 5).callback(interaction(player))
+    await CSATButton(ticket.id, 1).callback(interaction(player))
+    await cast(Any, TicketCommands.reopen).callback(
+        commands, interaction(mod, channel=thread)
+    )
+    await cast(Any, TicketCommands.faq).callback(
+        commands, interaction(mod, channel=thread)
+    )
+    await cast(Any, TicketCommands.resolve).callback(
+        commands, interaction(mod, channel=thread)
+    )
+
+    # Open-ticket limit
+    for _ in range(3):
+        await CreateTicketButton().callback(interaction(rando))
+
+    # Escalation, with and without copying the original
+    for delete_original in (False, True):
+        asker = make_user(name="Q")
+        q = make_message(bot, asker, "secret stuff")
+        await help_cog.on_message(q)
+        community = await tickets.get_ticket_by_message(q.id)
+        assert community
+        public = bot.world.threads[community.thread_id]
+        await cast(Any, Tickets.escalate).callback(
+            cog, interaction(mod, channel=public), delete_original
+        )
+        await cast(Any, Tickets.escalate).callback(
+            cog, interaction(mod, channel=public), False
+        )
+        private = await pt.escalation_of(community.id)
+        assert private
+        await CategoryButton(private.id, "other").callback(interaction(asker))
 
 
 async def test_code_supplies_every_declared_placeholder(kb_dir: Path):
@@ -174,6 +259,7 @@ async def test_code_supplies_every_declared_placeholder(kb_dir: Path):
     use_copy(every_placeholder_copy())
     bot = ai_bot(kb_dir)
     await run_everything(bot, kb_dir)
+    await run_tickets_everything(bot, [])
 
     texts = [
         m.content
@@ -186,6 +272,21 @@ async def test_code_supplies_every_declared_placeholder(kb_dir: Path):
     assert any(t.startswith("reopened:") for t in texts)
     assert any(t.startswith("resolved_stale:") for t in texts)
     assert any(t.startswith("need_human_reply:") for t in texts)
+    for key in (
+        "opener_header:",
+        "closed:",
+        "csat_prompt:",
+        "reopened:",
+        "escalated_public:",
+        "escalated_quote:",
+    ):
+        assert any(key in t for t in texts), key
+    alerts = [
+        m
+        for m in bot.sends(bot.settings.staff_channel_id or 0)
+        if (m.content or "").startswith("alert_ping:")
+    ]
+    assert alerts and all(m.embed.title.startswith("private_title:") for m in alerts)
 
     now = datetime.now(UTC)
     embed = await build_daily_summary(
@@ -200,16 +301,18 @@ async def test_code_supplies_every_declared_placeholder(kb_dir: Path):
 async def test_link_embeds_are_always_suppressed(kb_dir: Path):
     bot = ai_bot(kb_dir)
     interactions = await run_everything(bot, kb_dir)
+    await run_tickets_everything(bot, interactions)
 
     sent = [m for msgs in bot.world.channel_sends.values() for m in msgs]
     assert sent
     for m in sent:
-        if m.content is not None:
-            assert getattr(m, "suppress_embeds", False) is True, m.content
         if getattr(m, "embed", None) is not None:
-            # Rich embeds carry no content (nothing to unfurl) and must not be suppressed
-            assert m.content is None
+            # Rich embeds carry no linkable content (at most a role-ping line), so
+            # nothing can unfurl; suppress_embeds would hide the embed itself
+            assert m.content is None or "http" not in m.content
             assert not getattr(m, "suppress_embeds", False)
+        elif m.content is not None:
+            assert getattr(m, "suppress_embeds", False) is True, m.content
 
     calls = 0
     for i in interactions:

@@ -1,4 +1,5 @@
-"""Sticky "how it works" message kept at the bottom of #community-help.
+"""Sticky messages kept at the bottom of a channel: the "how it works" note in
+#community-help and the ticket panel in #tickets.
 
 After a new top-level question, the sticky is reposted once things have been
 quiet for `debounce` seconds. The new sticky is sent *before* the old one is
@@ -8,6 +9,7 @@ it never creates a ticket or thread.
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import discord
@@ -33,17 +35,28 @@ def build_sticky_embed(faq_url: str) -> discord.Embed:
     )
 
 
+type StickyRender = Callable[[], tuple[discord.Embed, discord.ui.View | None]]
+
+
 class StickyManager:
-    def __init__(self, bot: "SupportBot", channel_id: int, debounce: float):
+    def __init__(
+        self,
+        bot: "SupportBot",
+        channel_id: int,
+        debounce: float,
+        render: StickyRender | None = None,
+    ):
         self.bot = bot
         self.channel_id = channel_id
         self.debounce = debounce
+        # Builds the sticky's embed (and optional buttons); defaults to the
+        # #community-help "how it works" message
+        self.render: StickyRender = render or (
+            lambda: (build_sticky_embed(bot.settings.faq_url), None)
+        )
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self._dirty_at = 0.0
-
-    def embed(self) -> discord.Embed:
-        return build_sticky_embed(self.bot.settings.faq_url)
 
     def schedule(self) -> None:
         """Note new activity; repost once it's been quiet for `debounce` seconds."""
@@ -79,7 +92,8 @@ class StickyManager:
                 .where(StickyMessage.channel_id == self.channel_id)
                 .first()
             )
-            new = await send_embed(channel, self.embed())
+            embed, view = self.render()
+            new = await send_embed(channel, embed, view=view)
             await StickyMessage.insert(
                 StickyMessage(channel_id=self.channel_id, message_id=new.id)
             ).on_conflict(

@@ -64,7 +64,7 @@ already_resolved = "this ticket is already resolved!"
 not_resolved = "this ticket isn't resolved, so there's nothing to re-open."
 ticket_missing = "i couldn't find a ticket for this thread."
 staff_only = "this command is for staff only."
-not_a_ticket_thread = "use this inside a #community-help ticket thread."
+not_a_ticket_thread = "use this inside a ticket thread."
 already_rated = "someone already rated this one."
 ai_already_answered = "this has already been answered, thanks!"
 
@@ -138,6 +138,21 @@ ai_needs_human = "🙋 player still needs a human"
 open_thread_button = "Open thread"
 # Placeholders: {id}
 footer = "Ticket #{id}"
+# #tickets card title.
+# Placeholders: {category}, {number}
+private_title = "T-{number} · {category}"
+category_pending = "category not picked yet"
+awaiting_first_message = "*(waiting for the player's first message)*"
+field_priority = "Priority"
+field_csat = "CSAT"
+# Placeholders: {rating}
+csat_value = "{rating}/5"
+field_escalated = "Escalated from"
+# Placeholders: {id}, {link}
+escalated_value = "[#{id}]({link})"
+field_escalated_to = "Escalated to"
+# Placeholders: {link}, {number}
+escalated_to_value = "[T-{number}]({link})"
 
 [stats]
 # Shared by /stats and the daily summary.
@@ -218,3 +233,66 @@ rated_not_helpful = "👎 not helpful — rated by {user}"
 outcome_fixed = "✅ {user} said this fixed it"
 # Placeholders: {user}
 outcome_needs_human = "🙋 {user} still needs a human"
+
+[tickets]
+# #tickets: the panel, private ticket threads, closing, CSAT and escalation.
+panel_title = "Need help?"
+# The sticky ticket panel in #tickets.
+# Placeholders: {community_channel}
+panel_body = "First, check the known issues and see if {community_channel} can sort it. If not, hit the button below to open a private thread with the team."
+create_button = "Create Ticket"
+# Private thread name (max 100 characters; longer is cut).
+# Placeholders: {name}, {number}
+thread_name = "{name} (T-{number})"
+# Placeholders: {number}
+opener_header = "## Ticket T-{number}"
+# Shown at the top of every new ticket.
+# Placeholders: {user}
+welcome = "Hey {user}, thanks for reaching out! Pick the option below that best fits what you need help with."
+# Added to tickets created with /escalate.
+# Placeholders: {link}
+escalated_note = "This ticket was moved here from {link} so we can help you privately."
+# One line per pick; the lines stack up.
+# Placeholders: {choice}
+selected = "You have selected: **{choice}**"
+close_button = "Close Ticket"
+# Private reply to Create Ticket.
+# Placeholders: {link}
+created = "your ticket is ready: {link}"
+# Private reply when TICKETS_MAX_OPEN_PER_USER is reached.
+# Placeholders: {count}, {links}
+too_many_open = "you already have {count} open ticket(s): {links} — please use one of those, or close one first."
+create_failed = "sorry, i couldn't open a ticket right now. please try again in a minute, or ask in #community-help."
+not_your_ticket = "only the person who opened this ticket or staff can do that."
+already_picked = "that's already been chosen!"
+option_gone = "that option isn't available anymore — please ask staff."
+# Posted when a ticket is closed (button or /resolve).
+# Placeholders: {user}
+closed = "this ticket has been closed by {user}. thanks for reaching out!"
+csat_prompt = "how did we do? rate your support from 1 (bad) to 5 (great):"
+# Placeholders: {rating}
+csat_thanks = "thanks for the feedback — you rated us {rating}/5 ⭐"
+csat_not_opener = "only the person who opened this ticket can rate it."
+csat_already = "you've already rated this ticket — thanks!"
+# Placeholders: {user}
+reopened = "this ticket has been re-opened by {user}."
+# Text above the staff alert card; {roles} are the pinged roles.
+# Placeholders: {priority}, {roles}
+alert_ping = "{roles} new **{priority}** ticket"
+priority_low = "🟢 Low"
+priority_medium = "🟡 Medium"
+priority_high = "🔴 High"
+# Posted in the #community-help thread by /escalate before locking it.
+# Placeholders: {link}, {user}
+escalated_public = "this has been moved to a private ticket ({link}) so staff can help {user} privately. 🔒"
+# Copy of the public question, when /escalate deletes the original.
+# Placeholders: {quote}
+escalated_quote = '''
+**Original message:**
+{quote}'''
+# Placeholders: {link}
+escalate_done = "escalated to {link}"
+# Placeholders: {link}
+already_escalated = "this was already escalated: {link}"
+not_community_thread = "use this inside a #community-help ticket thread."
+tickets_disabled = "#tickets isn't set up (TICKETS_CHANNEL_ID)."

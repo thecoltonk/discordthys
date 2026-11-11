@@ -151,7 +151,7 @@ class ErrorsCopy(Section):
     not_resolved: str = "this ticket isn't resolved, so there's nothing to re-open."
     ticket_missing: str = "i couldn't find a ticket for this thread."
     staff_only: str = "this command is for staff only."
-    not_a_ticket_thread: str = "use this inside a #community-help ticket thread."
+    not_a_ticket_thread: str = "use this inside a ticket thread."
     already_rated: str = "someone already rated this one."
     ai_already_answered: str = "this has already been answered, thanks!"
 
@@ -210,6 +210,10 @@ class CardCopy(Section):
         "category_ai": {"category"},
         "ai_line": {"mode", "confidence", "outcome"},
         "footer": {"id"},
+        "private_title": {"number", "category"},
+        "csat_value": {"rating"},
+        "escalated_value": {"id", "link"},
+        "escalated_to_value": {"number", "link"},
     }
 
     title: str = "#{id} · {title}"
@@ -247,6 +251,18 @@ class CardCopy(Section):
     ai_needs_human: str = "🙋 player still needs a human"
     open_thread_button: str = "Open thread"
     footer: str = "Ticket #{id}"
+    private_title: str = Field(
+        default="T-{number} · {category}", description="#tickets card title."
+    )
+    category_pending: str = "category not picked yet"
+    awaiting_first_message: str = "*(waiting for the player's first message)*"
+    field_priority: str = "Priority"
+    field_csat: str = "CSAT"
+    csat_value: str = "{rating}/5"
+    field_escalated: str = "Escalated from"
+    escalated_value: str = "[#{id}]({link})"
+    field_escalated_to: str = "Escalated to"
+    escalated_to_value: str = "[T-{number}]({link})"
 
 
 class StatsCopy(Section):
@@ -366,6 +382,111 @@ class AICopy(Section):
     outcome_needs_human: str = "🙋 {user} still needs a human"
 
 
+class TicketsCopy(Section):
+    """#tickets: the panel, private ticket threads, closing, CSAT and escalation."""
+
+    PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
+        "panel_body": {"community_channel"},
+        "thread_name": {"name", "number"},
+        "opener_header": {"number"},
+        "welcome": {"user"},
+        "escalated_note": {"link"},
+        "selected": {"choice"},
+        "created": {"link"},
+        "too_many_open": {"count", "links"},
+        "closed": {"user"},
+        "csat_thanks": {"rating"},
+        "reopened": {"user"},
+        "alert_ping": {"roles", "priority"},
+        "escalated_public": {"user", "link"},
+        "escalated_quote": {"quote"},
+        "escalate_done": {"link"},
+        "already_escalated": {"link"},
+    }
+
+    panel_title: str = "Need help?"
+    panel_body: str = Field(
+        default=(
+            "First, check the known issues and see if {community_channel} can sort it. "
+            "If not, hit the button below to open a private thread with the team."
+        ),
+        description="The sticky ticket panel in #tickets.",
+    )
+    create_button: str = "Create Ticket"
+    thread_name: str = Field(
+        default="{name} (T-{number})",
+        description="Private thread name (max 100 characters; longer is cut).",
+    )
+    opener_header: str = "## Ticket T-{number}"
+    welcome: str = Field(
+        default=(
+            "Hey {user}, thanks for reaching out! Pick the option below that best "
+            "fits what you need help with."
+        ),
+        description="Shown at the top of every new ticket.",
+    )
+    escalated_note: str = Field(
+        default="This ticket was moved here from {link} so we can help you privately.",
+        description="Added to tickets created with /escalate.",
+    )
+    selected: str = Field(
+        default="You have selected: **{choice}**",
+        description="One line per pick; the lines stack up.",
+    )
+    close_button: str = "Close Ticket"
+    created: str = Field(
+        default="your ticket is ready: {link}",
+        description="Private reply to Create Ticket.",
+    )
+    too_many_open: str = Field(
+        default=(
+            "you already have {count} open ticket(s): {links} — please use one of "
+            "those, or close one first."
+        ),
+        description="Private reply when TICKETS_MAX_OPEN_PER_USER is reached.",
+    )
+    create_failed: str = (
+        "sorry, i couldn't open a ticket right now. please try again in a minute, "
+        "or ask in #community-help."
+    )
+    not_your_ticket: str = (
+        "only the person who opened this ticket or staff can do that."
+    )
+    already_picked: str = "that's already been chosen!"
+    option_gone: str = "that option isn't available anymore — please ask staff."
+    closed: str = Field(
+        default="this ticket has been closed by {user}. thanks for reaching out!",
+        description="Posted when a ticket is closed (button or /resolve).",
+    )
+    csat_prompt: str = "how did we do? rate your support from 1 (bad) to 5 (great):"
+    csat_thanks: str = "thanks for the feedback — you rated us {rating}/5 ⭐"
+    csat_not_opener: str = "only the person who opened this ticket can rate it."
+    csat_already: str = "you've already rated this ticket — thanks!"
+    reopened: str = "this ticket has been re-opened by {user}."
+    alert_ping: str = Field(
+        default="{roles} new **{priority}** ticket",
+        description="Text above the staff alert card; {roles} are the pinged roles.",
+    )
+    priority_low: str = "🟢 Low"
+    priority_medium: str = "🟡 Medium"
+    priority_high: str = "🔴 High"
+    escalated_public: str = Field(
+        default=(
+            "this has been moved to a private ticket ({link}) so staff can help "
+            "{user} privately. 🔒"
+        ),
+        description="Posted in the #community-help thread by /escalate before locking it.",
+    )
+    escalated_quote: str = Field(
+        default="**Original message:**\n{quote}",
+        description="Copy of the public question, when /escalate deletes the original.",
+    )
+    escalate_done: str = "escalated to {link}"
+    already_escalated: str = "this was already escalated: {link}"
+    not_community_thread: str = "use this inside a #community-help ticket thread."
+    tickets_disabled: str = "#tickets isn't set up (TICKETS_CHANNEL_ID)."
+
+
 class Copy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -377,6 +498,7 @@ class Copy(BaseModel):
     stats: StatsCopy = StatsCopy()
     summary: SummaryCopy = SummaryCopy()
     ai: AICopy = AICopy()
+    tickets: TicketsCopy = TicketsCopy()
 
 
 DEFAULT_COPY = Copy()

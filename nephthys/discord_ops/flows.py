@@ -11,9 +11,11 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from nephthys.core import private_tickets
 from nephthys.core import tickets
 from nephthys.core.copytext import get_copy
 from nephthys.core.permissions import Actor
+from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
@@ -103,7 +105,8 @@ async def record_reply(
     if result.claimed:
         TICKETS_CLAIMED.inc()
         await staff_card.refresh_staff_card(bot, ticket.id)
-    if result.should_reopen:
+    # Private tickets are locked when closed; only #community-help auto-reopens
+    if result.should_reopen and ticket.surface == TicketSurface.COMMUNITY:
         try:
             reopened = await tickets.reopen(ticket.id, actor)
         except TicketNotClosedError:
@@ -126,7 +129,13 @@ async def resolve_ticket(
     *,
     source: str,
 ) -> Ticket:
-    """Resolve and apply side effects. Raises the core errors on refusal."""
+    """Resolve and apply side effects. Raises the core errors on refusal.
+    Private (#tickets) tickets get the close + CSAT + lock flow instead."""
+    existing = await tickets.require_ticket(ticket_id)
+    if existing.surface == TicketSurface.PRIVATE:
+        from nephthys.discord_ops.private_flow import close_private
+
+        return await close_private(bot, ticket_id, actor, user, source=source)
     result = await tickets.resolve(ticket_id, actor)
     TICKETS_RESOLVED.labels(source=source).inc()
     await threads.post_resolved(
@@ -147,6 +156,11 @@ async def reopen_ticket(
     *,
     source: str,
 ) -> Ticket:
+    existing = await tickets.require_ticket(ticket_id)
+    if existing.surface == TicketSurface.PRIVATE:
+        from nephthys.discord_ops.private_flow import reopen_private
+
+        return await reopen_private(bot, ticket_id, actor, user, source=source)
     ticket = await tickets.reopen(ticket_id, actor)
     TICKETS_REOPENED.labels(source=source).inc()
     await threads.post_reopened(bot, ticket, reopened_by=user)
@@ -224,6 +238,8 @@ async def handle_question_deleted(bot: "SupportBot", message_id: int) -> None:
     ticket = await tickets.get_ticket_by_message(message_id)
     if not ticket:
         return
+    if await private_tickets.escalation_of(ticket.id) is not None:
+        return  # escalated (maybe deleted by /escalate): keep the record
     thread = await threads.get_thread(bot, ticket.thread_id)
     if thread is None:
         await staff_card.delete_staff_card(bot, ticket)

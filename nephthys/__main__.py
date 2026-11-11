@@ -55,9 +55,16 @@ def load_copy_or_exit(settings: Settings) -> None:
             f"{name} is no longer used: message text now lives in "
             f"{settings.copy_file}. Move your text there and unset {name}."
         )
+    from nephthys.core.ticket_categories import configure_ticket_categories
+    from nephthys.core.ticket_categories import TicketCategoriesError
+
     try:
         configure_copy(settings.copy_file, required=settings.copy_file_explicit)
-    except CopyError as e:
+        configure_ticket_categories(
+            settings.ticket_categories_file,
+            required=settings.ticket_categories_file_explicit,
+        )
+    except (CopyError, TicketCategoriesError) as e:
         print(e, file=sys.stderr)
         sys.exit(2)
 

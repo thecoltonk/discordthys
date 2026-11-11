@@ -8,6 +8,7 @@ from datetime import UTC
 from typing import TYPE_CHECKING
 
 from nephthys.core.queries import get_stale_tickets
+from nephthys.database.enums import TicketSurface
 from nephthys.discord_ops import flows
 from nephthys.discord_ops.heartbeat import send_heartbeat
 from nephthys.errors.errors import TicketAlreadyClosedError
@@ -29,7 +30,12 @@ async def close_stale_tickets(
     if not days:
         return 0
     cutoff = (now or datetime.now(UTC)) - timedelta(days=days)
-    stale = await get_stale_tickets(cutoff)
+    # #community-help only: private tickets are closed by people (with CSAT)
+    stale = [
+        t
+        for t in await get_stale_tickets(cutoff)
+        if t.surface == TicketSurface.COMMUNITY
+    ]
     closed = 0
     for ticket in stale:
         try:

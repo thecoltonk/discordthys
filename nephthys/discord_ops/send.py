@@ -8,11 +8,13 @@
 - Mentions never ping unless a caller explicitly allows it.
 """
 
+import re
 from typing import Any
 
 import discord
 
 NO_MENTIONS = discord.AllowedMentions.none()
+URL_PATTERN = re.compile(r"https?://", re.IGNORECASE)
 
 
 def _extras(view: discord.ui.View | None, **kwargs: Any) -> dict[str, Any]:
@@ -46,12 +48,35 @@ async def send_embed(
     *,
     view: discord.ui.View | None = None,
     reference: Any = None,
+    ping_content: str | None = None,
+    ping_roles: list[int] | None = None,
 ) -> Any:
-    """Send an embed-only message (no content, so nothing can unfurl)."""
+    """Send an embed message. The only content allowed alongside an embed is a
+    link-free ping line (e.g. role mentions on a staff alert), so there's still
+    nothing to unfurl."""
+    if ping_content is not None and URL_PATTERN.search(ping_content):
+        raise ValueError("ping_content must not contain links (they would unfurl)")
+    allowed = (
+        discord.AllowedMentions(
+            everyone=False, users=False, roles=[discord.Object(r) for r in ping_roles]
+        )
+        if ping_roles
+        else NO_MENTIONS
+    )
     return await target.send(
+        ping_content,
         embed=embed,
-        allowed_mentions=NO_MENTIONS,
+        allowed_mentions=allowed,
         **_extras(view, reference=reference),
+    )
+
+
+async def edit_text_response(
+    interaction: discord.Interaction[Any], content: str
+) -> None:
+    """Replace a message's text from a component interaction, removing its buttons."""
+    await interaction.response.edit_message(
+        content=content, view=None, suppress_embeds=True
     )
 
 

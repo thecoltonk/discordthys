@@ -119,3 +119,58 @@ Entries 6, 14, 34 and 35 (about `?macros`) are superseded by 44–47. Entry 13 (
     - on `ticket`: `category`, `category_source`, `staff_card_channel_id`, `staff_card_message_id`.
 
     These come from migration `cloudsail_002`, which was tested forwards and backwards. Outcome and mode values are `TEXT` with `CHECK` constraints rather than Postgres enums, which are easier to extend.
+
+## Follow-up: configurable copy, suppressed link previews, optional FAQ
+
+Entry 16 (sticky text via `STICKY_TITLE`/`STICKY_BODY`) is superseded by 72–80.
+
+**Configurable copy**
+
+72. **All message text lives in `copy/copy.toml`.** It's grouped into sections: `community`, `sticky`, `errors`, `commands`, `card`, `stats`, `summary`, `ai`, about 100 keys in all. The built-in defaults are the previous text, word for word.
+    - The shipped file is generated from those defaults (`python -m nephthys.core.copytext > copy/copy.toml`), and a test fails if the two drift apart.
+    - Every key carries a comment with its purpose and the placeholders it accepts.
+73. **What's in scope:** everything players or staff read.
+    - That includes the auto-reply, closing, stale and re-open messages; button and select labels; the sticky; private errors; command replies; staff cards; `/stats`, `/waiting` and the daily summary; and AI embeds, labels and outcome notes.
+    - **Not in scope:**
+      - slash-command names and descriptions (Discord metadata, registered at startup);
+      - log-channel heartbeats (maintainer diagnostics);
+      - emojis inside buttons and reactions (reactions already have env vars);
+      - user data and numbers;
+      - the `?` used when a confidence or stale-days value is missing;
+      - skip-reason codes such as `low_confidence`, which are shown as-is in the summary.
+74. **It's a directory mount (`./copy:/app/copy:ro`), not a single-file mount.** Most editors save by replacing the file, and a single-file bind mount keeps pointing at the old inode, so edits would silently never reach the container. The image also bakes in `copy/copy.toml`, so it works without the mount.
+75. **Live reload, like `kb/`.**
+    - The file's modification time is checked at most every 5 seconds, when text is next needed.
+    - A valid edit applies to new messages. An invalid edit (TOML error, unknown key or section, unknown or positional placeholder, wrong type) is logged with the exact key and reason, and **the previous text stays live**. A missing file mid-save is ignored.
+    - Already-posted messages aren't rewritten.
+76. **At startup, an invalid copy file is fatal**: exit code 2 with every problem listed, the same as config errors.
+    - A missing file at the default path falls back to the built-in text with a warning.
+    - A missing file at an explicitly set `COPY_FILE` is an error.
+    - `python -m nephthys.core.copytext --check <file>` validates a file without starting the bot.
+77. **Partial files are fine.** Missing keys use the built-in default, so you can trim `copy.toml` down to just what you change. Unknown keys are rejected, so typos aren't silently ignored.
+78. **Placeholders are declared per key** and validated at load time.
+    - Each key may only use its declared placeholders, plus `{{` and `}}` for literal braces.
+    - A test builds a copy where every template uses *every* placeholder it's allowed, then runs every message path. So code that forgets to supply a declared placeholder would fail CI rather than crash in production.
+79. **Text that used to be computed is now split into explicit keys,** so it can be reworded without code changes:
+    - plurals: `past_tickets_one`/`_many`, `stats_title_one_day`;
+    - FAQ variants: `auto_reply` / `auto_reply_no_faq`, `sticky.body` / `body_no_faq`;
+    - the card status line: `status_resolved` = `{by}{credit}`, with `resolved_by`, `resolved_automatically`, `credit`, `no_credit` and `reopened_suffix` as separate keys.
+80. **`STICKY_TITLE` / `STICKY_BODY` were removed.** If they're still set, startup logs a warning naming the replacement, and the values are ignored. They aren't merged into the copy, because two sources of truth for one string is worse.
+
+**Link previews**
+
+81. **Every bot text message is sent with `suppress_embeds=True`.** That covers channel and thread messages, public and private interaction responses, follow-ups, and heartbeats.
+    - All sends go through `discord_ops/send.py`. A test sweeps every message and interaction response the full flow produces and asserts this.
+82. **Rich-embed messages are the exception.** Cards, the sticky, `/stats`, `/waiting`, the daily summary and AI answers are sent *without* `suppress_embeds`, because Discord's flag would hide the bot's own embed too.
+    - They're sent with no message content, so there's nothing to unfurl. Links inside an embed never unfurl.
+    - The same test asserts that embed messages carry no content.
+
+**FAQ_URL unset**
+
+83. **The auto-reply and sticky switch to their `*_no_faq` variants,** with no FAQ sentence and no dangling "check the FAQ".
+    - `/faq` replies privately to staff with `commands.faq_unconfigured` (default "no FAQ configured.") and posts nothing in the thread.
+    - No other message references the FAQ.
+
+**Fix found by the new tests**
+
+84. **The staff card's category select now checks for staff before reading the selection.** An empty selection, which Discord shouldn't send but could, used to raise. It's now a no-op.

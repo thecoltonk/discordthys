@@ -14,11 +14,13 @@ from discord.ext import commands
 
 from nephthys.bot import SupportBot
 from nephthys.core import tickets
+from nephthys.core.copytext import get_copy
 from nephthys.core.permissions import Actor
-from nephthys.core.transcript import TRANSCRIPT
 from nephthys.database.enums import BotMessageKind
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import flows
+from nephthys.discord_ops.send import followup_text
+from nephthys.discord_ops.send import respond_text
 from nephthys.discord_ops.threads import actor_from_user
 from nephthys.errors.errors import PermissionDenied
 from nephthys.errors.errors import TicketAlreadyClosedError
@@ -52,8 +54,8 @@ class TicketCommands(commands.Cog):
         settings = self.bot.settings
         actor = actor_from_user(interaction.user, settings.staff_role_id)
         if not actor.is_staff:
-            await interaction.response.send_message(
-                TRANSCRIPT.staff_only, ephemeral=True
+            await respond_text(
+                interaction, get_copy().errors.staff_only, ephemeral=True
             )
             return None
         channel = interaction.channel
@@ -64,8 +66,8 @@ class TicketCommands(commands.Cog):
         ):
             ticket = await tickets.get_ticket_by_thread(channel.id)
         if ticket is None:
-            await interaction.response.send_message(
-                TRANSCRIPT.not_a_ticket_thread, ephemeral=True
+            await respond_text(
+                interaction, get_copy().errors.not_a_ticket_thread, ephemeral=True
             )
             return None
         return TicketContext(ticket=ticket, actor=actor)
@@ -75,9 +77,7 @@ class TicketCommands(commands.Cog):
     ) -> None:
         """Post publicly as the command response ("<staff> used /faq"). This
         deliberately doesn't call `record_message`, so it never claims."""
-        await interaction.response.send_message(
-            text, allowed_mentions=discord.AllowedMentions.none()
-        )
+        await respond_text(interaction, text, ephemeral=False)
         try:
             msg = await interaction.original_response()
         except discord.HTTPException:
@@ -94,12 +94,12 @@ class TicketCommands(commands.Cog):
             return
         url = self.bot.settings.faq_url
         if not url:
-            await interaction.response.send_message(
-                TRANSCRIPT.faq_unconfigured, ephemeral=True
+            await respond_text(
+                interaction, get_copy().commands.faq_unconfigured, ephemeral=True
             )
             return
         await self.post_reply(
-            interaction, ctx.ticket, TRANSCRIPT.faq_reply.format(faq_url=url)
+            interaction, ctx.ticket, get_copy().commands.faq_reply.format(faq_url=url)
         )
 
     @app_commands.command(
@@ -112,12 +112,14 @@ class TicketCommands(commands.Cog):
             return
         address = self.bot.settings.server_address
         if not address:
-            await interaction.response.send_message(
-                TRANSCRIPT.ip_unconfigured, ephemeral=True
+            await respond_text(
+                interaction, get_copy().commands.ip_unconfigured, ephemeral=True
             )
             return
         await self.post_reply(
-            interaction, ctx.ticket, TRANSCRIPT.ip_reply.format(server_address=address)
+            interaction,
+            ctx.ticket,
+            get_copy().commands.ip_reply.format(server_address=address),
         )
 
     @app_commands.command(
@@ -134,11 +136,9 @@ class TicketCommands(commands.Cog):
                 self.bot, ctx.ticket.id, ctx.actor, interaction.user, source="command"
             )
         except REFUSALS as e:
-            await interaction.followup.send(
-                flows.refusal_message(e) or str(e), ephemeral=True
-            )
+            await followup_text(interaction, flows.refusal_message(e) or str(e))
             return
-        await interaction.followup.send(TRANSCRIPT.command_resolved, ephemeral=True)
+        await followup_text(interaction, get_copy().commands.resolved)
 
     @app_commands.command(
         name="reopen", description="Staff: re-open this resolved ticket"
@@ -154,11 +154,9 @@ class TicketCommands(commands.Cog):
                 self.bot, ctx.ticket.id, ctx.actor, interaction.user, source="command"
             )
         except REFUSALS as e:
-            await interaction.followup.send(
-                flows.refusal_message(e) or str(e), ephemeral=True
-            )
+            await followup_text(interaction, flows.refusal_message(e) or str(e))
             return
-        await interaction.followup.send(TRANSCRIPT.command_reopened, ephemeral=True)
+        await followup_text(interaction, get_copy().commands.reopened)
 
 
 async def setup(bot: SupportBot) -> None:

@@ -11,11 +11,12 @@ from typing import TYPE_CHECKING
 import discord
 
 from nephthys.core import tickets
+from nephthys.core.copytext import get_copy
 from nephthys.core.permissions import Actor
 from nephthys.core.permissions import is_staff
-from nephthys.core.transcript import TRANSCRIPT
 from nephthys.database.enums import BotMessageKind
 from nephthys.database.tables import Ticket
+from nephthys.discord_ops.send import send_text
 from nephthys.ui.buttons import reopen_view
 from nephthys.ui.buttons import resolve_view
 from nephthys.utils.metrics import DISCORD_ERRORS
@@ -26,9 +27,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 THREAD_NAME_MAX = 90
-NO_MENTIONS = discord.AllowedMentions.none()
-# Ping only the user being addressed, never roles/everyone
-USER_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 QUESTION_MESSAGE_TYPES = (discord.MessageType.default, discord.MessageType.reply)
 
 
@@ -59,9 +57,9 @@ def thread_name_for(message: discord.Message) -> str:
         "",
     )
     if not first_line:
-        return TRANSCRIPT.thread_name_fallback.format(name=message.author.display_name)[
-            :THREAD_NAME_MAX
-        ]
+        return get_copy().community.thread_name_fallback.format(
+            name=message.author.display_name
+        )[:THREAD_NAME_MAX]
     if len(first_line) > THREAD_NAME_MAX:
         return first_line[: THREAD_NAME_MAX - 1].rstrip() + "…"
     return first_line
@@ -112,10 +110,17 @@ async def set_archived(thread: discord.Thread, archived: bool) -> None:
         await thread.edit(archived=archived)
 
 
+def auto_reply_text(faq_url: str) -> str:
+    """The auto-reply, without the FAQ sentence when FAQ_URL is unset."""
+    community = get_copy().community
+    if faq_url:
+        return community.auto_reply.format(faq_url=faq_url)
+    return community.auto_reply_no_faq
+
+
 async def send_auto_reply(bot: "SupportBot", thread: discord.Thread, ticket: Ticket):
-    text = TRANSCRIPT.auto_reply.format(faq=TRANSCRIPT.faq_text(bot.settings.faq_url))
-    msg = await thread.send(
-        text, view=resolve_view(ticket.id), allowed_mentions=NO_MENTIONS
+    msg = await send_text(
+        thread, auto_reply_text(bot.settings.faq_url), view=resolve_view(ticket.id)
     )
     await tickets.record_bot_message(
         ticket.id, thread.id, msg.id, BotMessageKind.AUTO_REPLY
@@ -132,17 +137,18 @@ async def post_resolved(
 ) -> None:
     """Closing message with a Re-open button, ✅ on the question, archive."""
     thread = await get_thread(bot, ticket.thread_id)
+    community = get_copy().community
     if resolved_by is not None:
-        text = TRANSCRIPT.resolved.format(user=resolved_by.mention)
+        text = community.resolved.format(user=resolved_by.mention)
     else:
-        text = TRANSCRIPT.resolved_stale.format(days=stale_days or "a few")
+        text = community.resolved_stale.format(
+            days=stale_days if stale_days is not None else "?"
+        )
 
     if thread is not None:
         await set_archived(thread, False)
         async with best_effort("send_resolved"):
-            msg = await thread.send(
-                text, view=reopen_view(ticket.id), allowed_mentions=NO_MENTIONS
-            )
+            msg = await send_text(thread, text, view=reopen_view(ticket.id))
             await tickets.record_bot_message(
                 ticket.id, thread.id, msg.id, BotMessageKind.RESOLVED
             )
@@ -167,9 +173,8 @@ async def post_reopened(
 
     if thread is not None:
         async with best_effort("send_reopened"):
-            msg = await thread.send(
-                TRANSCRIPT.reopened.format(user=reopened_by.mention),
-                allowed_mentions=NO_MENTIONS,
+            msg = await send_text(
+                thread, get_copy().community.reopened.format(user=reopened_by.mention)
             )
             await tickets.record_bot_message(
                 ticket.id, thread.id, msg.id, BotMessageKind.REOPENED

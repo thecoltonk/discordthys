@@ -12,12 +12,14 @@ from typing import TYPE_CHECKING
 import discord
 
 from nephthys.core import tickets
+from nephthys.core.copytext import get_copy
 from nephthys.core.permissions import Actor
-from nephthys.core.transcript import TRANSCRIPT
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
 from nephthys.discord_ops.heartbeat import send_heartbeat
+from nephthys.discord_ops.send import followup_text
+from nephthys.discord_ops.send import respond_text
 from nephthys.errors.errors import PermissionDenied
 from nephthys.errors.errors import TicketAlreadyClosedError
 from nephthys.errors.errors import TicketNotClosedError
@@ -154,14 +156,15 @@ async def reopen_ticket(
 
 def refusal_message(error: Exception) -> str | None:
     """User-facing text for an expected refusal, or None if unexpected."""
+    errors = get_copy().errors
     if isinstance(error, PermissionDenied):
-        return TRANSCRIPT.not_allowed
+        return errors.not_allowed
     if isinstance(error, TicketAlreadyClosedError):
-        return TRANSCRIPT.already_resolved
+        return errors.already_resolved
     if isinstance(error, TicketNotClosedError):
-        return TRANSCRIPT.not_resolved
+        return errors.not_resolved
     if isinstance(error, TicketNotFoundError):
-        return TRANSCRIPT.ticket_missing
+        return errors.ticket_missing
     return None
 
 
@@ -187,8 +190,7 @@ async def _run_from_interaction(
         TicketNotClosedError,
         TicketNotFoundError,
     ) as e:
-        text = refusal_message(e) or str(e)
-        await interaction.followup.send(text, ephemeral=True)
+        await followup_text(interaction, refusal_message(e) or str(e))
     except Exception as e:
         log.exception(f"Button failed ticket_id={ticket_id} reopen={reopen}")
         await send_heartbeat(
@@ -197,9 +199,7 @@ async def _run_from_interaction(
             f"#{ticket_id}: `{type(e).__name__}: {e}`",
             ping=True,
         )
-        await interaction.followup.send(
-            "something went wrong there — staff have been told!", ephemeral=True
-        )
+        await followup_text(interaction, get_copy().community.something_went_wrong)
 
 
 async def resolve_from_interaction(
@@ -251,12 +251,15 @@ async def handle_thread_deleted(bot: "SupportBot", thread_id: int) -> None:
 
 
 async def set_category_from_interaction(
-    interaction: discord.Interaction[Any], ticket_id: int, category: str
+    interaction: discord.Interaction[Any], ticket_id: int, category: str | None
 ) -> None:
     bot = cast("SupportBot", interaction.client)
     actor = threads.actor_from_user(interaction.user, bot.settings.staff_role_id)
     if not actor.is_staff:
-        await interaction.response.send_message(TRANSCRIPT.staff_only, ephemeral=True)
+        await respond_text(interaction, get_copy().errors.staff_only, ephemeral=True)
+        return
+    if category is None:  # nothing selected
+        await interaction.response.defer()
         return
     try:
         ticket = await tickets.set_category(
@@ -266,8 +269,8 @@ async def set_category_from_interaction(
             allowed=bot.settings.ticket_categories,
         )
     except (tickets.InvalidCategoryError, TicketNotFoundError):
-        await interaction.response.send_message(
-            TRANSCRIPT.ticket_missing, ephemeral=True
+        await respond_text(
+            interaction, get_copy().errors.ticket_missing, ephemeral=True
         )
         return
     # Re-render the card in place as the interaction response

@@ -21,6 +21,10 @@ A Discord support bot for **The Cloudsail Project**'s `#community-help` channel.
   - suggests answers grounded only in [`kb/`](kb/). It runs in shadow mode by default: suggestions go to staff only, with 👍/👎 buttons.
 - A sticky "how it works" message stays at the bottom of the channel.
 
+## Changing what the bot says
+
+Every message players and staff see lives in [`copy/copy.toml`](copy/copy.toml), with comments listing each key's `{placeholders}`. Edit it and save: changes apply within a few seconds, with no restart. Invalid edits are logged and ignored. See DEPLOY.md §6.
+
 ## Development
 
 You need Python 3.13, [uv](https://docs.astral.sh/uv/) and PostgreSQL.

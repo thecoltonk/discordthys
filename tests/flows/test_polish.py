@@ -9,7 +9,7 @@ import pytest
 from nephthys.cogs.community_help import CommunityHelp
 from nephthys.cogs.staff import Staff
 from nephthys.core import tickets
-from nephthys.core.transcript import TRANSCRIPT
+from nephthys.core.copytext import DEFAULT_COPY as C
 from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import StickyMessage
 from nephthys.database.tables import Ticket
@@ -119,7 +119,7 @@ async def test_close_stale_tickets():
     assert closed == 1
     t = await tickets.require_ticket(old.id)
     assert t.status == TicketStatus.CLOSED and t.closed_by is None
-    assert bot.sends(old.thread_id)[-1].content == TRANSCRIPT.resolved_stale.format(
+    assert bot.sends(old.thread_id)[-1].content == C.community.resolved_stale.format(
         days=3
     )
     assert bot.world.threads[old.thread_id].archived

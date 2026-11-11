@@ -164,6 +164,29 @@ What happens next:
 
 ## 6. Operations
 
+**Change what the bot says.** Every player- and staff-facing message is in `copy/copy.toml`. That includes the auto-reply, closing and re-open messages, the sticky, staff card labels, command replies, `/stats` and `/waiting`, the daily summary, and AI answer labels. It's mounted read-only into the container from `./copy`.
+
+1. Edit `/opt/cloudsail-support/copy/copy.toml` on the host and save.
+2. Within about 5 seconds the bot logs `Reloaded copy from copy/copy.toml`, and new messages use the new text.
+   - Messages already posted (e.g. old closing messages) aren't rewritten.
+   - Staff cards pick up the change the next time they update.
+   - The sticky updates on its next repost.
+3. If your edit is invalid, the bot logs `Ignoring invalid copy edit …` with the exact key and problem, and keeps the previous text. Examples: a typo'd key, or a `{placeholder}` that key doesn't accept.
+
+   To check an edit before saving it into place:
+
+   ```bash
+   docker compose exec bot python -m nephthys.core.copytext --check /app/copy/copy.toml
+   ```
+
+4. Each key's comment lists the placeholders it accepts. Use `{{` / `}}` for literal braces. Delete a key to go back to its built-in default.
+5. If `FAQ_URL` is blank, the auto-reply and sticky use their `*_no_faq` variants (no FAQ sentence), and `/faq` privately tells staff "no FAQ configured."
+
+If you set `STICKY_TITLE` / `STICKY_BODY` in an older `.env`, they're ignored now (the bot logs a warning). Move that text into `[sticky]` in `copy.toml`.
+
+All text messages are sent with link previews suppressed, so links in copy never unfurl into big embeds.
+
+
 **Update to the latest code:**
 
 ```bash

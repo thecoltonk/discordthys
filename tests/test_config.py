@@ -17,7 +17,8 @@ def test_minimal_settings():
     assert s.stale_ticket_days is None
     assert s.sticky_enabled is False  # disabled in BASE_ENV
     assert make_settings(STICKY_ENABLED="").sticky_enabled is True  # default
-    assert "{faq_url}" in s.sticky_body
+    assert s.copy_file == "copy/copy.toml" and not s.copy_file_explicit
+    assert s.deprecated_env_set == ()
 
 
 def test_missing_required_vars_are_all_reported():
@@ -51,9 +52,10 @@ def test_stale_days_non_positive_disables():
     assert make_settings(STALE_TICKET_DAYS="3").stale_ticket_days == 3
 
 
-def test_sticky_body_newlines():
-    s = make_settings(STICKY_BODY="a\\nb")
-    assert s.sticky_body == "a\nb"
+def test_copy_file_and_deprecated_text_env():
+    s = make_settings(COPY_FILE="/etc/copy.toml", STICKY_BODY="old text")
+    assert s.copy_file == "/etc/copy.toml" and s.copy_file_explicit
+    assert s.deprecated_env_set == ("STICKY_BODY",)
 
 
 def test_categories_default_and_custom():

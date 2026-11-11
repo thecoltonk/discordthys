@@ -20,15 +20,9 @@ DEFAULT_CATEGORIES = ("Gameplay", "Bug", "Claims", "Economy", "Store", "Other")
 AI_ANSWER_MODES = ("off", "shadow", "public")
 DEFAULT_AI_BASE_URL = "https://ai.hackclub.com/proxy/v1"
 
-DEFAULT_STICKY_TITLE = "How #community-help works"
-DEFAULT_STICKY_BODY = (
-    "**Post your question as a new message in this channel** and a thread will be "
-    "opened for it. Anyone can help out, and staff will be along soon!\n\n"
-    "• Keep all follow-ups inside your thread.\n"
-    "• Once you're sorted, hit **Mark as resolved** in your thread.\n"
-    "• Got a new question later? Just post a new message.\n\n"
-    "Before posting, check the FAQ: {faq_url}"
-)
+DEFAULT_COPY_FILE = "copy/copy.toml"
+# Env vars that used to hold text; text now lives in copy/copy.toml
+DEPRECATED_TEXT_ENV = ("STICKY_TITLE", "STICKY_BODY")
 
 
 class ConfigError(ValueError):
@@ -58,8 +52,10 @@ class Settings:
     stale_ticket_days: int | None
     sticky_enabled: bool
     sticky_debounce_seconds: float
-    sticky_title: str
-    sticky_body: str
+    # Message text (copy/copy.toml)
+    copy_file: str
+    copy_file_explicit: bool
+    deprecated_env_set: tuple[str, ...]
     timezone: str
 
     # Categories (#community-help)
@@ -260,10 +256,9 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         stale_ticket_days=stale,
         sticky_enabled=boolean("STICKY_ENABLED", True),
         sticky_debounce_seconds=debounce,
-        sticky_title=get("STICKY_TITLE", DEFAULT_STICKY_TITLE) or DEFAULT_STICKY_TITLE,
-        sticky_body=(get("STICKY_BODY", DEFAULT_STICKY_BODY) or DEFAULT_STICKY_BODY)
-        # Allow literal "\n" in .env files for multi-line bodies
-        .replace("\\n", "\n"),
+        copy_file=get("COPY_FILE", DEFAULT_COPY_FILE) or DEFAULT_COPY_FILE,
+        copy_file_explicit=get("COPY_FILE") is not None,
+        deprecated_env_set=tuple(n for n in DEPRECATED_TEXT_ENV if get(n) is not None),
         timezone=get("TIMEZONE", "Europe/London") or "Europe/London",
         ticket_categories=categories,
         daily_summary_enabled=boolean("DAILY_SUMMARY_ENABLED", True),

@@ -20,6 +20,8 @@ services:
     volumes:
       # Knowledge base for the AI assistant: edit files on the host, no rebuild needed
       - ./kb:/app/kb:ro
+      # All message text (copy/copy.toml): edit on the host, applies within seconds
+      - ./copy:/app/copy:ro
     networks: [internal]
     logging:
       driver: json-file

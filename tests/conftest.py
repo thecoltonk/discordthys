@@ -35,3 +35,14 @@ async def db(migrated_db):
         "RESTART IDENTITY CASCADE"
     )
     yield
+
+
+@pytest.fixture(autouse=True)
+def default_copy():
+    """Each test starts (and ends) with the built-in default text."""
+    from nephthys.core.copytext import DEFAULT_COPY
+    from nephthys.core.copytext import use_copy
+
+    use_copy(DEFAULT_COPY)
+    yield
+    use_copy(DEFAULT_COPY)

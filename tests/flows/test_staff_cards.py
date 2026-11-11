@@ -6,7 +6,7 @@ import pytest
 
 from nephthys.cogs.community_help import CommunityHelp
 from nephthys.core import tickets
-from nephthys.core.transcript import TRANSCRIPT
+from nephthys.core.copytext import DEFAULT_COPY as C
 from nephthys.discord_ops import flows
 from nephthys.ui.buttons import CategorySelect
 from nephthys.ui.buttons import ReopenButton
@@ -108,7 +108,7 @@ async def test_category_select_staff_only():
     player = make_interaction(bot, make_user())
     player.data = {"values": ["Bug"]}
     await CategorySelect(ticket.id).callback(player)
-    assert player.response.send_message.call_args.args[0] == TRANSCRIPT.staff_only
+    assert player.response.send_message.call_args.args[0] == C.errors.staff_only
     assert (await fresh(ticket)).category is None
 
     mod = make_interaction(bot, make_user(staff=True))

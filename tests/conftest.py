@@ -9,12 +9,11 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 import pytest
 
-from nephthys.database.raw_migration import postgresql_code_block
-
 
 @pytest.fixture(scope="session")
 async def migrated_db():
     """Rebuild the test schema from the init migration once per session."""
+    from nephthys.database.raw_migration import postgresql_code_block
     from nephthys.database.tables import Ticket
     from nephthys.piccolo_migrations.cloudsail_001_init import FORWARDS
 

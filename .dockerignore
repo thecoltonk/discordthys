@@ -1,14 +1,13 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
+.git
+.github
 .venv
-
-# Development files
-/data/
 .env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.pre-commit-config.yaml
+tests
+docker-compose.yml

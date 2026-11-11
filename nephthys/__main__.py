@@ -59,10 +59,29 @@ def start() -> None:
     except ImportError:
         runner = asyncio.run
 
+    import aiohttp
+    import discord
+
     try:
         runner(run(settings))
     except KeyboardInterrupt:
         pass
+    except discord.LoginFailure:
+        logging.critical(
+            "Discord rejected DISCORD_TOKEN. Reset the bot token and update .env."
+        )
+        sys.exit(1)
+    except discord.PrivilegedIntentsRequired:
+        logging.critical(
+            "The Message Content intent is disabled. Enable it in the Discord developer "
+            "portal (your app → Bot → Privileged Gateway Intents) and restart."
+        )
+        sys.exit(1)
+    except (aiohttp.ClientConnectionError, OSError) as e:
+        logging.critical(
+            f"Can't reach Discord or the database: {e}. Will exit and let the container restart."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

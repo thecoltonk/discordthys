@@ -13,6 +13,10 @@ from nephthys.config import Settings
 
 log = logging.getLogger(__name__)
 
+# We never use voice; skip the "PyNaCl is not installed" startup warnings
+discord.VoiceClient.warn_nacl = False
+discord.VoiceClient.warn_dave = False
+
 # Cogs loaded on startup, in order
 EXTENSIONS: list[str] = [
     "nephthys.cogs.community_help",

@@ -56,7 +56,7 @@ async def reply(bot: FakeBot, cog: CommunityHelp, ticket, author, content="try /
 
 
 async def test_new_question_opens_thread_ticket_and_auto_reply(bot, cog):
-    msg, ticket, author = await post_question(bot, cog)
+    msg, ticket, _author = await post_question(bot, cog)
 
     assert ticket is not None
     assert ticket.thread_id == msg.id
@@ -72,9 +72,9 @@ async def test_new_question_opens_thread_ticket_and_auto_reply(bot, cog):
 
     assert bot.reactions_on(msg.id) == {"🤔"}
 
-    [feed] = bot.sends(bot.settings.staff_channel_id or 0)
-    assert f"#{ticket.id}" in feed.content and author.mention in feed.content
-    assert feed.allowed_mentions.users is False  # no pings in the feed
+    [card] = bot.sends(bot.settings.staff_channel_id or 0)
+    assert card.content is None and card.embed.title.startswith(f"#{ticket.id}")
+    assert card.allowed_mentions.users is False  # no pings from the card
 
     [bot_msg] = await tickets.get_bot_messages(ticket.id)
     assert bot_msg.kind == BotMessageKind.AUTO_REPLY

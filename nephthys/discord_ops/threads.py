@@ -123,25 +123,6 @@ async def send_auto_reply(bot: "SupportBot", thread: discord.Thread, ticket: Tic
     return msg
 
 
-async def send_staff_feed(
-    bot: "SupportBot", ticket: Ticket, author: discord.abc.User
-) -> None:
-    channel_id = bot.settings.staff_channel_id
-    if not channel_id:
-        return
-    title = discord.utils.escape_markdown(ticket.title or "(no title)")
-    line = TRANSCRIPT.staff_feed.format(
-        id=ticket.id,
-        title=title,
-        user=author.mention,
-        link=thread_link(bot.settings.guild_id, ticket.thread_id),
-    )
-    async with best_effort("staff_feed"):
-        await bot.get_partial_messageable(channel_id).send(
-            line, allowed_mentions=NO_MENTIONS
-        )
-
-
 async def post_resolved(
     bot: "SupportBot",
     ticket: Ticket,

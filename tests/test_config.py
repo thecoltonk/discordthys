@@ -54,3 +54,60 @@ def test_stale_days_non_positive_disables():
 def test_sticky_body_newlines():
     s = make_settings(STICKY_BODY="a\\nb")
     assert s.sticky_body == "a\nb"
+
+
+def test_categories_default_and_custom():
+    assert make_settings().ticket_categories == (
+        "Gameplay",
+        "Bug",
+        "Claims",
+        "Economy",
+        "Store",
+        "Other",
+    )
+    custom = make_settings(TICKET_CATEGORIES=" Bugs , Ranks,Bugs,, Other ")
+    assert custom.ticket_categories == ("Bugs", "Ranks", "Other")
+    with pytest.raises(ConfigError):
+        make_settings(TICKET_CATEGORIES=",".join(f"c{i}" for i in range(26)))
+
+
+def test_daily_summary_settings():
+    s = make_settings()
+    assert (s.daily_summary_hour, s.daily_summary_minute) == (9, 0)
+    assert s.daily_summary_timezone == "America/Phoenix"
+    assert s.daily_summary_enabled
+    s = make_settings(
+        DAILY_SUMMARY_TIME="17:45", DAILY_SUMMARY_TIMEZONE="Europe/London"
+    )
+    assert (s.daily_summary_hour, s.daily_summary_minute) == (17, 45)
+    for bad in ({"DAILY_SUMMARY_TIME": "25:00"}, {"DAILY_SUMMARY_TIME": "9am"}):
+        with pytest.raises(ConfigError):
+            make_settings(**bad)
+    with pytest.raises(ConfigError):
+        make_settings(DAILY_SUMMARY_TIMEZONE="Mars/Olympus")
+
+
+def test_ai_settings():
+    off = make_settings()
+    assert (
+        not off.ai_enabled
+        and not off.ai_answers_enabled
+        and not off.ai_categorize_enabled
+    )
+    assert off.ai_base_url == "https://ai.hackclub.com/proxy/v1"
+    assert off.ai_answer_mode == "shadow"
+    on = make_settings(AI_API_KEY="k", AI_MODEL="m")
+    assert on.ai_enabled and on.ai_answers_enabled and on.ai_categorize_enabled
+    assert on.ai_answer_min_confidence == 0.8
+    assert not make_settings(
+        AI_API_KEY="k", AI_MODEL="m", AI_ANSWER_MODE="off"
+    ).ai_answers_enabled
+    assert not make_settings(
+        AI_API_KEY="k", AI_MODEL="m", AI_CATEGORIZE="false"
+    ).ai_categorize_enabled
+    with pytest.raises(ConfigError):
+        make_settings(AI_API_KEY="k")  # model required
+    with pytest.raises(ConfigError):
+        make_settings(AI_ANSWER_MODE="loud")
+    with pytest.raises(ConfigError):
+        make_settings(AI_ANSWER_MIN_CONFIDENCE="1.5")

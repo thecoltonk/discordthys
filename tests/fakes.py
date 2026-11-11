@@ -3,6 +3,7 @@
 They use `spec=` so `isinstance(x, discord.Thread)` etc. still works.
 """
 
+import asyncio
 import itertools
 from collections import defaultdict
 from datetime import datetime
@@ -63,6 +64,9 @@ class FakeWorld:
         self.threads: dict[int, MagicMock] = {}
         self.deleted_messages: list[tuple[int, int]] = []
         self.channel_history: dict[int, list[Any]] = defaultdict(list)
+        # (channel_id, message_id) -> the message the bot sent there
+        self.messages: dict[tuple[int, int], SentMessage] = {}
+        self.edits: list[tuple[int, int, dict[str, Any]]] = []
 
 
 class FakePartialMessage:
@@ -81,6 +85,16 @@ class FakePartialMessage:
     async def delete(self) -> None:
         self.world.deleted_messages.append((self.channel_id, self.id))
 
+    async def edit(self, **kwargs: Any) -> SentMessage:
+        self.world.edits.append((self.channel_id, self.id, kwargs))
+        msg = self.world.messages[(self.channel_id, self.id)]
+        for key, value in kwargs.items():
+            setattr(msg, key, value)
+        return msg
+
+    def to_reference(self, **kwargs: Any) -> Any:
+        return SimpleNamespace(message_id=self.id, channel_id=self.channel_id)
+
 
 class FakeMessageable:
     def __init__(self, world: FakeWorld, channel_id: int):
@@ -89,9 +103,15 @@ class FakeMessageable:
 
     async def send(self, content: str | None = None, **kwargs: Any) -> SentMessage:
         msg = SentMessage(
-            id=next_id(), content=content, channel_id=self.id, author_bot=True, **kwargs
+            id=next_id(),
+            content=content,
+            channel_id=self.id,
+            channel=SimpleNamespace(id=self.id),
+            author_bot=True,
+            **kwargs,
         )
         self.world.channel_sends[self.id].append(msg)
+        self.world.messages[(self.id, msg.id)] = msg
         self.world.channel_history[self.id].append(msg)
         return msg
 
@@ -109,8 +129,15 @@ def make_thread(world: FakeWorld, thread_id: int, parent_id: int) -> MagicMock:
     async def send(content: str | None = None, **kwargs: Any) -> SentMessage:
         if thread.archived:
             thread.archived = False  # Discord unarchives on send
-        msg = SentMessage(id=next_id(), content=content, **kwargs)
+        msg = SentMessage(
+            id=next_id(),
+            content=content,
+            channel_id=thread_id,
+            channel=SimpleNamespace(id=thread_id),
+            **kwargs,
+        )
         world.channel_sends[thread_id].append(msg)
+        world.messages[(thread_id, msg.id)] = msg
         return msg
 
     async def edit(**kwargs: Any) -> MagicMock:
@@ -145,6 +172,16 @@ class FakeBot:
         self.settings = settings or make_settings()
         self.world = FakeWorld(self.settings)
         self.user = SimpleNamespace(id=BOT_USER_ID)
+        self.ai_client: Any = None
+        self.tasks: list[asyncio.Task[None]] = []
+
+    def spawn(self, coro: Any, *, name: str) -> None:
+        self.tasks.append(asyncio.ensure_future(coro))
+
+    async def drain(self) -> None:
+        """Wait for everything `spawn`ed (e.g. AI processing)."""
+        while self.tasks:
+            await self.tasks.pop(0)
 
     def get_channel(self, channel_id: int) -> Any:
         return self.world.threads.get(channel_id)
@@ -159,6 +196,9 @@ class FakeBot:
 
     def sends(self, channel_id: int) -> list[SentMessage]:
         return self.world.channel_sends[channel_id]
+
+    def message(self, channel_id: int, message_id: int) -> SentMessage:
+        return self.world.messages[(channel_id, message_id)]
 
     def reactions_on(self, message_id: int) -> set[str]:
         return self.world.reactions[(self.settings.community_channel_id, message_id)]
@@ -201,11 +241,30 @@ def make_message(
     return msg
 
 
-def make_interaction(bot: FakeBot, user: MagicMock) -> MagicMock:
+def make_interaction(
+    bot: FakeBot,
+    user: MagicMock,
+    *,
+    channel: Any = None,
+    message: Any = None,
+) -> MagicMock:
     interaction = MagicMock()
     interaction.client = bot
     interaction.user = user
+    interaction.channel = channel
+    interaction.message = message
+    interaction.data = {}
     interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
+    interaction.response.edit_message = AsyncMock()
     interaction.followup.send = AsyncMock()
+
+    async def send_message(content: str | None = None, **kwargs: Any) -> None:
+        if channel is not None and not kwargs.get("ephemeral"):
+            interaction._sent = await channel.send(content, **kwargs)
+
+    async def original_response() -> Any:
+        return interaction._sent
+
+    interaction.response.send_message = AsyncMock(side_effect=send_message)
+    interaction.original_response = AsyncMock(side_effect=original_response)
     return interaction

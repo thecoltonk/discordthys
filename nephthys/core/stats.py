@@ -14,6 +14,7 @@ from nephthys.database.tables import Ticket
 from nephthys.database.tables import User
 
 WAITING_THRESHOLD = timedelta(days=3)
+UNCATEGORISED = "Uncategorised"
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,10 @@ class StatsSummary:
     median_first_response_minutes: float | None = None
     waiting_over_threshold: int = 0
     top_claimers: list[LeaderboardEntry] = field(default_factory=list)
+    # Tickets opened in the window, by category ("Uncategorised" for none)
+    by_category: dict[str, int] = field(default_factory=dict)
+    # The waiting-over-threshold tickets themselves (oldest first)
+    waiting_tickets: list[Ticket] = field(default_factory=list)
 
 
 def minutes_between(start: datetime, end: datetime) -> float:
@@ -65,6 +70,10 @@ async def calculate_stats(
         & (Ticket.created_at < until)
     )
     summary.opened = len(opened)
+    category_counts = Counter(t.category or UNCATEGORISED for t in opened)
+    summary.by_category = dict(
+        sorted(category_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    )
     response_times = first_response_minutes(opened)
     summary.median_first_response_minutes = (
         median(response_times) if response_times else None
@@ -105,5 +114,6 @@ async def calculate_stats(
     waiting = await get_unanswered_tickets(
         last_message_before=until - WAITING_THRESHOLD
     )
-    summary.waiting_over_threshold = len([t for t in waiting if t.surface == surface])
+    summary.waiting_tickets = [t for t in waiting if t.surface == surface]
+    summary.waiting_over_threshold = len(summary.waiting_tickets)
     return summary

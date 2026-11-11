@@ -1,15 +1,23 @@
+import asyncio
 import logging
 import sys
+from collections.abc import Coroutine
 from datetime import datetime
 from datetime import timedelta
 from datetime import UTC
 from typing import Any
+from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import discord
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from discord.ext import commands
 
 from nephthys.config import Settings
+
+if TYPE_CHECKING:
+    from nephthys.ai.client import ChatClient
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +29,7 @@ discord.VoiceClient.warn_dave = False
 EXTENSIONS: list[str] = [
     "nephthys.cogs.community_help",
     "nephthys.cogs.staff",
+    "nephthys.cogs.ticket_commands",
 ]
 
 
@@ -51,6 +60,11 @@ class SupportBot(commands.Bot):
         self.scheduler = AsyncIOScheduler(timezone=settings.timezone)
         self.db_ready = False
         self.announced_online = False
+        self.background_tasks: set[asyncio.Task[None]] = set()
+
+        from nephthys.ai.client import build_client
+
+        self.ai_client: ChatClient | None = build_client(settings)
 
     @property
     def guild_object(self) -> discord.Object:
@@ -77,6 +91,20 @@ class SupportBot(commands.Bot):
         synced = await self.tree.sync(guild=self.guild_object)
         log.info(f"Synced {len(synced)} application commands to guild")
 
+        self.configure_jobs()
+        self.scheduler.start()
+        log.info(
+            f"AI: {'on' if self.ai_client else 'off'}"
+            + (
+                f" (model={self.settings.ai_model}, answers={self.settings.ai_answer_mode},"
+                f" categorise={self.settings.ai_categorize})"
+                if self.ai_client
+                else ""
+            )
+        )
+
+    def configure_jobs(self) -> None:
+        """Register scheduled jobs (stale auto-close, daily summary)."""
         if self.settings.stale_ticket_days:
             self.scheduler.add_job(
                 self.run_stale_close,
@@ -86,7 +114,41 @@ class SupportBot(commands.Bot):
                 coalesce=True,
                 next_run_time=datetime.now(UTC) + timedelta(minutes=2),
             )
-        self.scheduler.start()
+        if self.settings.daily_summary_enabled and self.settings.staff_channel_id:
+            self.scheduler.add_job(
+                self.run_daily_summary,
+                CronTrigger(
+                    hour=self.settings.daily_summary_hour,
+                    minute=self.settings.daily_summary_minute,
+                    timezone=ZoneInfo(self.settings.daily_summary_timezone),
+                ),
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=3600,
+            )
+
+    def spawn(self, coro: Coroutine[Any, Any, None], *, name: str) -> None:
+        """Run work in the background (e.g. AI) without blocking event handlers.
+        Failures are logged and reported to the log channel."""
+
+        async def guarded() -> None:
+            try:
+                await coro
+            except Exception as e:
+                log.exception(f"Background task {name} failed")
+                from nephthys.discord_ops.heartbeat import send_heartbeat
+
+                await send_heartbeat(self, f"❌ Background task `{name}` failed: `{e}`")
+
+        task = asyncio.create_task(guarded(), name=name)
+        self.background_tasks.add(task)
+        task.add_done_callback(self.background_tasks.discard)
+
+    async def run_daily_summary(self) -> None:
+        from nephthys.tasks.daily_summary import send_daily_summary
+
+        await self.wait_until_ready()
+        await send_daily_summary(self)
 
     async def run_stale_close(self) -> None:
         from nephthys.tasks.close_stale import close_stale_tickets
@@ -114,6 +176,8 @@ class SupportBot(commands.Bot):
         )
 
     async def close(self) -> None:
+        for task in list(self.background_tasks):
+            task.cancel()
         if self.scheduler.running:
             self.scheduler.shutdown(wait=False)
         await super().close()

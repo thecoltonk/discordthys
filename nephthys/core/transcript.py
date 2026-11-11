@@ -35,18 +35,32 @@ class Transcript(BaseModel):
     not_resolved: str = "this ticket isn't resolved, so there's nothing to re-open."
     ticket_missing: str = "i couldn't find a ticket for this thread."
 
-    # --- Macros ----------------------------------------------------------
-    faq_macro: str = "check out the FAQ, it might have your answer: {faq_url}"
-    faq_macro_unconfigured: str = "the FAQ link hasn't been set up yet (FAQ_URL)."
-    ip_macro: str = "the server address is **{server_address}** — see you in game!"
-    ip_macro_unconfigured: str = (
-        "the server address hasn't been set up yet (SERVER_ADDRESS)."
+    # --- Staff slash commands (/faq, /ip, /resolve, /reopen) ----------
+    faq_reply: str = "check out the FAQ, it might have your answer: {faq_url}"
+    faq_unconfigured: str = "the FAQ link hasn't been set up yet (FAQ_URL)."
+    ip_reply: str = "the server address is **{server_address}** — see you in game!"
+    ip_unconfigured: str = "the server address hasn't been set up yet (SERVER_ADDRESS)."
+    staff_only: str = "this command is for staff only."
+    not_a_ticket_thread: str = "use this inside a #community-help ticket thread."
+    command_resolved: str = "resolved ✅"
+    command_reopened: str = "re-opened 🔄"
+
+    # --- AI answers ------------------------------------------------------
+    ai_public_title: str = "🤖 Automated answer"
+    ai_public_footer: str = (
+        "I'm a bot answering from the Cloudsail knowledge base, and I can be wrong. "
+        "Sources: {sources}"
     )
-    unknown_macro: str = "`?{name}` isn't a macro. available: {available}"
-    macro_wrong_state: str = "`?{name}` can't be used on a resolved ticket."
+    ai_fixed_button: str = "This fixed it"
+    ai_need_human_button: str = "I still need a human"
+    ai_need_human_reply: str = (
+        "no worries — a human will be along to help soon! feel free to add any "
+        "extra details while you wait."
+    )
+    ai_already_answered: str = "this has already been answered, thanks!"
 
     # --- Staff -----------------------------------------------------------
-    staff_feed: str = "🆕 **#{id}** {title} — {user} · {link}"
+    category_set: str = "category set to **{category}**"
 
     def faq_text(self, faq_url: str) -> str:
         return f"[FAQ]({faq_url})" if faq_url else "FAQ"

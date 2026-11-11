@@ -9,10 +9,16 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
+from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
 VALID_ARCHIVE_DURATIONS = (60, 1440, 4320, 10080)
+
+DEFAULT_CATEGORIES = ("Gameplay", "Bug", "Claims", "Economy", "Store", "Other")
+AI_ANSWER_MODES = ("off", "shadow", "public")
+DEFAULT_AI_BASE_URL = "https://ai.hackclub.com/proxy/v1"
 
 DEFAULT_STICKY_TITLE = "How #community-help works"
 DEFAULT_STICKY_BODY = (
@@ -56,6 +62,25 @@ class Settings:
     sticky_body: str
     timezone: str
 
+    # Categories (#community-help)
+    ticket_categories: tuple[str, ...]
+
+    # Daily summary
+    daily_summary_enabled: bool
+    daily_summary_hour: int
+    daily_summary_minute: int
+    daily_summary_timezone: str
+
+    # AI (optional: disabled when ai_api_key is unset)
+    ai_api_key: str | None
+    ai_base_url: str
+    ai_model: str | None
+    ai_categorize: bool
+    ai_answer_mode: str  # off | shadow | public
+    ai_answer_min_confidence: float
+    ai_timeout_seconds: float
+    kb_dir: str
+
     # Runtime
     environment: str
     port: int
@@ -68,6 +93,18 @@ class Settings:
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def ai_enabled(self) -> bool:
+        return bool(self.ai_api_key and self.ai_model)
+
+    @property
+    def ai_categorize_enabled(self) -> bool:
+        return self.ai_enabled and self.ai_categorize
+
+    @property
+    def ai_answers_enabled(self) -> bool:
+        return self.ai_enabled and self.ai_answer_mode != "off"
 
 
 def _parse_bool(name: str, value: str) -> bool:
@@ -150,6 +187,59 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         errors.append(f"STICKY_DEBOUNCE_SECONDS must be a number, got {debounce_raw!r}")
         debounce = 5.0
 
+    categories_raw = get("TICKET_CATEGORIES")
+    categories = (
+        tuple(dict.fromkeys(c.strip() for c in categories_raw.split(",") if c.strip()))
+        if categories_raw
+        else DEFAULT_CATEGORIES
+    )
+    if not 1 <= len(categories) <= 25:
+        # Discord select menus allow at most 25 options
+        errors.append("TICKET_CATEGORIES must list between 1 and 25 categories")
+    if any(len(c) > 100 for c in categories):
+        errors.append("Each TICKET_CATEGORIES entry must be at most 100 characters")
+
+    summary_time = get("DAILY_SUMMARY_TIME", "09:00") or "09:00"
+    summary_hour, summary_minute = 9, 0
+    try:
+        hh, mm = summary_time.split(":")
+        summary_hour, summary_minute = int(hh), int(mm)
+        if not (0 <= summary_hour <= 23 and 0 <= summary_minute <= 59):
+            raise ValueError
+    except ValueError:
+        errors.append(f"DAILY_SUMMARY_TIME must be HH:MM (24h), got {summary_time!r}")
+    summary_tz = get("DAILY_SUMMARY_TIMEZONE", "America/Phoenix") or "America/Phoenix"
+    try:
+        ZoneInfo(summary_tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        errors.append(f"DAILY_SUMMARY_TIMEZONE is not a known timezone: {summary_tz!r}")
+
+    ai_api_key = get("AI_API_KEY")
+    ai_model = get("AI_MODEL")
+    if ai_api_key and not ai_model:
+        errors.append("AI_MODEL is required when AI_API_KEY is set")
+    ai_mode = (get("AI_ANSWER_MODE", "shadow") or "shadow").lower()
+    if ai_mode not in AI_ANSWER_MODES:
+        errors.append(
+            f"AI_ANSWER_MODE must be one of {AI_ANSWER_MODES}, got {ai_mode!r}"
+        )
+    min_conf_raw = get("AI_ANSWER_MIN_CONFIDENCE", "0.8") or "0.8"
+    try:
+        min_conf = float(min_conf_raw)
+        if not 0 <= min_conf <= 1:
+            raise ValueError
+    except ValueError:
+        errors.append(
+            f"AI_ANSWER_MIN_CONFIDENCE must be between 0 and 1, got {min_conf_raw!r}"
+        )
+        min_conf = 0.8
+    ai_timeout_raw = get("AI_TIMEOUT_SECONDS", "30") or "30"
+    try:
+        ai_timeout = max(1.0, float(ai_timeout_raw))
+    except ValueError:
+        errors.append(f"AI_TIMEOUT_SECONDS must be a number, got {ai_timeout_raw!r}")
+        ai_timeout = 30.0
+
     # OPEN_REACTION may be explicitly set to empty to disable the 🤔 marker
     open_reaction = env.get("OPEN_REACTION", "🤔").strip() or None
 
@@ -175,6 +265,21 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         # Allow literal "\n" in .env files for multi-line bodies
         .replace("\\n", "\n"),
         timezone=get("TIMEZONE", "Europe/London") or "Europe/London",
+        ticket_categories=categories,
+        daily_summary_enabled=boolean("DAILY_SUMMARY_ENABLED", True),
+        daily_summary_hour=summary_hour,
+        daily_summary_minute=summary_minute,
+        daily_summary_timezone=summary_tz,
+        ai_api_key=ai_api_key,
+        ai_base_url=(
+            get("AI_BASE_URL", DEFAULT_AI_BASE_URL) or DEFAULT_AI_BASE_URL
+        ).rstrip("/"),
+        ai_model=ai_model,
+        ai_categorize=boolean("AI_CATEGORIZE", True),
+        ai_answer_mode=ai_mode,
+        ai_answer_min_confidence=min_conf,
+        ai_timeout_seconds=ai_timeout,
+        kb_dir=get("KB_DIR", "kb") or "kb",
         environment=get("ENVIRONMENT", "development") or "development",
         port=integer("PORT", 3000) or 3000,
         log_level=get("LOG_LEVEL", "INFO") or "INFO",

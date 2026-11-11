@@ -90,4 +90,197 @@ def reopen_view(ticket_id: int) -> discord.ui.View:
     return view
 
 
-DYNAMIC_ITEMS = (ResolveButton, ReopenButton)
+# ---------------------------------------------------------------------------
+# Staff ticket card: category select
+# ---------------------------------------------------------------------------
+
+
+class CategorySelect(
+    discord.ui.DynamicItem[discord.ui.Select],
+    template=r"cs:cat:(?P<ticket_id>[0-9]+)",
+):
+    def __init__(
+        self,
+        ticket_id: int,
+        categories: tuple[str, ...] = ("Other",),
+        current: str | None = None,
+    ) -> None:
+        self.ticket_id = ticket_id
+        super().__init__(
+            discord.ui.Select(
+                custom_id=f"cs:cat:{ticket_id}",
+                placeholder="Set a category…",
+                min_values=1,
+                max_values=1,
+                options=[
+                    discord.SelectOption(label=c, value=c, default=(c == current))
+                    for c in categories
+                ],
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction[Any],
+        item: discord.ui.Item[Any],
+        match: re.Match[str],
+        /,
+    ) -> "CategorySelect":
+        categories = getattr(
+            getattr(interaction.client, "settings", None), "ticket_categories", ()
+        )
+        return cls(int(match["ticket_id"]), tuple(categories) or ("Other",))
+
+    async def callback(self, interaction: discord.Interaction[Any]) -> None:
+        from nephthys.discord_ops.flows import set_category_from_interaction
+
+        values = (interaction.data or {}).get("values") or self.item.values
+        await set_category_from_interaction(interaction, self.ticket_id, values[0])
+
+
+# ---------------------------------------------------------------------------
+# AI answers
+# ---------------------------------------------------------------------------
+
+
+class AIFeedbackButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"cs:aifb:(?P<suggestion_id>[0-9]+):(?P<verdict>up|down)",
+):
+    """Shadow mode: staff rate a suggestion 👍 / 👎."""
+
+    def __init__(self, suggestion_id: int, verdict: str) -> None:
+        self.suggestion_id = suggestion_id
+        self.verdict = verdict
+        up = verdict == "up"
+        super().__init__(
+            discord.ui.Button(
+                label="Helpful" if up else "Not helpful",
+                emoji="👍" if up else "👎",
+                style=discord.ButtonStyle.success if up else discord.ButtonStyle.danger,
+                custom_id=f"cs:aifb:{suggestion_id}:{verdict}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction[Any],
+        item: discord.ui.Item[Any],
+        match: re.Match[str],
+        /,
+    ) -> "AIFeedbackButton":
+        return cls(int(match["suggestion_id"]), match["verdict"])
+
+    async def callback(self, interaction: discord.Interaction[Any]) -> None:
+        from nephthys.discord_ops.ai_flow import shadow_feedback_from_interaction
+
+        await shadow_feedback_from_interaction(
+            interaction, self.suggestion_id, helpful=self.verdict == "up"
+        )
+
+
+class AIFixedButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"cs:aifix:(?P<suggestion_id>[0-9]+)",
+):
+    """Public mode: "This fixed it" (resolves the ticket)."""
+
+    def __init__(self, suggestion_id: int) -> None:
+        self.suggestion_id = suggestion_id
+        super().__init__(
+            discord.ui.Button(
+                label=TRANSCRIPT.ai_fixed_button,
+                emoji="✅",
+                style=discord.ButtonStyle.success,
+                custom_id=f"cs:aifix:{suggestion_id}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction[Any],
+        item: discord.ui.Item[Any],
+        match: re.Match[str],
+        /,
+    ) -> "AIFixedButton":
+        return cls(int(match["suggestion_id"]))
+
+    async def callback(self, interaction: discord.Interaction[Any]) -> None:
+        from nephthys.discord_ops.ai_flow import public_outcome_from_interaction
+
+        await public_outcome_from_interaction(
+            interaction, self.suggestion_id, fixed=True
+        )
+
+
+class AINeedHumanButton(
+    discord.ui.DynamicItem[discord.ui.Button],
+    template=r"cs:aihuman:(?P<suggestion_id>[0-9]+)",
+):
+    """Public mode: "I still need a human"."""
+
+    def __init__(self, suggestion_id: int) -> None:
+        self.suggestion_id = suggestion_id
+        super().__init__(
+            discord.ui.Button(
+                label=TRANSCRIPT.ai_need_human_button,
+                emoji="🙋",
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"cs:aihuman:{suggestion_id}",
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: discord.Interaction[Any],
+        item: discord.ui.Item[Any],
+        match: re.Match[str],
+        /,
+    ) -> "AINeedHumanButton":
+        return cls(int(match["suggestion_id"]))
+
+    async def callback(self, interaction: discord.Interaction[Any]) -> None:
+        from nephthys.discord_ops.ai_flow import public_outcome_from_interaction
+
+        await public_outcome_from_interaction(
+            interaction, self.suggestion_id, fixed=False
+        )
+
+
+def staff_card_view(
+    ticket_id: int, categories: tuple[str, ...], current: str | None, thread_url: str
+) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    view.add_item(CategorySelect(ticket_id, categories, current))
+    view.add_item(
+        discord.ui.Button(label="Open thread", url=thread_url, emoji="🧵", row=1)
+    )
+    return view
+
+
+def shadow_feedback_view(suggestion_id: int) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    view.add_item(AIFeedbackButton(suggestion_id, "up"))
+    view.add_item(AIFeedbackButton(suggestion_id, "down"))
+    return view
+
+
+def public_answer_view(suggestion_id: int) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    view.add_item(AIFixedButton(suggestion_id))
+    view.add_item(AINeedHumanButton(suggestion_id))
+    return view
+
+
+DYNAMIC_ITEMS = (
+    ResolveButton,
+    ReopenButton,
+    CategorySelect,
+    AIFeedbackButton,
+    AIFixedButton,
+    AINeedHumanButton,
+)

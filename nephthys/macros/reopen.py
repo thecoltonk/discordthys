@@ -1,24 +1,21 @@
-from nephthys.actions.reopen import reopen
+from nephthys.discord_ops import flows
+from nephthys.errors.errors import PermissionDenied
 from nephthys.errors.errors import TicketNotClosedError
+from nephthys.errors.errors import TicketNotFoundError
 from nephthys.macros.types import Macro
-from nephthys.utils.env import env
+from nephthys.macros.types import MacroContext
 
 
 class Reopen(Macro):
     name = "reopen"
-    aliases = ["unresolve", "open"]
+    aliases = ("unresolve", "open")
+    description = "re-open a resolved ticket"
     can_run_on_closed = True
 
-    async def run(self, ticket, helper, **kwargs):
-        """
-        A simple macro to reopen a closed ticket
-        """
+    async def run(self, ctx: MacroContext) -> None:
         try:
-            await reopen(ticket, helper, env.slack_client)
-        except TicketNotClosedError:
-            await env.slack_client.chat_postEphemeral(
-                channel=env.slack_help_channel,
-                thread_ts=ticket.msg_ts,
-                user=helper.slack_id,
-                text="Cannot reopen — this ticket isn't resolved!",
+            await flows.reopen_ticket(
+                ctx.bot, ctx.ticket.id, ctx.actor, ctx.message.author, source="macro"
             )
+        except (PermissionDenied, TicketNotClosedError, TicketNotFoundError) as e:
+            await ctx.error(flows.refusal_message(e) or str(e))

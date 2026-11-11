@@ -1,33 +1,22 @@
-from nephthys.actions.resolve import resolve
-from nephthys.database.enums import TicketStatus
-from nephthys.database.tables import Ticket
-from nephthys.database.tables import User
+from nephthys.discord_ops import flows
+from nephthys.errors.errors import PermissionDenied
+from nephthys.errors.errors import TicketAlreadyClosedError
+from nephthys.errors.errors import TicketNotFoundError
 from nephthys.macros.types import Macro
-from nephthys.utils.env import env
-from nephthys.utils.logging import send_heartbeat
+from nephthys.macros.types import MacroContext
 
 
 class Resolve(Macro):
     name = "resolve"
-    aliases = ["close"]
+    aliases = ("close", "resolved")
+    description = "mark as resolved"
+    # Let it run so staff get the "already resolved" message
+    can_run_on_closed = True
 
-    async def run(self, ticket: Ticket, helper: User, **kwargs) -> None:
-        """
-        Resolve the ticket with the given arguments.
-        """
-        await send_heartbeat(
-            f"Resolving ticket with ts {ticket.msg_ts} by <@{helper.slack_id}>.",
-            messages=[f"Ticket ID: {ticket.id}", f"Helper ID: {helper.id}"],
-        )
-        if not ticket.status == TicketStatus.CLOSED:
-            await resolve(
-                ts=ticket.msg_ts,
-                resolver=helper.slack_id,
-                client=env.slack_client,
+    async def run(self, ctx: MacroContext) -> None:
+        try:
+            await flows.resolve_ticket(
+                ctx.bot, ctx.ticket.id, ctx.actor, ctx.message.author, source="macro"
             )
-        else:
-            await send_heartbeat(
-                f"Ticket with ts {ticket.msg_ts} is already closed. No action taken. (Trying to resolve for <@{helper.slack_id}>).",
-                messages=[f"Ticket ID: {ticket.id}", f"Helper ID: {helper.id}"],
-            )
-            return
+        except (PermissionDenied, TicketAlreadyClosedError, TicketNotFoundError) as e:
+            await ctx.error(flows.refusal_message(e) or str(e))

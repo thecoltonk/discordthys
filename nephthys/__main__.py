@@ -1,116 +1,87 @@
 import asyncio
-import contextlib
 import logging
-from datetime import datetime
+import sys
 
-import matplotlib
-import uvicorn
-from aiohttp import ClientSession
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from dotenv import load_dotenv
-from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
-from starlette.applications import Starlette
-
-from nephthys.tasks.close_stale import close_stale_tickets
-from nephthys.tasks.daily_stats import send_daily_stats
-from nephthys.tasks.fulfillment_reminder import send_fulfillment_reminder
-from nephthys.tasks.update_helpers import update_helpers
-from nephthys.utils.delete_thread import process_queue
-from nephthys.utils.env import env
+from nephthys.config import ConfigError
+from nephthys.config import get_settings
+from nephthys.config import Settings
 from nephthys.utils.logging import parse_level_name
-from nephthys.utils.logging import send_heartbeat
 from nephthys.utils.logging import setup_otel_logging
-from nephthys.utils.slack import app as slack_app
-from piccolo_conf import DB
-
-load_dotenv()
-
-try:
-    import uvloop
-
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-except ImportError:
-    pass
-
-logging.basicConfig(level=logging.NOTSET)
-logging.root.setLevel(logging.NOTSET)
-stderr_logger = logging.StreamHandler()
-stderr_logger.setLevel(parse_level_name(env.log_level_stderr))
-stderr_logger.setFormatter(logging.Formatter(logging.BASIC_FORMAT))
-logging.getLogger().handlers = [stderr_logger]
-if env.otel_logs_url:
-    setup_otel_logging()
-
-# Prevent matplotlib from trying to open a window when generating graphs
-matplotlib.use("agg")
 
 
-@contextlib.asynccontextmanager
-async def main(_app: Starlette):
-    await send_heartbeat(":neodog_nom_verified: Bot is online!")
-
-    async with ClientSession() as session:
-        env.session = session
-        await DB.start_connection_pool()
-
-        scheduler = AsyncIOScheduler(timezone="Europe/London")
-        if env.daily_summary:
-            scheduler.add_job(send_daily_stats, "cron", hour=0, minute=0)
-
-        scheduler.add_job(
-            send_fulfillment_reminder,
-            "cron",
-            hour=14,
-            minute=0,
-            day_of_week="mon-fri",
-            timezone="Europe/London",
+def configure_logging(settings: Settings) -> None:
+    handler = logging.StreamHandler()
+    handler.setLevel(parse_level_name(settings.log_level))
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    root.handlers = [handler]
+    # discord.py is very chatty at DEBUG
+    logging.getLogger("discord").setLevel(logging.INFO)
+    if settings.otel_logs_url:
+        setup_otel_logging(
+            endpoint=settings.otel_logs_url,
+            service_name=settings.otel_service_name,
+            environment=settings.environment,
+            basic_auth=settings.otel_logs_basic_auth,
+            level=settings.log_level_otel,
         )
 
-        if env.stale_ticket_days:
-            scheduler.add_job(
-                close_stale_tickets,
-                "interval",
-                hours=1,
-                max_instances=1,
-                next_run_time=datetime.now(),
-            )
-        else:
-            logging.debug("Stale ticket closing has not been configured")
-        scheduler.start()
 
-        delete_msg_task = asyncio.create_task(process_queue())
-        await update_helpers()
-        handler = None
-        if env.slack_app_token:
-            if env.environment == "production":
-                logging.warning(
-                    "You are currently running Socket mode in production. This is NOT RECOMMENDED - you should set up a proper HTTP server with a request URL."
-                )
+async def run(settings: Settings) -> None:
+    from nephthys.bot import SupportBot
+    from nephthys.web.health import HealthServer
 
-            handler = AsyncSocketModeHandler(slack_app, env.slack_app_token)
-            logging.info("Starting Socket Mode handler")
-            await handler.connect_async()
-
-        logging.info(f"Starting Uvicorn on port {env.port}")
-
-        yield
-        await DB.close_connection_pool()
-        scheduler.shutdown()
-        delete_msg_task.cancel()
-
-        if handler:
-            logging.info("Stopping Socket Mode handler")
-            await handler.close_async()
+    bot = SupportBot(settings)
+    health = HealthServer(bot, settings.port)
+    await health.start()
+    try:
+        async with bot:
+            await bot.start(settings.discord_token)
+    finally:
+        await health.stop()
 
 
-def start():
-    uvicorn.run(
-        "nephthys.utils.starlette:app",
-        host="0.0.0.0",
-        port=env.port,
-        log_level="info" if env.environment != "production" else "warning",
-        reload=env.environment == "development",
-    )
+def start() -> None:
+    try:
+        settings = get_settings()
+    except ConfigError as e:
+        print(e, file=sys.stderr)
+        sys.exit(2)
+    configure_logging(settings)
+
+    try:
+        import uvloop
+
+        runner = uvloop.run
+    except ImportError:
+        runner = asyncio.run
+
+    import aiohttp
+    import discord
+
+    try:
+        runner(run(settings))
+    except KeyboardInterrupt:
+        pass
+    except discord.LoginFailure:
+        logging.critical(
+            "Discord rejected DISCORD_TOKEN. Reset the bot token and update .env."
+        )
+        sys.exit(1)
+    except discord.PrivilegedIntentsRequired:
+        logging.critical(
+            "The Message Content intent is disabled. Enable it in the Discord developer "
+            "portal (your app → Bot → Privileged Gateway Intents) and restart."
+        )
+        sys.exit(1)
+    except (aiohttp.ClientConnectionError, OSError) as e:
+        logging.critical(
+            f"Can't reach Discord or the database: {e}. Will exit and let the container restart."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -1,17 +1,17 @@
 #!/usr/bin/env sh
-echo "[entrypoint/INFO] Initialising"
 set -eu
+echo "[entrypoint] Initialising"
 
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
-  echo "[entrypoint/INFO] Running migrations"
   if [ -z "${DATABASE_URL:-}" ]; then
-    echo "[entrypoint/ERROR] DATABASE_URL is not set"
+    echo "[entrypoint] DATABASE_URL is not set" >&2
     exit 1
   fi
-  piccolo migrations forwards nephthys --trace
+  echo "[entrypoint] Running migrations"
+  piccolo migrations forwards nephthys
 else
-  echo "[entrypoint/WARN] NOT running migrations"
+  echo "[entrypoint] Skipping migrations (RUN_MIGRATIONS=${RUN_MIGRATIONS})"
 fi
 
-echo "[entrypoint/INFO] Starting Nephthys"
+echo "[entrypoint] Starting Cloudsail Support"
 exec nephthys

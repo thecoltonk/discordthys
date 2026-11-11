@@ -1,87 +1,86 @@
-from typing import Any
+"""Staff `?macros`, typed as the first word of a message in a ticket thread.
 
+`?ticket` (escalate to a private #tickets thread) arrives with #tickets in v2.
+"""
+
+import logging
+import re
+from typing import TYPE_CHECKING
+
+import discord
+
+from nephthys.core import tickets
+from nephthys.core.permissions import Actor
+from nephthys.core.transcript import TRANSCRIPT
 from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import Ticket
-from nephthys.database.tables import User
 from nephthys.macros.faq import FAQ
-from nephthys.macros.fraud import Fraud
-from nephthys.macros.hackatime import Hackatime
-from nephthys.macros.hello_world import HelloWorld
-from nephthys.macros.identity import Identity
-from nephthys.macros.max_tokens import MaxTokens
-from nephthys.macros.no_money import NoMoney
+from nephthys.macros.ip import IP
 from nephthys.macros.reopen import Reopen
 from nephthys.macros.resolve import Resolve
-from nephthys.macros.search import Search
-from nephthys.macros.shipcertqueue import ShipCertQueue
-from nephthys.macros.shipwrights import Shipwrights
-from nephthys.macros.stale import Stale
-from nephthys.macros.team_tag import TeamTag
-from nephthys.macros.thread import Thread
-from nephthys.macros.trigger_daily_stats import DailyStats
-from nephthys.macros.trigger_fulfillment_reminder import FulfillmentReminder
 from nephthys.macros.types import Macro
-from nephthys.macros.vote_quality import VoteQuality
-from nephthys.macros.vote_queue import VoteQueue
-from nephthys.utils.env import env
-from nephthys.utils.logging import send_heartbeat
+from nephthys.macros.types import MacroContext
+from nephthys.utils.metrics import MACROS_RUN
+from nephthys.utils.metrics import TICKETS_CLAIMED
 
-macro_list: list[type[Macro]] = [
-    Resolve,
-    HelloWorld,
-    FAQ,
-    Identity,
-    Fraud,
-    ShipCertQueue,
-    Thread,
-    Reopen,
-    DailyStats,
-    FulfillmentReminder,
-    Shipwrights,
-    TeamTag,
-    Hackatime,
-    VoteQuality,
-    VoteQueue,
-    MaxTokens,
-    NoMoney,
-    Stale,
-    Search,
-]
+if TYPE_CHECKING:
+    from nephthys.bot import SupportBot
 
-macros = [macro() for macro in macro_list]
+log = logging.getLogger(__name__)
+
+MACROS: list[Macro] = [FAQ(), IP(), Resolve(), Reopen()]
+
+MACRO_PATTERN = re.compile(
+    r"^\?([a-z][a-z0-9_]*)(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL
+)
+
+
+def find_macro(name: str) -> Macro | None:
+    name = name.lower()
+    return next((m for m in MACROS if name in m.all_names()), None)
+
+
+def parse_macro(text: str) -> tuple[str, str] | None:
+    """`"?faq  extra"` -> `("faq", "extra")`; non-macros -> None."""
+    match = MACRO_PATTERN.match(text.strip())
+    if not match:
+        return None
+    return match.group(1).lower(), (match.group(2) or "").strip()
 
 
 async def run_macro(
-    name: str, ticket: Ticket, helper: User, macro_ts: str, text: str, **kwargs: Any
+    bot: "SupportBot", message: discord.Message, ticket: Ticket, actor: Actor
 ) -> bool:
-    """
-    Run the macro with the given name and arguments.
-    """
+    """Run a staff macro. Returns True if the message was a macro invocation
+    (handled, even if it failed), False if it's an ordinary message."""
+    if not actor.is_staff:
+        return False
+    parsed = parse_macro(message.content)
+    if parsed is None:
+        return False
+    name, args = parsed
+    ctx = MacroContext(bot=bot, message=message, ticket=ticket, actor=actor, args=args)
 
-    async def error_msg(msg: str):
-        return await env.slack_client.chat_postEphemeral(
-            channel=env.slack_help_channel,
-            thread_ts=ticket.msg_ts,
-            user=helper.slack_id,
-            text=msg,
-        )
+    macro = find_macro(name)
+    if macro is None:
+        available = ", ".join(f"`?{m.name}`" for m in MACROS)
+        await ctx.error(TRANSCRIPT.unknown_macro.format(name=name, available=available))
+        return True
+    if ticket.status == TicketStatus.CLOSED and not macro.can_run_on_closed:
+        await ctx.error(TRANSCRIPT.macro_wrong_state.format(name=name))
+        return True
 
-    for macro in macros:
-        if name in macro.all_aliases():
-            if not macro.can_run_on_closed and ticket.status == TicketStatus.CLOSED:
-                await error_msg(f"`?{name}` cannot be run on a closed ticket.")
-                return False
-            new_kwargs = kwargs.copy()
-            new_kwargs["text"] = text
-            await macro.run(ticket, helper, **new_kwargs)
-            await env.slack_client.chat_delete(
-                channel=env.slack_help_channel, ts=macro_ts, token=env.slack_user_token
-            )
-            return True
+    # Remove the "?macro" message first (resolving archives the thread)
+    try:
+        await message.delete()
+    except discord.HTTPException as e:
+        log.warning(f"Couldn't delete macro invocation (Manage Messages?): {e}")
 
-    await error_msg(f"`?{name}` is not a valid macro.")
-    await send_heartbeat(
-        f"Macro {name} not found from <@{helper.slack_id}>.",
-        messages=[f"Ticket ID: {ticket.id}", f"Helper ID: {helper.id}"],
-    )
-    return False
+    await macro.run(ctx)
+    MACROS_RUN.labels(name=macro.name).inc()
+
+    if macro.counts_as_reply:
+        result = await tickets.record_message(ticket, actor, at=message.created_at)
+        if result.claimed:
+            TICKETS_CLAIMED.inc()
+    return True

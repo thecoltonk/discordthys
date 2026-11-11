@@ -1,0 +1,48 @@
+# Cloudsail Support: the bot plus its own Postgres.
+# Usage: cp .env.example .env, edit .env, then: docker compose up -d --build
+name: cloudsail-support
+
+services:
+  bot:
+    build: .
+    image: cloudsail-support:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Always use the bundled database over the private network
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cloudsail}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-cloudsail_support}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # /health and /metrics, reachable from the host only
+      - "127.0.0.1:${HEALTH_PORT:-3000}:${PORT:-3000}"
+    networks: [internal]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cloudsail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-cloudsail_support}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+    # No ports published: only the bot can reach the database
+
+volumes:
+  pgdata:
+
+networks:
+  internal:

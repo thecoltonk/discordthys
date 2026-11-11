@@ -1,4 +1,5 @@
 import logging
+import sys
 from typing import Any
 
 import discord
@@ -10,7 +11,9 @@ from nephthys.config import Settings
 log = logging.getLogger(__name__)
 
 # Cogs loaded on startup, in order
-EXTENSIONS: list[str] = []
+EXTENSIONS: list[str] = [
+    "nephthys.cogs.community_help",
+]
 
 
 def build_intents() -> discord.Intents:
@@ -52,6 +55,10 @@ class SupportBot(commands.Bot):
             self.db_ready = True
             log.info("Database connection pool started")
 
+        from nephthys.ui.buttons import DYNAMIC_ITEMS
+
+        self.add_dynamic_items(*DYNAMIC_ITEMS)
+
         for ext in EXTENSIONS:
             await self.load_extension(ext)
             log.info(f"Loaded extension {ext}")
@@ -65,6 +72,17 @@ class SupportBot(commands.Bot):
 
     async def on_ready(self) -> None:
         log.info(f"Logged in as {self.user} (id={self.user.id if self.user else '?'})")
+
+    async def on_error(self, event_method: str, /, *args: Any, **kwargs: Any) -> None:
+        log.exception(f"Unhandled error in {event_method}")
+        from nephthys.discord_ops.heartbeat import send_heartbeat
+
+        exc = sys.exc_info()[1]
+        await send_heartbeat(
+            self,
+            f"❌ Unhandled error in `{event_method}`: `{type(exc).__name__}: {exc}`",
+            ping=True,
+        )
 
     async def close(self) -> None:
         if self.scheduler.running:

@@ -43,7 +43,7 @@ class OverallStatsResult:
             "helpers_leaderboard": [
                 {
                     "id": entry["user"].id,
-                    "slack_id": entry["user"].slack_id,
+                    "discord_id": entry["user"].discord_id,
                     "count": entry["count"],
                 }
                 for entry in self.helpers_leaderboard
@@ -167,7 +167,7 @@ class DailyStatsResult:
             "helpers_leaderboard": [
                 {
                     "id": entry["user"].id,
-                    "slack_id": entry["user"].slack_id,
+                    "discord_id": entry["user"].discord_id,
                     "count": entry["count"],
                 }
                 for entry in self.helpers_leaderboard

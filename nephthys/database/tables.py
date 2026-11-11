@@ -1,192 +1,98 @@
+from piccolo.columns import BigInt
 from piccolo.columns import Boolean
-from piccolo.columns import Bytea
 from piccolo.columns import ForeignKey
-from piccolo.columns import LazyTableReference
-from piccolo.columns import M2M
 from piccolo.columns import OnDelete
 from piccolo.columns import OnUpdate
 from piccolo.columns import Serial
 from piccolo.columns import Text
 from piccolo.columns import Timestamptz
-from piccolo.columns import Varchar
 from piccolo.columns.defaults.timestamptz import TimestamptzNow
 from piccolo.table import Table
 
-from nephthys.database.enums import FeedbackRatingColumn
+from nephthys.database.enums import BotMessageKind
+from nephthys.database.enums import BotMessageKindColumn
 from nephthys.database.enums import TicketStatus
 from nephthys.database.enums import TicketStatusColumn
+from nephthys.database.enums import TicketSurface
+from nephthys.database.enums import TicketSurfaceColumn
 from nephthys.database.enums import UserType
 from nephthys.database.enums import UserTypeColumn
 
-
-def table_ref(table: str) -> LazyTableReference:
-    """Shorthand for the LazyTableReference constructor."""
-    return LazyTableReference(table, module_path=__name__)
+# NOTE: The schema is created by raw SQL in
+# `piccolo_migrations/cloudsail_001_init.py`. Keep the two in sync.
 
 
-class User(Table, tablename="User"):
-    id = Serial(primary_key=True, unique=True)
-    slack_id = Text(db_column_name="slackId", unique=True)
+class User(Table, tablename="app_user"):
+    """A Discord user we've seen (question author, helper or staff)."""
+
+    id = Serial(primary_key=True)
+    discord_id = BigInt(unique=True)
     username = Text(null=True)
-    admin = Boolean(default=False)
+    # Cached from the Staff role on each upsert; the role is the source of truth
     helper = Boolean(default=False)
-    app_home_last_view = Text(null=True, db_column_name="appHomeLastView")
-
-    team_tag_subscriptions = M2M(table_ref("UserTagSubscription"))
-
-    created_at = Timestamptz(default=TimestamptzNow(), db_column_name="createdAt")
+    admin = Boolean(default=False)
+    created_at = Timestamptz(default=TimestamptzNow())
 
 
-class Ticket(Table, tablename="Ticket"):
-    id = Serial(primary_key=True, unique=True)
+class Ticket(Table, tablename="ticket"):
+    id = Serial(primary_key=True)
+    surface = TicketSurfaceColumn(default=TicketSurface.COMMUNITY)
+
+    channel_id = BigInt()
+    message_id = BigInt(unique=True)
+    thread_id = BigInt(unique=True)
+
     title = Text(null=True)
-    description = Text()
+    description = Text(default="")
     status = TicketStatusColumn(default=TicketStatus.OPEN)
 
-    msg_ts = Text(db_column_name="msgTs", unique=True)
-    ticket_ts = Text(db_column_name="ticketTs", unique=True)
-
-    last_msg_at = Timestamptz(default=TimestamptzNow(), db_column_name="lastMsgAt")
-    last_msg_by = UserTypeColumn(default=UserType.AUTHOR, db_column_name="lastMsgBy")
+    last_msg_at = Timestamptz(default=TimestamptzNow())
+    last_msg_by = UserTypeColumn(default=UserType.AUTHOR)
 
     opened_by = ForeignKey(
-        references=User,
-        db_column_name="openedById",
-        on_delete=OnDelete.restrict,
-        on_update=OnUpdate.cascade,
+        references=User, on_delete=OnDelete.restrict, on_update=OnUpdate.cascade
     )
-    reopened_by = ForeignKey(
-        references=User,
-        db_column_name="reopenedById",
-        null=True,
-        on_delete=OnDelete.set_null,
-        on_update=OnUpdate.cascade,
-    )
-    closed_by = ForeignKey(
-        references=User,
-        db_column_name="closedById",
-        null=True,
-        on_delete=OnDelete.set_null,
-        on_update=OnUpdate.cascade,
-    )
+    # The claimer: the first staff member to reply. Also who gets credit.
     assigned_to = ForeignKey(
         references=User,
-        db_column_name="assignedToId",
         null=True,
         on_delete=OnDelete.set_null,
         on_update=OnUpdate.cascade,
     )
-
-    assigned_at = Timestamptz(null=True, db_column_name="assignedAt")
-    closed_at = Timestamptz(null=True, db_column_name="closedAt")
-    reopened_at = Timestamptz(null=True, db_column_name="reopenedAt")
-
-    team_tags = M2M(table_ref("TagsOnTickets"))
-    question_tag = ForeignKey(
-        references="QuestionTag",
-        db_column_name="questionTagId",
+    assigned_at = Timestamptz(null=True, default=None)
+    # Who actually resolved it (NULL when resolved automatically)
+    closed_by = ForeignKey(
+        references=User,
         null=True,
         on_delete=OnDelete.set_null,
         on_update=OnUpdate.cascade,
     )
-    category_tag = ForeignKey(
-        references="CategoryTag",
-        db_column_name="categoryTagId",
+    closed_at = Timestamptz(null=True, default=None)
+    reopened_by = ForeignKey(
+        references=User,
         null=True,
         on_delete=OnDelete.set_null,
         on_update=OnUpdate.cascade,
     )
-    created_at = Timestamptz(default=TimestamptzNow(), db_column_name="createdAt")
+    reopened_at = Timestamptz(null=True, default=None)
 
-
-class QuestionTag(Table, tablename="QuestionTag"):
-    id = Serial(primary_key=True, unique=True)
-    label = Text(unique=True)
-    created_at = Timestamptz(default=TimestamptzNow(), db_column_name="createdAt")
-
-
-class TeamTag(Table, tablename="Tag"):
-    id = Serial(primary_key=True, unique=True)
-    name = Text(unique=True)
-    created_at = Timestamptz(default=TimestamptzNow(), db_column_name="createdAt")
-
-    tag_subscriptions = M2M(table_ref("UserTagSubscription"))
-    tickets = M2M(table_ref("TagsOnTickets"))
-
-
-class CategoryTag(Table, tablename="CategoryTag"):
-    id = Serial(primary_key=True, unique=True)
-    name = Text(unique=True)
-    slug = Text(unique=True)
-    description = Text(null=True)
-    created_by = ForeignKey(references=User, db_column_name="createdById", null=True)
-    created_at = Timestamptz(default=TimestamptzNow(), db_column_name="createdAt")
-
-
-class BotMessage(Table, tablename="BotMessage"):
-    id = Serial(primary_key=True, unique=True)
-    ts = Text()
-    channel_id = Text(db_column_name="channelId")
-    ticket = ForeignKey(
-        references=Ticket, db_column_name="ticketId", on_delete=OnDelete.cascade
-    )
-    # Unimplemented: ts + channel_id should be unique together
-
-
-class TagsOnTickets(Table, tablename="tags_on_tickets"):
-    ticket = ForeignKey(
-        references=Ticket,
-        db_column_name="ticketId",
-        primary_key=True,
-        on_delete=OnDelete.cascade,
-    )
-    tag = ForeignKey(
-        references=TeamTag,
-        db_column_name="tagId",
-        primary_key=True,
-        on_delete=OnDelete.cascade,
-    )
-    assigned_at = Timestamptz(default=TimestamptzNow(), db_column_name="assignedAt")
-
-
-class UserTagSubscription(Table, tablename="user_tag_subscriptions"):
-    user = ForeignKey(
-        references=User,
-        db_column_name="userId",
-        primary_key=True,
-        on_delete=OnDelete.cascade,
-    )
-    tag = ForeignKey(
-        references=TeamTag,
-        db_column_name="tagId",
-        primary_key=True,
-        on_delete=OnDelete.cascade,
-    )
-    subscribed_at = Timestamptz(default=TimestamptzNow(), db_column_name="subscribedAt")
-
-
-class Feedback(Table, tablename="Feedback"):
-    id = Serial(primary_key=True, unique=True)
-    ticket = ForeignKey(
-        references=Ticket,
-        db_column_name="ticketId",
-    )
-    created_by = ForeignKey(
-        references=User,
-        db_column_name="createdById",
-    )
-    rating = FeedbackRatingColumn()
-    text = Varchar(null=True, length=32000)
-    created_at = Timestamptz(default=TimestamptzNow(), db_column_name="createdAt")
-
-
-class APIKey(Table, tablename="api_key"):
-    id = Serial(primary_key=True, unique=True)
-    user = ForeignKey(
-        references=User,
-        db_column_name="user_id",
-    )
-    label = Text()
-    api_key_hash = Bytea(unique=True)
-    api_key_censored = Text()
     created_at = Timestamptz(default=TimestamptzNow())
+
+
+class BotMessage(Table, tablename="bot_message"):
+    """A message the bot sent in a ticket thread."""
+
+    id = Serial(primary_key=True)
+    ticket = ForeignKey(references=Ticket, on_delete=OnDelete.cascade)
+    channel_id = BigInt()
+    message_id = BigInt()
+    kind = BotMessageKindColumn(default=BotMessageKind.AUTO_REPLY)
+    created_at = Timestamptz(default=TimestamptzNow())
+
+
+class StickyMessage(Table, tablename="sticky_message"):
+    """The current sticky "how it works" message in a channel."""
+
+    channel_id = BigInt(primary_key=True)
+    message_id = BigInt()
+    updated_at = Timestamptz(default=TimestamptzNow())

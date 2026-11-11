@@ -11,22 +11,6 @@ from opentelemetry.sdk._logs import LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
 
-from nephthys.utils.env import env
-
-
-async def send_heartbeat(heartbeat: str, messages: list[str] = []):
-    if env.slack_heartbeat_channel:
-        msg = await env.slack_client.chat_postMessage(
-            channel=env.slack_heartbeat_channel, text=heartbeat
-        )
-        if messages:
-            for message in messages:
-                await env.slack_client.chat_postMessage(
-                    channel=env.slack_heartbeat_channel,
-                    text=message,
-                    thread_ts=msg["ts"],
-                )
-
 
 def parse_level_name(level_name: str | int) -> int:
     if isinstance(level_name, int):
@@ -41,42 +25,38 @@ def parse_level_name(level_name: str | int) -> int:
         raise ValueError(f"Invalid log level: {level_name}")
 
 
-def setup_otel_logging():
-    """Set up OpenTelemetry logging, using env vars for configuration."""
+def setup_otel_logging(
+    *,
+    endpoint: str,
+    service_name: str,
+    environment: str,
+    basic_auth: str | None,
+    level: str | int,
+):
+    """Set up OpenTelemetry log export."""
     resource_attributes = {
-        "service.name": env.otel_service_name,
+        "service.name": service_name,
         "service.instance.id": uuid4().hex,
-        "deployment.environment": env.environment,
+        "deployment.environment": environment,
         "host.name": uname().nodename,
     }
     commit_hash = environ.get("SOURCE_COMMIT")
-    container_name = environ.get("COOLIFY_CONTAINER_NAME")
-    deployment_url = environ.get("COOLIFY_URL")
-    deployment_fqdn = environ.get("COOLIFY_FQDN")
     if commit_hash:
         resource_attributes["service.version"] = commit_hash
-    if container_name:
-        resource_attributes["container.name"] = container_name
-    if deployment_url:
-        resource_attributes["deployment.url"] = deployment_url
-    if deployment_fqdn:
-        resource_attributes["deployment.fqdn"] = deployment_fqdn
     provider = LoggerProvider(resource=Resource.create(resource_attributes))
     set_logger_provider(provider)
 
     auth_header = (
-        "Basic " + b64encode(env.otel_logs_basic_auth.encode()).decode()
-        if env.otel_logs_basic_auth
-        else None
+        "Basic " + b64encode(basic_auth.encode()).decode() if basic_auth else None
     )
     otlp_exporter = OTLPLogExporter(
-        endpoint=env.otel_logs_url,
+        endpoint=endpoint,
         headers={"Authorization": auth_header} if auth_header else {},
     )
     provider.add_log_record_processor(BatchLogRecordProcessor(otlp_exporter))
 
     # Don't allow DEBUG logs to be sent via HTTP, because that creates infinite recursive HTTP request logs
-    log_level = max(parse_level_name(env.log_level_otel), logging.INFO)
+    log_level = max(parse_level_name(level), logging.INFO)
     handler = LoggingHandler(level=log_level, logger_provider=provider)
 
     logging.getLogger().addHandler(handler)

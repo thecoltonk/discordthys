@@ -7,7 +7,6 @@ from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import Ticket
 from nephthys.database.tables import User
 from nephthys.utils.old_tickets import get_unanswered_tickets
-from nephthys.utils.ticket_methods import get_question_message_link
 
 
 class LeaderboardEntry(TypedDict):
@@ -19,7 +18,6 @@ class OldestUnansweredTicket(TypedDict):
     id: int
     created_at: str
     age_minutes: float
-    link: str
 
 
 @dataclass
@@ -113,7 +111,6 @@ async def calculate_overall_stats() -> OverallStatsResult:
             created_at=oldest_unanswered_ticket.created_at.isoformat(),
             age_minutes=(now - oldest_unanswered_ticket.created_at).total_seconds()
             / 60,
-            link=get_question_message_link(oldest_unanswered_ticket),
         )
         if oldest_unanswered_ticket
         else None

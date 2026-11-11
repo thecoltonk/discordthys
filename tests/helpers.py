@@ -11,6 +11,8 @@ BASE_ENV = {
     "DATABASE_URL": "postgresql://unused",
     "FAQ_URL": "https://example.com/faq",
     "SERVER_ADDRESS": "play.example.com",
+    # Tests opt in to the sticky explicitly (it schedules background reposts)
+    "STICKY_ENABLED": "false",
 }
 
 

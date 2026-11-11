@@ -31,3 +31,16 @@ async def test_extensions_load():
         await bot.load_extension(ext)
     assert bot.get_cog("CommunityHelp") is not None
     await bot.close()
+
+
+async def test_slash_commands_serialize():
+    from nephthys.bot import EXTENSIONS
+
+    bot = SupportBot(make_settings(), connect_db=False)
+    for ext in EXTENSIONS:
+        await bot.load_extension(ext)
+    payloads = {c.name: c.to_dict(bot.tree) for c in bot.tree.get_commands()}
+    assert set(payloads) == {"waiting", "stats"}
+    days = payloads["stats"]["options"][0]
+    assert days["min_value"] == 1 and days["max_value"] == 365
+    await bot.close()

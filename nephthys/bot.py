@@ -1,5 +1,8 @@
 import logging
 import sys
+from datetime import datetime
+from datetime import timedelta
+from datetime import UTC
 from typing import Any
 
 import discord
@@ -13,6 +16,7 @@ log = logging.getLogger(__name__)
 # Cogs loaded on startup, in order
 EXTENSIONS: list[str] = [
     "nephthys.cogs.community_help",
+    "nephthys.cogs.staff",
 ]
 
 
@@ -42,6 +46,7 @@ class SupportBot(commands.Bot):
         self.connect_db = connect_db
         self.scheduler = AsyncIOScheduler(timezone=settings.timezone)
         self.db_ready = False
+        self.announced_online = False
 
     @property
     def guild_object(self) -> discord.Object:
@@ -68,10 +73,30 @@ class SupportBot(commands.Bot):
         synced = await self.tree.sync(guild=self.guild_object)
         log.info(f"Synced {len(synced)} application commands to guild")
 
+        if self.settings.stale_ticket_days:
+            self.scheduler.add_job(
+                self.run_stale_close,
+                "interval",
+                hours=1,
+                max_instances=1,
+                coalesce=True,
+                next_run_time=datetime.now(UTC) + timedelta(minutes=2),
+            )
         self.scheduler.start()
+
+    async def run_stale_close(self) -> None:
+        from nephthys.tasks.close_stale import close_stale_tickets
+
+        await self.wait_until_ready()
+        await close_stale_tickets(self)
 
     async def on_ready(self) -> None:
         log.info(f"Logged in as {self.user} (id={self.user.id if self.user else '?'})")
+        if not self.announced_online:
+            self.announced_online = True
+            from nephthys.discord_ops.heartbeat import send_heartbeat
+
+            await send_heartbeat(self, "🟢 Cloudsail Support is online")
 
     async def on_error(self, event_method: str, /, *args: Any, **kwargs: Any) -> None:
         log.exception(f"Unhandled error in {event_method}")

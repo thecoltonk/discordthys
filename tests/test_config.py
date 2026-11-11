@@ -15,7 +15,8 @@ def test_minimal_settings():
     assert s.resolved_reaction == "✅"
     assert s.thread_auto_archive_minutes == 10080
     assert s.stale_ticket_days is None
-    assert s.sticky_enabled is True
+    assert s.sticky_enabled is False  # disabled in BASE_ENV
+    assert make_settings(STICKY_ENABLED="").sticky_enabled is True  # default
     assert "{faq_url}" in s.sticky_body
 
 

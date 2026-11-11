@@ -11,6 +11,7 @@ from nephthys.core.permissions import Actor
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import flows
 from nephthys.discord_ops import threads
+from nephthys.discord_ops.sticky import StickyManager
 from nephthys.macros import run_macro
 
 log = logging.getLogger(__name__)
@@ -20,6 +21,23 @@ class CommunityHelp(commands.Cog):
     def __init__(self, bot: SupportBot):
         self.bot = bot
         self.settings = bot.settings
+        self.sticky: StickyManager | None = (
+            StickyManager(
+                bot,
+                bot.settings.community_channel_id,
+                bot.settings.sticky_debounce_seconds,
+            )
+            if bot.settings.sticky_enabled
+            else None
+        )
+
+    @commands.Cog.listener()
+    async def on_ready(self) -> None:
+        if self.sticky is not None:
+            try:
+                await self.sticky.ensure()
+            except discord.HTTPException as e:
+                log.warning(f"Couldn't post the sticky message: {e}")
 
     def is_community_thread(self, channel: object) -> bool:
         return (
@@ -53,7 +71,9 @@ class CommunityHelp(commands.Cog):
         await flows.record_reply(self.bot, message, ticket, actor)
 
     async def after_new_question(self) -> None:
-        """Hook for work after a new question (the sticky repost lands here)."""
+        """Keep the sticky "how it works" message at the bottom."""
+        if self.sticky is not None:
+            self.sticky.schedule()
 
     async def maybe_run_macro(
         self, message: discord.Message, ticket: Ticket, actor: Actor

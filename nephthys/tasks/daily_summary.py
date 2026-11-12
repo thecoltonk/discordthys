@@ -16,6 +16,7 @@ from nephthys.core.stats import StatsSummary
 from nephthys.core.stats import WAITING_THRESHOLD
 from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
+from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.formatting import categories_text
 from nephthys.discord_ops.formatting import csat_text
 from nephthys.discord_ops.formatting import FIELD_MAX
@@ -112,13 +113,14 @@ def build_summary_embed(
     surface: TicketSurface = TicketSurface.COMMUNITY,
 ) -> discord.Embed:
     copy = get_copy()
-    embed = discord.Embed(
-        title=copy.summary.title.format(surface=surface_name(surface)),
-        description=copy.summary.period.format(
+    style = copy.embeds.daily_summary
+    embed = make_embed(
+        style,
+        title=style.title.format(surface=surface_name(surface)),
+        description=style.description.format(
             since=discord.utils.format_dt(stats.since, "f"),
             until=discord.utils.format_dt(stats.until, "f"),
         ),
-        colour=discord.Colour.blurple(),
     )
     embed.add_field(name=copy.stats.field_opened, value=str(stats.opened))
     embed.add_field(
@@ -216,5 +218,6 @@ async def send_daily_summary(bot: "SupportBot", now: datetime | None = None) -> 
         ai_mode=bot.settings.ai_answer_mode,
         tickets_enabled=bot.settings.tickets_enabled,
     )
-    await send_embeds(bot.get_partial_messageable(channel_id), embeds)
+    # @silent: the summary is for reading, not a reason to ping everyone's phone
+    await send_embeds(bot.get_partial_messageable(channel_id), embeds, silent=True)
     log.info("Posted daily summary")

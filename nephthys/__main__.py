@@ -59,7 +59,12 @@ def load_copy_or_exit(settings: Settings) -> None:
     from nephthys.core.ticket_categories import TicketCategoriesError
 
     try:
-        configure_copy(settings.copy_file, required=settings.copy_file_explicit)
+        configure_copy(
+            settings.copy_file,
+            required=settings.copy_file_explicit,
+            override=settings.copy_override_file,
+            override_required=settings.copy_override_file_explicit,
+        )
         configure_ticket_categories(
             settings.ticket_categories_file,
             required=settings.ticket_categories_file_explicit,

@@ -93,6 +93,8 @@ class Ticket(Table, tablename="ticket"):
     escalated_from = Integer(null=True, default=None)  # FK ticket.id in SQL
     csat_rating = SmallInt(null=True, default=None)  # 1-5
     csat_at = Timestamptz(null=True, default=None)
+    # When the closed #tickets thread was archived (after CSAT or the timeout)
+    archived_at = Timestamptz(null=True, default=None)
 
     # The staff ticket card in STAFF_CHANNEL_ID
     staff_card_channel_id = BigInt(null=True, default=None)

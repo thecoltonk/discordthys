@@ -16,6 +16,7 @@ import discord
 
 from nephthys.core.copytext import get_copy
 from nephthys.database.tables import StickyMessage
+from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.send import send_embed
 
 if TYPE_CHECKING:
@@ -23,16 +24,16 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-STICKY_COLOUR = discord.Colour.blurple()
-
 
 def build_sticky_embed(faq_url: str) -> discord.Embed:
     """The sticky, without the FAQ line when FAQ_URL is unset."""
-    sticky = get_copy().sticky
-    description = sticky.body.format(faq_url=faq_url) if faq_url else sticky.body_no_faq
-    return discord.Embed(
-        title=sticky.title, description=description, colour=STICKY_COLOUR
+    style = get_copy().embeds.sticky
+    description = (
+        style.description.format(faq_url=faq_url)
+        if faq_url
+        else style.description_no_faq
     )
+    return make_embed(style, title=style.title, description=description)
 
 
 type StickyRender = Callable[[], tuple[discord.Embed, discord.ui.View | None]]

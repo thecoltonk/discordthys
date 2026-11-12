@@ -167,7 +167,7 @@ async def test_public_mode_fixed_resolves(kb_dir: Path):
     bot = ai_bot(kb_dir, AI_ANSWER_MODE="public")
     _, ticket, op = await ask(bot)
     answer_msg = bot.sends(ticket.thread_id)[-1]
-    assert answer_msg.embed.title == C.ai.public_title
+    assert answer_msg.embed.title == C.embeds.ai_public.title
     assert "faq.md" in answer_msg.embed.footer.text
     assert [c.custom_id for c in answer_msg.view.children] == [
         "cs:aifix:1",

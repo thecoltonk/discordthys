@@ -17,6 +17,7 @@ from nephthys.core.stats import StatsSummary
 from nephthys.core.stats import WAITING_THRESHOLD
 from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
+from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.formatting import categories_text
 from nephthys.discord_ops.formatting import csat_text
 from nephthys.discord_ops.formatting import format_minutes
@@ -45,13 +46,18 @@ def stats_embed(
     summary: StatsSummary, days: int, surface: TicketSurface = TicketSurface.COMMUNITY
 ) -> discord.Embed:
     stats = get_copy().stats
+    style = get_copy().embeds.stats
     name = surface_name(surface)
     title = (
-        stats.stats_title_one_day.format(surface=name)
+        style.title_one_day.format(surface=name)
         if days == 1
-        else stats.stats_title.format(surface=name, days=days)
+        else style.title.format(surface=name, days=days)
     )
-    embed = discord.Embed(title=title, colour=discord.Colour.blurple())
+    embed = make_embed(
+        style,
+        title=title,
+        description=style.description.format(surface=name, days=days),
+    )
     embed.add_field(name=stats.field_opened, value=str(summary.opened))
     embed.add_field(
         name=stats.field_resolved,
@@ -121,10 +127,11 @@ class Staff(commands.Cog):
         lines = waiting_lines(self.bot.settings.guild_id, waiting[:WAITING_LIMIT])
         if len(waiting) > WAITING_LIMIT:
             lines.append(get_copy().commands.waiting_more.format(limit=WAITING_LIMIT))
-        embed = discord.Embed(
-            title=get_copy().commands.waiting_title,
-            description="\n".join(lines),
-            colour=discord.Colour.orange(),
+        style = get_copy().embeds.waiting
+        embed = make_embed(
+            style,
+            title=style.title,
+            description=style.description.format(lines="\n".join(lines)),
         )
         await followup_embed(interaction, embed)
 

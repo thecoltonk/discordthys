@@ -21,6 +21,7 @@ AI_ANSWER_MODES = ("off", "shadow", "public")
 DEFAULT_AI_BASE_URL = "https://ai.hackclub.com/proxy/v1"
 
 DEFAULT_COPY_FILE = "copy/copy.toml"
+DEFAULT_COPY_OVERRIDE_FILE = "copy/copy.local.toml"
 DEFAULT_TICKET_CATEGORIES_FILE = "copy/ticket_categories.toml"
 # Env vars that used to hold text; text now lives in copy/copy.toml
 DEPRECATED_TEXT_ENV = ("STICKY_TITLE", "STICKY_BODY")
@@ -45,6 +46,10 @@ class Settings:
     ticket_number_start: int
     tickets_max_open_per_user: int
     ticket_categories_file: str
+    # Closed #tickets threads: lock right away (player can't post), archive
+    # when the opener rates or after csat_timeout_hours
+    tickets_lock_on_close: bool
+    csat_timeout_hours: float
     ticket_categories_file_explicit: bool
     log_channel_id: int | None
     maintainer_id: int | None
@@ -64,6 +69,9 @@ class Settings:
     # Message text (copy/copy.toml)
     copy_file: str
     copy_file_explicit: bool
+    # Local overrides on top of copy_file (gitignored; any key wins)
+    copy_override_file: str
+    copy_override_file_explicit: bool
     deprecated_env_set: tuple[str, ...]
     timezone: str
 
@@ -264,6 +272,16 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
     if ticket_number_start is None or ticket_number_start < 1:
         errors.append("TICKET_NUMBER_START must be at least 1")
         ticket_number_start = 26
+    csat_timeout_raw = get("CSAT_TIMEOUT_HOURS", "24") or "24"
+    try:
+        csat_timeout = float(csat_timeout_raw)
+        if csat_timeout <= 0:
+            raise ValueError
+    except ValueError:
+        errors.append(
+            f"CSAT_TIMEOUT_HOURS must be a positive number, got {csat_timeout_raw!r}"
+        )
+        csat_timeout = 24.0
     max_open = integer("TICKETS_MAX_OPEN_PER_USER", 2)
     if max_open is None or max_open < 0:
         errors.append("TICKETS_MAX_OPEN_PER_USER must be 0 (unlimited) or more")
@@ -288,6 +306,8 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         )
         or DEFAULT_TICKET_CATEGORIES_FILE,
         ticket_categories_file_explicit=get("TICKET_CATEGORIES_FILE") is not None,
+        tickets_lock_on_close=boolean("TICKETS_LOCK_ON_CLOSE", True),
+        csat_timeout_hours=csat_timeout,
         log_channel_id=snowflake("LOG_CHANNEL_ID", optional=True),
         maintainer_id=snowflake("MAINTAINER_ID", optional=True),
         database_url=required("DATABASE_URL"),
@@ -301,6 +321,9 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         sticky_debounce_seconds=debounce,
         copy_file=get("COPY_FILE", DEFAULT_COPY_FILE) or DEFAULT_COPY_FILE,
         copy_file_explicit=get("COPY_FILE") is not None,
+        copy_override_file=get("COPY_OVERRIDE_FILE", DEFAULT_COPY_OVERRIDE_FILE)
+        or DEFAULT_COPY_OVERRIDE_FILE,
+        copy_override_file_explicit=get("COPY_OVERRIDE_FILE") is not None,
         deprecated_env_set=tuple(n for n in DEPRECATED_TEXT_ENV if get(n) is not None),
         timezone=get("TIMEZONE", "Europe/London") or "Europe/London",
         ticket_categories=categories,

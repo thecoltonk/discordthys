@@ -184,8 +184,9 @@ This should return `{"healthy": true, ...}`. `docker compose ps` shows the bot a
     - Type a message as the player: it becomes the card's description.
 13. Reply as staff: the card shows 🔵 Claimed.
 14. Click **Close Ticket** as the player.
-    - You should see the closing message and 1–5 rating buttons, and the thread locks and archives.
-    - Rate it: the buttons are replaced by a thank-you, and the card shows CSAT.
+    - You should see the closing message and 1–5 rating buttons. The thread locks, so the player can't post, but it stays open so they can rate.
+    - Rate it: the buttons are replaced by a thank-you, the card shows CSAT, and the thread archives.
+    - Unrated tickets archive on their own after `CSAT_TIMEOUT_HOURS` (default 24). Staff can `/reopen` at any point before or after that.
 15. As staff, open the thread from the card and run `/reopen`. The thread unlocks and the player is back in it.
 16. In a #community-help thread, run `/escalate` as staff.
     - The poster gets a private #tickets thread linking back.
@@ -212,9 +213,20 @@ What happens next:
 
 ## 6. Operations
 
-**Change what the bot says.** Every player- and staff-facing message is in `copy/copy.toml`. That includes the auto-reply, closing and re-open messages, the sticky, staff card labels, command replies, `/stats` and `/waiting`, the daily summary, and AI answer labels. It's mounted read-only into the container from `./copy`.
+**Change what the bot says.** Every player- and staff-facing message is in `copy/copy.toml`, mounted read-only into the container from `./copy`. That includes:
 
-1. Edit `/opt/cloudsail-support/copy/copy.toml` on the host and save.
+- the auto-reply, closing and re-open messages, the sticky, staff card labels, command replies, `/stats` and `/waiting`, the daily summary, and AI answer labels;
+- **how each embed looks.** The `[embeds.*]` sections set the title, description, colour (hex), footer and an optional thumbnail URL for the sticky, the ticket panel, staff cards (one colour per status), `/stats`, `/waiting`, the daily summary and the AI answers. The #tickets opener and closing message are plain text by default; set `enabled = true` under `[embeds.ticket_opener]` or `[embeds.ticket_closed]` to send them as embeds.
+
+**Prefer a local override file for your changes.** That way `copy.toml` stays the shipped defaults and `git pull` never conflicts with your text:
+
+```bash
+cd /opt/cloudsail-support && cp copy/copy.local.toml.example copy/copy.local.toml
+```
+
+Every key is listed there, commented out, with its default value. Uncomment and edit only what you want to change. Any key in `copy/copy.local.toml` (`COPY_OVERRIDE_FILE`) overrides `copy.toml`, and the file is gitignored.
+
+1. Edit `/opt/cloudsail-support/copy/copy.local.toml` (or `copy.toml`) on the host and save.
 2. Within about 5 seconds the bot logs `Reloaded copy from copy/copy.toml`, and new messages use the new text.
    - Messages already posted (e.g. old closing messages) aren't rewritten.
    - Staff cards pick up the change the next time they update.
@@ -224,13 +236,17 @@ What happens next:
    To check an edit before saving it into place:
 
    ```bash
-   docker compose exec bot python -m nephthys.core.copytext --check /app/copy/copy.toml
+   docker compose exec bot python -m nephthys.core.copytext --check /app/copy/copy.toml /app/copy/copy.local.toml
    ```
 
 4. Each key's comment lists the placeholders it accepts. Use `{{` / `}}` for literal braces. Delete a key to go back to its built-in default.
 5. If `FAQ_URL` is blank, the auto-reply and sticky use their `*_no_faq` variants (no FAQ sentence), and `/faq` privately tells staff "no FAQ configured."
 
-If you set `STICKY_TITLE` / `STICKY_BODY` in an older `.env`, they're ignored now (the bot logs a warning). Move that text into `[sticky]` in `copy.toml`.
+If you set `STICKY_TITLE` / `STICKY_BODY` in an older `.env`, they're ignored now (the bot logs a warning). Move that text into `[embeds.sticky]`.
+
+Some keys have moved into `[embeds.*]`: the sticky, the panel and card titles, the summary title and period, the `/stats` and `/waiting` titles, and the AI titles and footers. A copy file that still uses an old key fails validation with a message naming its new location, e.g. `[sticky] body moved to [embeds.sticky] description`.
+
+The daily summary is posted as an **@silent** message: it shows up in the staff channel but doesn't send push notifications.
 
 All text messages are sent with link previews suppressed, so links in copy never unfurl into big embeds.
 

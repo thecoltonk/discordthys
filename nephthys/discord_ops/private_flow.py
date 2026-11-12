@@ -22,14 +22,17 @@ from nephthys.core.copytext import get_copy
 from nephthys.core.permissions import Actor
 from nephthys.core.permissions import can_resolve
 from nephthys.core.ticket_categories import get_ticket_categories
+from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
+from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.heartbeat import send_heartbeat
 from nephthys.discord_ops.send import edit_text_response
 from nephthys.discord_ops.send import followup_text
 from nephthys.discord_ops.send import NO_MENTIONS
 from nephthys.discord_ops.send import respond_text
+from nephthys.discord_ops.send import send_embed
 from nephthys.discord_ops.send import send_text
 from nephthys.errors.errors import PermissionDenied
 from nephthys.errors.errors import TicketAlreadyClosedError
@@ -92,14 +95,18 @@ async def tickets_channel(bot: "SupportBot") -> discord.TextChannel | None:
 
 
 def opener_content(
-    ticket: Ticket, opener_discord_id: int, *, community_link: str | None
+    ticket: Ticket,
+    opener_discord_id: int,
+    *,
+    community_link: str | None,
+    header: bool = True,
 ) -> str:
+    """The opener text. `header=False` leaves out "Ticket T-<n>" (embed mode,
+    where it's the embed title)."""
     copy = get_copy().tickets
     cats = get_ticket_categories()
-    lines = [
-        copy.opener_header.format(number=ticket.number),
-        copy.welcome.format(user=f"<@{opener_discord_id}>"),
-    ]
+    lines = [copy.opener_header.format(number=ticket.number)] if header else []
+    lines.append(copy.welcome.format(user=f"<@{opener_discord_id}>"))
     if community_link:
         lines.append(copy.escalated_note.format(link=community_link))
     if ticket.category:
@@ -145,9 +152,29 @@ async def post_opener(
     bot: "SupportBot", ticket: Ticket, thread: Any, *, first: bool
 ) -> Any:
     opener = await tickets.get_opener(ticket)
-    content = opener_content(
-        ticket, opener.discord_id, community_link=await community_link_for(bot, ticket)
-    )
+    community_link = await community_link_for(bot, ticket)
+    style = get_copy().embeds.ticket_opener
+    if style.enabled:
+        body = opener_content(
+            ticket, opener.discord_id, community_link=community_link, header=False
+        )
+        embed = make_embed(
+            style,
+            title=style.title.format(number=ticket.number),
+            description=style.description.format(body=body),
+            footer=style.footer.format(number=ticket.number),
+        )
+        msg = await send_embed(
+            thread,
+            embed,
+            view=opener_buttons(ticket),
+            # Mentions inside embeds don't ping, so ping the player in the content
+            ping_content=f"<@{opener.discord_id}>" if first else None,
+            ping_users=[opener.discord_id] if first else None,
+        )
+        await pt.set_opener_message(ticket.id, msg.id)
+        return msg
+    content = opener_content(ticket, opener.discord_id, community_link=community_link)
     msg = await send_text(
         thread,
         content,
@@ -362,7 +389,10 @@ async def close_private(
     *,
     source: str,
 ) -> Ticket:
-    """Resolve, post the closing message + CSAT prompt, then lock + archive.
+    """Resolve and post the closing message + CSAT prompt. The thread stays
+    open (locked for the player when TICKETS_LOCK_ON_CLOSE) so the opener can
+    rate; it's archived when they rate or after CSAT_TIMEOUT_HOURS. A ticket
+    that was already rated has nothing to wait for and is archived now.
     Raises the core refusal errors."""
     result = await tickets.resolve(ticket_id, actor)
     TICKETS_RESOLVED.labels(source=source).inc()
@@ -374,15 +404,44 @@ async def close_private(
             async with threads.best_effort("unarchive"):
                 await thread.edit(archived=False)
         who = user.mention if user is not None else get_copy().card.someone
+        closed_text = copy.closed.format(user=who)
+        closed_style = get_copy().embeds.ticket_closed
         async with threads.best_effort("send_closed"):
-            await send_text(thread, copy.closed.format(user=who))
+            if closed_style.enabled:
+                await send_embed(
+                    thread,
+                    make_embed(
+                        closed_style,
+                        title=closed_style.title,
+                        description=closed_style.description.format(
+                            message=closed_text
+                        ),
+                    ),
+                )
+            else:
+                await send_text(thread, closed_text)
         if ticket.csat_rating is None:
             async with threads.best_effort("send_csat"):
                 await send_text(thread, copy.csat_prompt, view=csat_view(ticket.id))
-        async with threads.best_effort("lock_archive"):
-            await thread.edit(locked=True, archived=True)
+            if bot.settings.tickets_lock_on_close:
+                async with threads.best_effort("lock_on_close"):
+                    await thread.edit(locked=True)
+    await pt.clear_archived(ticket.id)
+    if ticket.csat_rating is not None:
+        await archive_private(bot, ticket)
     await staff_card.refresh_staff_card(bot, ticket.id)
     return ticket
+
+
+async def archive_private(bot: "SupportBot", ticket: Ticket) -> None:
+    """Lock + archive a closed ticket's thread and record that it's done.
+    Tolerates a thread that's already archived (or gone)."""
+    thread = await threads.get_thread(bot, ticket.thread_id)
+    if thread is not None and not (thread.archived and thread.locked):
+        async with threads.best_effort("lock_archive"):
+            await thread.edit(locked=True, archived=True)
+    await pt.mark_archived(ticket.id)
+    log.info(f"Archived closed ticket T-{ticket.number} id={ticket.id}")
 
 
 async def reopen_private(
@@ -400,6 +459,7 @@ async def reopen_private(
         )
     ticket = await tickets.reopen(ticket_id, actor)
     TICKETS_REOPENED.labels(source=source).inc()
+    await pt.clear_archived(ticket.id)  # cancels any pending CSAT-timeout archive
     thread = await threads.get_thread(bot, ticket.thread_id)
     if thread is not None:
         async with threads.best_effort("unlock_unarchive"):
@@ -449,7 +509,7 @@ async def csat_from_interaction(
     copy = get_copy()
     actor = threads.actor_from_user(interaction.user, bot.settings.staff_role_id)
     try:
-        await pt.rate_csat(ticket_id, rating, actor)
+        ticket = await pt.rate_csat(ticket_id, rating, actor)
     except pt.NotTicketOpenerError:
         await respond_text(interaction, copy.tickets.csat_not_opener, ephemeral=True)
         return
@@ -459,9 +519,19 @@ async def csat_from_interaction(
     except TicketNotFoundError:
         await respond_text(interaction, copy.errors.ticket_missing, ephemeral=True)
         return
-    await edit_text_response(
-        interaction, copy.tickets.csat_thanks.format(rating=rating)
-    )
+    thanks = copy.tickets.csat_thanks.format(rating=rating)
+    try:
+        await edit_text_response(interaction, thanks)
+    except discord.HTTPException as e:
+        # e.g. the thread was archived by the CSAT timeout: the rating is saved,
+        # so just thank them privately
+        log.info(f"Couldn't edit the CSAT prompt for ticket id={ticket_id}: {e}")
+        async with threads.best_effort("csat_thanks_fallback"):
+            await respond_text(interaction, thanks, ephemeral=True)
+    # Rating ends the CSAT wait. (A rating left on an old prompt after the
+    # ticket was re-opened is recorded, but doesn't archive an open ticket.)
+    if ticket.status == TicketStatus.CLOSED and ticket.archived_at is None:
+        await archive_private(bot, ticket)
     await staff_card.refresh_staff_card(bot, ticket_id)
 
 

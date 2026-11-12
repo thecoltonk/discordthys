@@ -17,6 +17,7 @@ from nephthys.core import ai_store
 from nephthys.core import tickets
 from nephthys.core.copytext import Copy
 from nephthys.core.copytext import DEFAULT_COPY
+from nephthys.core.copytext import EmbedsCopy
 from nephthys.core.copytext import parse_copy
 from nephthys.core.copytext import use_copy
 from nephthys.database.tables import Ticket
@@ -40,16 +41,39 @@ from tests.helpers import make_settings
 pytestmark = pytest.mark.usefixtures("db")
 
 
-def every_placeholder_copy() -> Copy:
-    """Each template = its field name followed by *every* placeholder it allows."""
-    sections = {}
-    for section_name in Copy.model_fields:
-        section = getattr(DEFAULT_COPY, section_name)
-        values = {}
-        for name in type(section).model_fields:
+def _every_placeholder(section: Any, embeds_enabled: bool) -> Any:
+    values: dict[str, Any] = {}
+    for name in type(section).model_fields:
+        value = getattr(section, name)
+        if name == "enabled":
+            values[name] = embeds_enabled
+        elif (
+            not isinstance(value, str)
+            or name.startswith("color")
+            or name == "thumbnail_url"
+        ):
+            values[name] = value  # not a text template
+        else:
             allowed = sorted(type(section).PLACEHOLDERS.get(name, ()))
             values[name] = f"{name}:" + "|".join("{" + p + "}" for p in allowed)
-        sections[section_name] = type(section)(**values)
+    return type(section)(**values)
+
+
+def every_placeholder_copy(embeds_enabled: bool = False) -> Copy:
+    """Each template = its field name followed by *every* placeholder it allows.
+    `embeds_enabled` also switches the opt-in embeds (ticket opener/closing) on."""
+    sections: dict[str, Any] = {}
+    for section_name in Copy.model_fields:
+        section = getattr(DEFAULT_COPY, section_name)
+        if isinstance(section, EmbedsCopy):
+            sections[section_name] = EmbedsCopy(
+                **{
+                    sub: _every_placeholder(getattr(section, sub), embeds_enabled)
+                    for sub in EmbedsCopy.model_fields
+                }
+            )
+        else:
+            sections[section_name] = _every_placeholder(section, embeds_enabled)
     return Copy(**sections)
 
 
@@ -253,10 +277,14 @@ async def run_tickets_everything(bot: FakeBot, interactions: list[Any]) -> None:
         await CategoryButton(private.id, "other").callback(interaction(asker))
 
 
-async def test_code_supplies_every_declared_placeholder(kb_dir: Path):
+@pytest.mark.parametrize("embeds_enabled", [False, True])
+async def test_code_supplies_every_declared_placeholder(
+    kb_dir: Path, embeds_enabled: bool
+):
     """If code forgot to pass a placeholder that copy may use, .format() would
-    raise KeyError somewhere in here."""
-    use_copy(every_placeholder_copy())
+    raise KeyError somewhere in here. Runs with the opt-in ticket opener/closing
+    embeds off (text) and on."""
+    use_copy(every_placeholder_copy(embeds_enabled))
     bot = ai_bot(kb_dir)
     await run_everything(bot, kb_dir)
     await run_tickets_everything(bot, [])
@@ -272,10 +300,20 @@ async def test_code_supplies_every_declared_placeholder(kb_dir: Path):
     assert any(t.startswith("reopened:") for t in texts)
     assert any(t.startswith("resolved_stale:") for t in texts)
     assert any(t.startswith("need_human_reply:") for t in texts)
+    if embeds_enabled:
+        embed_texts = [
+            f"{m.embed.title or ''} {m.embed.description or ''} {m.embed.footer.text or ''}"
+            for msgs in bot.world.channel_sends.values()
+            for m in msgs
+            if getattr(m, "embed", None) is not None
+        ]
+        for key in ("title:", "description:", "footer:"):
+            assert any(key in t for t in embed_texts), key
+        # The opener/closing text is inside the embeds now
+        assert any("welcome:" in t for t in embed_texts)
+        assert any("closed:" in t for t in embed_texts)
     for key in (
-        "opener_header:",
-        "closed:",
-        "csat_prompt:",
+        *(() if embeds_enabled else ("opener_header:", "closed:")),
         "reopened:",
         "escalated_public:",
         "escalated_quote:",
@@ -295,7 +333,7 @@ async def test_code_supplies_every_declared_placeholder(kb_dir: Path):
     assert (embed.title or "").startswith("title:")
     assert any((f.value or "").startswith("ai_shadow_accuracy:") for f in embed.fields)
     sticky = build_sticky_embed("https://faq")
-    assert sticky.description and sticky.description.startswith("body:")
+    assert sticky.description and sticky.description.startswith("description:")
 
 
 async def test_link_embeds_are_always_suppressed(kb_dir: Path):
@@ -368,10 +406,12 @@ def test_faq_text_when_set_and_unset():
     assert "FAQ" not in without and "faq" not in without
 
     assert build_sticky_embed("https://cloudsail.uk/faq").description == (
-        DEFAULT_COPY.sticky.body.format(faq_url="https://cloudsail.uk/faq")
+        DEFAULT_COPY.embeds.sticky.description.format(
+            faq_url="https://cloudsail.uk/faq"
+        )
     )
     sticky = build_sticky_embed("")
-    assert sticky.description == DEFAULT_COPY.sticky.body_no_faq
+    assert sticky.description == DEFAULT_COPY.embeds.sticky.description_no_faq
     assert "FAQ" not in (sticky.description or "")
 
 

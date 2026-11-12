@@ -29,13 +29,19 @@ A private, Mava-style ticket system, enabled by setting `TICKETS_CHANNEL_ID`:
 - The player picks a category, then a subcategory. Each pick reposts the opener so the buttons stay at the bottom.
 - At a leaf category, the staff channel gets an alert card that pings the owning role (plus Staff for High priority).
 - The first staff reply claims the ticket.
-- **Close Ticket** (by the player or staff) asks the player for a 1–5 CSAT rating, then locks the thread. Staff can `/reopen`.
+- **Close Ticket** (by the player or staff) locks the thread and asks the player for a 1–5 CSAT rating. The thread archives when they rate, or after `CSAT_TIMEOUT_HOURS` (default 24). Staff can `/reopen` at any time.
 - `/escalate` moves a sensitive #community-help post into a private ticket.
 - Categories live in [`copy/ticket_categories.toml`](copy/ticket_categories.toml). Setup is in DEPLOY.md.
 
 ## Changing what the bot says
 
-Every message players and staff see lives in [`copy/copy.toml`](copy/copy.toml), with comments listing each key's `{placeholders}`. Edit it and save: changes apply within a few seconds, with no restart. Invalid edits are logged and ignored. See DEPLOY.md §6.
+Every message players and staff see lives in [`copy/copy.toml`](copy/copy.toml), with comments listing each key's `{placeholders}`. That includes each embed's title, description, colour, footer and thumbnail (`[embeds.*]`).
+
+- To change just a few strings, copy [`copy/copy.local.toml.example`](copy/copy.local.toml.example) to `copy/copy.local.toml` (gitignored) and uncomment the keys you want to change. They override `copy.toml` key by key.
+- Saved changes apply within a few seconds, with no restart.
+- Invalid edits are logged and ignored.
+
+See DEPLOY.md §6.
 
 ## Development
 

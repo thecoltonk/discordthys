@@ -50,6 +50,7 @@ async def send_embed(
     reference: Any = None,
     ping_content: str | None = None,
     ping_roles: list[int] | None = None,
+    ping_users: list[int] | None = None,
 ) -> Any:
     """Send an embed message. The only content allowed alongside an embed is a
     link-free ping line (e.g. role mentions on a staff alert), so there's still
@@ -58,9 +59,11 @@ async def send_embed(
         raise ValueError("ping_content must not contain links (they would unfurl)")
     allowed = (
         discord.AllowedMentions(
-            everyone=False, users=False, roles=[discord.Object(r) for r in ping_roles]
+            everyone=False,
+            users=[discord.Object(u) for u in ping_users] if ping_users else False,
+            roles=[discord.Object(r) for r in ping_roles] if ping_roles else False,
         )
-        if ping_roles
+        if ping_roles or ping_users
         else NO_MENTIONS
     )
     return await target.send(
@@ -113,9 +116,12 @@ async def followup_embed(
     )
 
 
-async def send_embeds(target: Any, embeds: list[discord.Embed]) -> Any:
-    """Several embeds in one message (no content)."""
-    return await target.send(embeds=embeds, allowed_mentions=NO_MENTIONS)
+async def send_embeds(
+    target: Any, embeds: list[discord.Embed], *, silent: bool = False
+) -> Any:
+    """Several embeds in one message (no content). `silent` sends it as an
+    @silent message: it appears normally but doesn't push notifications."""
+    return await target.send(embeds=embeds, allowed_mentions=NO_MENTIONS, silent=silent)
 
 
 async def followup_embeds(

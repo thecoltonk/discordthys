@@ -28,7 +28,11 @@ from tests.helpers import make_settings
 
 pytestmark = pytest.mark.usefixtures("db")
 
-NOW = datetime.now(UTC)
+
+def now() -> datetime:
+    # Read the clock per call: a module-level timestamp goes stale when the suite
+    # runs long, and CSAT is stamped with the real time when it's given
+    return datetime.now(UTC)
 
 
 def fields(embed: Any) -> dict[str, str]:
@@ -36,6 +40,7 @@ def fields(embed: Any) -> dict[str, str]:
 
 
 async def seed() -> list[Ticket]:
+    start = now()
     """Three private tickets (store/medium rated 5, urgent/high rated 3, one
     unpicked and waiting 4 days) and one community ticket."""
     await pt.align_number_sequence(26)
@@ -48,7 +53,7 @@ async def seed() -> list[Ticket]:
             channel_id=600,
             thread_id=snowflake(),
             number=await pt.allocate_number(26),
-            created_at=NOW - timedelta(hours=hours_ago),
+            created_at=start - timedelta(hours=hours_ago),
         )
         made.append((t, op))
     (store, store_op), (urgent, urgent_op), _ = made
@@ -61,7 +66,7 @@ async def seed() -> list[Ticket]:
     for t, op, rating in ((store, store_op, 5), (urgent, urgent_op, 3)):
         await tickets.resolve(t.id, op)
         await pt.rate_csat(t.id, rating, op)
-    await new_ticket(created_at=NOW - timedelta(hours=1))
+    await new_ticket(created_at=start - timedelta(hours=1))
     return [t for t, _ in made]
 
 
@@ -113,7 +118,7 @@ async def test_waiting_lists_private_tickets_with_t_numbers():
 async def test_daily_summary_has_a_tickets_embed():
     made = await seed()
     community, private = await build_daily_summary(
-        now=NOW + timedelta(minutes=1),
+        now=now() + timedelta(minutes=1),
         guild_id=100,
         ai_enabled=False,
         ai_mode="shadow",
@@ -131,6 +136,6 @@ async def test_daily_summary_has_a_tickets_embed():
     assert "🤖 AI" not in f
 
     bot = FakeBot(make_settings(TICKETS_CHANNEL_ID="600"))
-    await send_daily_summary(cast(Any, bot), now=NOW)
+    await send_daily_summary(cast(Any, bot), now=now())
     [msg] = bot.sends(bot.settings.staff_channel_id or 0)
     assert len(msg.embeds) == 2 and msg.content is None

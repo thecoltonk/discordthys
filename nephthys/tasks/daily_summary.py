@@ -14,14 +14,18 @@ from nephthys.core.copytext import get_copy
 from nephthys.core.stats import calculate_stats
 from nephthys.core.stats import StatsSummary
 from nephthys.core.stats import WAITING_THRESHOLD
+from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops.formatting import categories_text
+from nephthys.discord_ops.formatting import csat_text
 from nephthys.discord_ops.formatting import FIELD_MAX
 from nephthys.discord_ops.formatting import format_minutes
 from nephthys.discord_ops.formatting import leaderboard_text
 from nephthys.discord_ops.formatting import pct
+from nephthys.discord_ops.formatting import priorities_text
+from nephthys.discord_ops.formatting import surface_name
 from nephthys.discord_ops.formatting import ticket_line
-from nephthys.discord_ops.send import send_embed
+from nephthys.discord_ops.send import send_embeds
 
 if TYPE_CHECKING:
     from nephthys.bot import SupportBot
@@ -105,10 +109,11 @@ def build_summary_embed(
     ai_day: AIAccuracy | None,
     ai_week: AIAccuracy | None,
     ai_mode: str,
+    surface: TicketSurface = TicketSurface.COMMUNITY,
 ) -> discord.Embed:
     copy = get_copy()
     embed = discord.Embed(
-        title=copy.summary.title,
+        title=copy.summary.title.format(surface=surface_name(surface)),
         description=copy.summary.period.format(
             since=discord.utils.format_dt(stats.since, "f"),
             until=discord.utils.format_dt(stats.until, "f"),
@@ -126,10 +131,21 @@ def build_summary_embed(
         name=copy.stats.field_median,
         value=format_minutes(stats.median_first_response_minutes),
     )
+    if surface == TicketSurface.PRIVATE:
+        embed.add_field(
+            name=copy.stats.field_csat,
+            value=csat_text(stats.csat_average, stats.csat_count),
+        )
+        if stats.by_priority:
+            embed.add_field(
+                name=copy.stats.field_by_priority,
+                value=priorities_text(stats.by_priority),
+                inline=False,
+            )
     if stats.by_category:
         embed.add_field(
             name=copy.summary.field_by_category,
-            value=categories_text(stats.by_category),
+            value=categories_text(stats.by_category, surface),
             inline=False,
         )
     embed.add_field(
@@ -154,27 +170,51 @@ def build_summary_embed(
 
 
 async def build_daily_summary(
-    *, now: datetime, guild_id: int, ai_enabled: bool, ai_mode: str
-) -> discord.Embed:
+    *,
+    now: datetime,
+    guild_id: int,
+    ai_enabled: bool,
+    ai_mode: str,
+    tickets_enabled: bool = False,
+) -> list[discord.Embed]:
+    """One embed for #community-help, plus one for #tickets when it's enabled."""
     stats = await calculate_stats(since=now - WINDOW, until=now)
     ai_day = ai_week = None
     if ai_enabled:
         ai_day = await ai_store.accuracy(now - WINDOW, now)
         ai_week = await ai_store.accuracy(now - AI_TREND_WINDOW, now)
-    return build_summary_embed(
-        stats, guild_id=guild_id, ai_day=ai_day, ai_week=ai_week, ai_mode=ai_mode
-    )
+    embeds = [
+        build_summary_embed(
+            stats, guild_id=guild_id, ai_day=ai_day, ai_week=ai_week, ai_mode=ai_mode
+        )
+    ]
+    if tickets_enabled:
+        private = await calculate_stats(
+            since=now - WINDOW, until=now, surface=TicketSurface.PRIVATE
+        )
+        embeds.append(
+            build_summary_embed(
+                private,
+                guild_id=guild_id,
+                ai_day=None,
+                ai_week=None,
+                ai_mode=ai_mode,
+                surface=TicketSurface.PRIVATE,
+            )
+        )
+    return embeds
 
 
 async def send_daily_summary(bot: "SupportBot", now: datetime | None = None) -> None:
     channel_id = bot.settings.staff_channel_id
     if not channel_id:
         return
-    embed = await build_daily_summary(
+    embeds = await build_daily_summary(
         now=now or datetime.now(UTC),
         guild_id=bot.settings.guild_id,
         ai_enabled=bot.settings.ai_answers_enabled,
         ai_mode=bot.settings.ai_answer_mode,
+        tickets_enabled=bot.settings.tickets_enabled,
     )
-    await send_embed(bot.get_partial_messageable(channel_id), embed)
+    await send_embeds(bot.get_partial_messageable(channel_id), embeds)
     log.info("Posted daily summary")

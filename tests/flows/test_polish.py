@@ -149,7 +149,7 @@ async def test_waiting_and_stats_commands():
 
     mod2 = make_interaction(bot, make_user(staff=True))
     await cast(Any, Staff.stats).callback(staff_cog, mod2, 7)
-    embed = mod2.followup.send.call_args.kwargs["embed"]
+    [embed] = mod2.followup.send.call_args.kwargs["embeds"]
     fields = {f.name: f.value for f in embed.fields}
     assert fields["Opened"] == "1"
 

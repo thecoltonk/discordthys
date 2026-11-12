@@ -15,12 +15,17 @@ from nephthys.core.queries import get_unanswered_tickets
 from nephthys.core.stats import calculate_stats
 from nephthys.core.stats import StatsSummary
 from nephthys.core.stats import WAITING_THRESHOLD
+from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops.formatting import categories_text
+from nephthys.discord_ops.formatting import csat_text
 from nephthys.discord_ops.formatting import format_minutes
 from nephthys.discord_ops.formatting import leaderboard_text
+from nephthys.discord_ops.formatting import priorities_text
+from nephthys.discord_ops.formatting import surface_name
 from nephthys.discord_ops.formatting import ticket_line
 from nephthys.discord_ops.send import followup_embed
+from nephthys.discord_ops.send import followup_embeds
 from nephthys.discord_ops.send import followup_text
 from nephthys.discord_ops.send import respond_text
 from nephthys.discord_ops.threads import actor_from_user
@@ -36,10 +41,15 @@ def waiting_lines(guild_id: int, waiting: list[Ticket]) -> list[str]:
     return [ticket_line(template, t, guild_id, TITLE_MAX) for t in waiting]
 
 
-def stats_embed(summary: StatsSummary, days: int) -> discord.Embed:
+def stats_embed(
+    summary: StatsSummary, days: int, surface: TicketSurface = TicketSurface.COMMUNITY
+) -> discord.Embed:
     stats = get_copy().stats
+    name = surface_name(surface)
     title = (
-        stats.stats_title_one_day if days == 1 else stats.stats_title.format(days=days)
+        stats.stats_title_one_day.format(surface=name)
+        if days == 1
+        else stats.stats_title.format(surface=name, days=days)
     )
     embed = discord.Embed(title=title, colour=discord.Colour.blurple())
     embed.add_field(name=stats.field_opened, value=str(summary.opened))
@@ -59,10 +69,21 @@ def stats_embed(summary: StatsSummary, days: int) -> discord.Embed:
         name=stats.field_waiting.format(days=WAITING_THRESHOLD.days),
         value=str(summary.waiting_over_threshold),
     )
+    if surface == TicketSurface.PRIVATE:
+        embed.add_field(
+            name=stats.field_csat,
+            value=csat_text(summary.csat_average, summary.csat_count),
+        )
+        if summary.by_priority:
+            embed.add_field(
+                name=stats.field_by_priority,
+                value=priorities_text(summary.by_priority),
+                inline=False,
+            )
     if summary.by_category:
         embed.add_field(
             name=stats.field_by_category,
-            value=categories_text(summary.by_category),
+            value=categories_text(summary.by_category, surface),
             inline=False,
         )
     embed.add_field(
@@ -122,8 +143,14 @@ class Staff(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         now = datetime.now(UTC)
-        summary = await calculate_stats(since=now - timedelta(days=days), until=now)
-        await followup_embed(interaction, stats_embed(summary, days))
+        since = now - timedelta(days=days)
+        embeds = [stats_embed(await calculate_stats(since=since, until=now), days)]
+        if self.bot.settings.tickets_enabled:
+            private = await calculate_stats(
+                since=since, until=now, surface=TicketSurface.PRIVATE
+            )
+            embeds.append(stats_embed(private, days, TicketSurface.PRIVATE))
+        await followup_embeds(interaction, embeds)
 
 
 async def setup(bot: SupportBot) -> None:

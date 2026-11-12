@@ -111,3 +111,19 @@ async def followup_embed(
     await interaction.followup.send(
         embed=embed, ephemeral=ephemeral, allowed_mentions=NO_MENTIONS
     )
+
+
+async def send_embeds(target: Any, embeds: list[discord.Embed]) -> Any:
+    """Several embeds in one message (no content)."""
+    return await target.send(embeds=embeds, allowed_mentions=NO_MENTIONS)
+
+
+async def followup_embeds(
+    interaction: discord.Interaction[Any],
+    embeds: list[discord.Embed],
+    *,
+    ephemeral: bool = True,
+) -> None:
+    await interaction.followup.send(
+        embeds=embeds, ephemeral=ephemeral, allowed_mentions=NO_MENTIONS
+    )

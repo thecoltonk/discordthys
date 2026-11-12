@@ -85,9 +85,9 @@ resolved = "resolved ✅"
 reopened = "re-opened 🔄"
 waiting_title = "Waiting for staff"
 waiting_empty = "nothing waiting — nice work, team!"
-# One line per waiting ticket ({last_message} is a relative time).
-# Placeholders: {id}, {last_message}, {link}, {title}
-waiting_line = "• [#{id} {title}]({link}) — last message {last_message}"
+# One line per waiting ticket. {ref} is #<id> or T-<number>; {last_message} is a relative time.
+# Placeholders: {id}, {last_message}, {link}, {ref}, {title}
+waiting_line = "• [{ref} {title}]({link}) — last message {last_message}"
 # Placeholders: {limit}
 waiting_more = "_…and more. Showing the oldest {limit}._"
 
@@ -156,9 +156,12 @@ escalated_to_value = "[T-{number}]({link})"
 
 [stats]
 # Shared by /stats and the daily summary.
-# Placeholders: {days}
-stats_title = "#community-help — last {days} days"
-stats_title_one_day = "#community-help — last 1 day"
+# Placeholders: {days}, {surface}
+stats_title = "{surface} — last {days} days"
+# Placeholders: {surface}
+stats_title_one_day = "{surface} — last 1 day"
+surface_community = "#community-help"
+surface_tickets = "#tickets"
 field_opened = "Opened"
 field_resolved = "Resolved"
 # Placeholders: {resolved}, {without_staff}
@@ -170,6 +173,12 @@ field_in_progress = "In progress now"
 field_waiting = "Waiting > {days} days"
 field_by_category = "Opened by category"
 uncategorised = "Uncategorised"
+field_by_priority = "By priority"
+priority_unset = "not picked yet"
+field_csat = "CSAT average"
+# Placeholders: {average}, {count}
+csat_value = "{average}/5 from {count} rating(s)"
+csat_none = "no ratings yet"
 field_top_helpers = "Top helpers (resolved, by claimer)"
 # Placeholders: {count}, {rank}, {user}
 leaderboard_line = "{rank}. {user} — {count}"
@@ -184,15 +193,16 @@ days = "{n} days"
 
 [summary]
 # The daily summary post.
-title = "📊 #community-help daily summary"
+# Placeholders: {surface}
+title = "📊 {surface} daily summary"
 # Placeholders: {since}, {until}
 period = "{since} → {until}"
 field_by_category = "By category"
 # Placeholders: {count}, {days}
 field_waiting = "Waiting > {days} days ({count})"
 waiting_none = "none 🎉"
-# Placeholders: {id}, {last_message}, {link}, {title}
-waiting_line = "• [#{id} {title}]({link}) — {last_message}"
+# Placeholders: {id}, {last_message}, {link}, {ref}, {title}
+waiting_line = "• [{ref} {title}]({link}) — {last_message}"
 # Placeholders: {count}
 waiting_more = "…and {count} more (see /waiting)"
 field_ai = "🤖 AI"

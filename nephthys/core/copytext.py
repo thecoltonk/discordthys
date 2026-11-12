@@ -162,7 +162,7 @@ class CommandsCopy(Section):
     PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
         "faq_reply": {"faq_url"},
         "ip_reply": {"server_address"},
-        "waiting_line": {"id", "title", "link", "last_message"},
+        "waiting_line": {"id", "ref", "title", "link", "last_message"},
         "waiting_more": {"limit"},
     }
 
@@ -188,8 +188,11 @@ class CommandsCopy(Section):
     waiting_title: str = "Waiting for staff"
     waiting_empty: str = "nothing waiting — nice work, team!"
     waiting_line: str = Field(
-        default="• [#{id} {title}]({link}) — last message {last_message}",
-        description="One line per waiting ticket ({last_message} is a relative time).",
+        default="• [{ref} {title}]({link}) — last message {last_message}",
+        description=(
+            "One line per waiting ticket. {ref} is #<id> or T-<number>; "
+            "{last_message} is a relative time."
+        ),
     )
     waiting_more: str = "_…and more. Showing the oldest {limit}._"
 
@@ -269,8 +272,9 @@ class StatsCopy(Section):
     """Shared by /stats and the daily summary."""
 
     PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
-        "stats_title": {"days"},
-        "stats_title_one_day": set(),
+        "stats_title": {"surface", "days"},
+        "stats_title_one_day": {"surface"},
+        "csat_value": {"average", "count"},
         "resolved_value": {"resolved", "without_staff"},
         "field_waiting": {"days"},
         "leaderboard_line": {"rank", "user", "count"},
@@ -279,8 +283,10 @@ class StatsCopy(Section):
         "days": {"n"},
     }
 
-    stats_title: str = "#community-help — last {days} days"
-    stats_title_one_day: str = "#community-help — last 1 day"
+    stats_title: str = "{surface} — last {days} days"
+    stats_title_one_day: str = "{surface} — last 1 day"
+    surface_community: str = "#community-help"
+    surface_tickets: str = "#tickets"
     field_opened: str = "Opened"
     field_resolved: str = "Resolved"
     resolved_value: str = "{resolved} ({without_staff} without staff)"
@@ -290,6 +296,11 @@ class StatsCopy(Section):
     field_waiting: str = "Waiting > {days} days"
     field_by_category: str = "Opened by category"
     uncategorised: str = "Uncategorised"
+    field_by_priority: str = "By priority"
+    priority_unset: str = "not picked yet"
+    field_csat: str = "CSAT average"
+    csat_value: str = "{average}/5 from {count} rating(s)"
+    csat_none: str = "no ratings yet"
     field_top_helpers: str = "Top helpers (resolved, by claimer)"
     leaderboard_line: str = "{rank}. {user} — {count}"
     leaderboard_empty: str = "nobody yet"
@@ -303,9 +314,10 @@ class SummaryCopy(Section):
     """The daily summary post."""
 
     PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
+        "title": {"surface"},
         "period": {"since", "until"},
         "field_waiting": {"days", "count"},
-        "waiting_line": {"id", "title", "link", "last_message"},
+        "waiting_line": {"id", "ref", "title", "link", "last_message"},
         "waiting_more": {"count"},
         "ai_shadow_accuracy": {
             "day_pct",
@@ -321,12 +333,12 @@ class SummaryCopy(Section):
         "ai_attempts_reasons": {"attempts", "skipped", "reasons"},
     }
 
-    title: str = "📊 #community-help daily summary"
+    title: str = "📊 {surface} daily summary"
     period: str = "{since} → {until}"
     field_by_category: str = "By category"
     field_waiting: str = "Waiting > {days} days ({count})"
     waiting_none: str = "none 🎉"
-    waiting_line: str = "• [#{id} {title}]({link}) — {last_message}"
+    waiting_line: str = "• [{ref} {title}]({link}) — {last_message}"
     waiting_more: str = "…and {count} more (see /waiting)"
     field_ai: str = "🤖 AI"
     ai_none: str = "no AI activity"

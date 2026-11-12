@@ -80,7 +80,11 @@ async def calculate_stats(
     summary.opened = len(opened)
     category_counts = Counter(t.category or UNCATEGORISED for t in opened)
     summary.by_category = dict(
-        sorted(category_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        # Most common first; "Uncategorised" always last
+        sorted(
+            category_counts.items(),
+            key=lambda kv: (kv[0] == UNCATEGORISED, -kv[1], kv[0]),
+        )
     )
     priority_counts = Counter(t.priority or UNSET_PRIORITY for t in opened)
     summary.by_priority = {

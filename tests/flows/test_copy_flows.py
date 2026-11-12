@@ -289,10 +289,10 @@ async def test_code_supplies_every_declared_placeholder(kb_dir: Path):
     assert alerts and all(m.embed.title.startswith("private_title:") for m in alerts)
 
     now = datetime.now(UTC)
-    embed = await build_daily_summary(
+    embed, *_ = await build_daily_summary(
         now=now + timedelta(minutes=1), guild_id=1, ai_enabled=True, ai_mode="shadow"
     )
-    assert embed.title == "title:"
+    assert (embed.title or "").startswith("title:")
     assert any((f.value or "").startswith("ai_shadow_accuracy:") for f in embed.fields)
     sticky = build_sticky_embed("https://faq")
     assert sticky.description and sticky.description.startswith("body:")

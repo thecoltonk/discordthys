@@ -249,3 +249,21 @@ Entry 16 (sticky text via `STICKY_TITLE`/`STICKY_BODY`) is superseded by 72–80
      - `message_id` is now nullable;
      - `category_source` accepts `player`;
      - a new `ticket_number_seq` sequence.
+
+## Follow-up: closed #tickets stay open for CSAT
+
+Entries 101–103 (lock and archive on close) are superseded by 113–120.
+
+113. **Closing no longer archives straight away.** Close (button or `/resolve`) posts the closing message and the CSAT buttons, then **locks** the thread (`TICKETS_LOCK_ON_CLOSE`, default on). The thread stays open: the player can read it and click a rating but can't post, and staff (Manage Threads) can still post.
+    - The lock is on by default because the player posting in a closed ticket would otherwise go unnoticed. Private tickets don't auto-reopen.
+114. **The thread is archived when the opener rates or after `CSAT_TIMEOUT_HOURS` (default 24), whichever comes first.**
+    - Archiving locks and archives the thread and sets the new `ticket.archived_at`.
+    - A ticket closed when it already has a rating, because it was rated before a reopen, has nothing to wait for and archives immediately.
+115. **The timeout is a scheduler sweep every 10 minutes,** not a per-ticket timer. It finds closed private tickets with `archived_at` unset whose `closed_at` is older than the timeout. That way it survives restarts and deploys with no job state, and an archive lands at most about 10 minutes late.
+    - The sweep is registered only when #tickets is enabled.
+    - A partial index keeps the query cheap.
+116. **`/reopen` works at any time,** before or after the archive. It clears `archived_at`, so a pending timeout no longer applies to a re-opened ticket, and it unlocks, unarchives and re-adds the player as before. Closing it again starts a new wait.
+117. **The CSAT handler tolerates archived threads.** The rating is always recorded first. If Discord refuses to edit the prompt (for example because the timeout already archived the thread), the player gets the same thank-you privately, and nothing is re-archived.
+118. **A rating clicked on an old prompt after a reopen is recorded** (first click still counts) but **doesn't archive the open ticket.**
+119. **Migration `cloudsail_004`** adds `ticket.archived_at` and backfills it from `closed_at` for private tickets that were already closed, since they were archived on close under the old behaviour. The sweep therefore never touches them. Tested forwards and backwards, with a backfill check on real rows.
+120. **New env vars:** `CSAT_TIMEOUT_HOURS` (a positive number, so fractions like `0.5` work) and `TICKETS_LOCK_ON_CLOSE`. Both are in `.env.example`.

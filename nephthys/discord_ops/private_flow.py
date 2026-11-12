@@ -22,6 +22,7 @@ from nephthys.core.copytext import get_copy
 from nephthys.core.permissions import Actor
 from nephthys.core.permissions import can_resolve
 from nephthys.core.ticket_categories import get_ticket_categories
+from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
@@ -362,7 +363,10 @@ async def close_private(
     *,
     source: str,
 ) -> Ticket:
-    """Resolve, post the closing message + CSAT prompt, then lock + archive.
+    """Resolve and post the closing message + CSAT prompt. The thread stays
+    open (locked for the player when TICKETS_LOCK_ON_CLOSE) so the opener can
+    rate; it's archived when they rate or after CSAT_TIMEOUT_HOURS. A ticket
+    that was already rated has nothing to wait for and is archived now.
     Raises the core refusal errors."""
     result = await tickets.resolve(ticket_id, actor)
     TICKETS_RESOLVED.labels(source=source).inc()
@@ -379,10 +383,25 @@ async def close_private(
         if ticket.csat_rating is None:
             async with threads.best_effort("send_csat"):
                 await send_text(thread, copy.csat_prompt, view=csat_view(ticket.id))
-        async with threads.best_effort("lock_archive"):
-            await thread.edit(locked=True, archived=True)
+            if bot.settings.tickets_lock_on_close:
+                async with threads.best_effort("lock_on_close"):
+                    await thread.edit(locked=True)
+    await pt.clear_archived(ticket.id)
+    if ticket.csat_rating is not None:
+        await archive_private(bot, ticket)
     await staff_card.refresh_staff_card(bot, ticket.id)
     return ticket
+
+
+async def archive_private(bot: "SupportBot", ticket: Ticket) -> None:
+    """Lock + archive a closed ticket's thread and record that it's done.
+    Tolerates a thread that's already archived (or gone)."""
+    thread = await threads.get_thread(bot, ticket.thread_id)
+    if thread is not None and not (thread.archived and thread.locked):
+        async with threads.best_effort("lock_archive"):
+            await thread.edit(locked=True, archived=True)
+    await pt.mark_archived(ticket.id)
+    log.info(f"Archived closed ticket T-{ticket.number} id={ticket.id}")
 
 
 async def reopen_private(
@@ -400,6 +419,7 @@ async def reopen_private(
         )
     ticket = await tickets.reopen(ticket_id, actor)
     TICKETS_REOPENED.labels(source=source).inc()
+    await pt.clear_archived(ticket.id)  # cancels any pending CSAT-timeout archive
     thread = await threads.get_thread(bot, ticket.thread_id)
     if thread is not None:
         async with threads.best_effort("unlock_unarchive"):
@@ -449,7 +469,7 @@ async def csat_from_interaction(
     copy = get_copy()
     actor = threads.actor_from_user(interaction.user, bot.settings.staff_role_id)
     try:
-        await pt.rate_csat(ticket_id, rating, actor)
+        ticket = await pt.rate_csat(ticket_id, rating, actor)
     except pt.NotTicketOpenerError:
         await respond_text(interaction, copy.tickets.csat_not_opener, ephemeral=True)
         return
@@ -459,9 +479,19 @@ async def csat_from_interaction(
     except TicketNotFoundError:
         await respond_text(interaction, copy.errors.ticket_missing, ephemeral=True)
         return
-    await edit_text_response(
-        interaction, copy.tickets.csat_thanks.format(rating=rating)
-    )
+    thanks = copy.tickets.csat_thanks.format(rating=rating)
+    try:
+        await edit_text_response(interaction, thanks)
+    except discord.HTTPException as e:
+        # e.g. the thread was archived by the CSAT timeout: the rating is saved,
+        # so just thank them privately
+        log.info(f"Couldn't edit the CSAT prompt for ticket id={ticket_id}: {e}")
+        async with threads.best_effort("csat_thanks_fallback"):
+            await respond_text(interaction, thanks, ephemeral=True)
+    # Rating ends the CSAT wait. (A rating left on an old prompt after the
+    # ticket was re-opened is recorded, but doesn't archive an open ticket.)
+    if ticket.status == TicketStatus.CLOSED and ticket.archived_at is None:
+        await archive_private(bot, ticket)
     await staff_card.refresh_staff_card(bot, ticket_id)
 
 

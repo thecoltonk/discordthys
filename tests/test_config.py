@@ -137,3 +137,13 @@ def test_tickets_settings():
         make_settings(TICKET_NUMBER_START="0")
     with pytest.raises(ConfigError):
         make_settings(TICKETS_MAX_OPEN_PER_USER="-1")
+
+
+def test_csat_archive_settings():
+    s = make_settings()
+    assert s.csat_timeout_hours == 24 and s.tickets_lock_on_close is True
+    s = make_settings(CSAT_TIMEOUT_HOURS="0.5", TICKETS_LOCK_ON_CLOSE="no")
+    assert s.csat_timeout_hours == 0.5 and s.tickets_lock_on_close is False
+    for bad in ("0", "-1", "soon"):
+        with pytest.raises(ConfigError):
+            make_settings(CSAT_TIMEOUT_HOURS=bad)

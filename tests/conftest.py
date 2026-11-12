@@ -18,6 +18,7 @@ async def migrated_db():
     from nephthys.piccolo_migrations import cloudsail_001_init
     from nephthys.piccolo_migrations import cloudsail_002_cards_categories_ai
     from nephthys.piccolo_migrations import cloudsail_003_private_tickets
+    from nephthys.piccolo_migrations import cloudsail_004_ticket_archived_at
 
     await Ticket.raw("DROP SCHEMA IF EXISTS public CASCADE")
     await Ticket.raw("CREATE SCHEMA public")
@@ -25,6 +26,7 @@ async def migrated_db():
         cloudsail_001_init,
         cloudsail_002_cards_categories_ai,
         cloudsail_003_private_tickets,
+        cloudsail_004_ticket_archived_at,
     ):
         await Ticket.raw(postgresql_code_block(migration.FORWARDS))
     yield

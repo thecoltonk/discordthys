@@ -187,3 +187,22 @@ async def escalation_of(community_ticket_id: int) -> Ticket | None:
         .where(Ticket.escalated_from == community_ticket_id)
         .first()
     )
+
+
+async def mark_archived(ticket_id: int) -> None:
+    await Ticket.update({Ticket.archived_at: utcnow()}).where(Ticket.id == ticket_id)
+
+
+async def clear_archived(ticket_id: int) -> None:
+    await Ticket.update({Ticket.archived_at: None}).where(Ticket.id == ticket_id)
+
+
+async def awaiting_archive(closed_before: datetime) -> list[Ticket]:
+    """Closed #tickets tickets whose CSAT window has passed but that haven't
+    been archived yet (the opener never rated)."""
+    return await Ticket.objects().where(
+        (Ticket.surface == TicketSurface.PRIVATE)
+        & (Ticket.status == TicketStatus.CLOSED)
+        & Ticket.archived_at.is_null()
+        & (Ticket.closed_at < closed_before)
+    )

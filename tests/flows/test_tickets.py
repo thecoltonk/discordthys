@@ -373,7 +373,9 @@ async def test_close_by_opener_then_csat():
     assert closing.content == C.tickets.closed.format(user=user.mention)
     assert csat.content == C.tickets.csat_prompt
     assert ids(csat.view) == [f"cs:csat:{ticket.id}:{n}" for n in range(1, 6)]
-    assert thread.locked and thread.archived
+    # Locked for the player, but left open so they can still rate
+    assert thread.locked and not thread.archived
+    assert ticket.archived_at is None
     card = bot.message(
         bot.settings.staff_channel_id or 0, ticket.staff_card_message_id or 0
     )
@@ -399,6 +401,9 @@ async def test_close_by_opener_then_csat():
     }
     assert (await fresh(ticket)).csat_rating == 4
     assert fields(card.embed)["CSAT"] == "4/5"
+    # Rating ends the wait: the thread is archived now
+    assert thread.locked and thread.archived
+    assert (await fresh(ticket)).archived_at is not None
 
     second = make_interaction(bot, user)
     await CSATButton(ticket.id, 1).callback(second)
@@ -423,7 +428,7 @@ async def test_staff_resolve_and_reopen_commands_in_private_thread():
     i = make_interaction(bot, mod, channel=thread)
     await cast(Any, TicketCommands.resolve).callback(commands, i)
     assert i.followup.send.call_args.args[0] == C.commands.resolved
-    assert thread.locked and thread.archived
+    assert thread.locked and not thread.archived  # waiting for the rating
     assert bot.sends(ticket.thread_id)[-1].content == C.tickets.csat_prompt
 
     thread.added_users.clear()
@@ -437,13 +442,16 @@ async def test_staff_resolve_and_reopen_commands_in_private_thread():
     )
     assert (await fresh(ticket)).status == TicketStatus.OPEN
 
-    # Closing again after a rating doesn't ask for CSAT a second time
+    # Closing again after a rating doesn't ask for CSAT a second time, and
+    # there's nothing to wait for, so it archives straight away
     await pt.rate_csat(ticket.id, 5, threads_actor(user))
     i = make_interaction(bot, mod, channel=thread)
     await cast(Any, TicketCommands.resolve).callback(commands, i)
     assert bot.sends(ticket.thread_id)[-1].content == C.tickets.closed.format(
         user=mod.mention
     )
+    assert thread.locked and thread.archived
+    assert (await fresh(ticket)).archived_at is not None
 
 
 async def test_player_cannot_reopen_private_ticket():

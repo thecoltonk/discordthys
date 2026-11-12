@@ -76,3 +76,15 @@ def test_ai_client_only_with_key():
     assert SupportBot(make_settings(), connect_db=False).ai_client is None
     bot = SupportBot(make_settings(AI_API_KEY="k", AI_MODEL="m"), connect_db=False)
     assert bot.ai_client is not None and bot.ai_client.model == "m"
+
+
+def test_archive_sweep_scheduled_only_with_tickets():
+    bot = SupportBot(make_settings(TICKETS_CHANNEL_ID="600"), connect_db=False)
+    bot.configure_jobs()
+    names = {job.func.__name__ for job in bot.scheduler.get_jobs()}
+    assert "run_archive_closed" in names
+    off = SupportBot(make_settings(), connect_db=False)
+    off.configure_jobs()
+    assert "run_archive_closed" not in {
+        j.func.__name__ for j in off.scheduler.get_jobs()
+    }

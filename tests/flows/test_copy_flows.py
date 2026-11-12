@@ -359,13 +359,16 @@ async def test_custom_copy_is_used(kb_dir: Path):
 
 def test_faq_text_when_set_and_unset():
     with_faq = auto_reply_text("https://cloudsail.uk/faq")
-    assert "[FAQ](https://cloudsail.uk/faq)" in with_faq
+    assert with_faq == DEFAULT_COPY.community.auto_reply.format(
+        faq_url="https://cloudsail.uk/faq"
+    )
+    assert "[FAQ]({faq_url})" in DEFAULT_COPY.community.auto_reply
     without = auto_reply_text("")
     assert without == DEFAULT_COPY.community.auto_reply_no_faq
     assert "FAQ" not in without and "faq" not in without
 
-    assert "https://cloudsail.uk/faq" in (
-        build_sticky_embed("https://cloudsail.uk/faq").description or ""
+    assert build_sticky_embed("https://cloudsail.uk/faq").description == (
+        DEFAULT_COPY.sticky.body.format(faq_url="https://cloudsail.uk/faq")
     )
     sticky = build_sticky_embed("")
     assert sticky.description == DEFAULT_COPY.sticky.body_no_faq

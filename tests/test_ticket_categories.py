@@ -33,7 +33,10 @@ def test_defaults_match_product_md():
         "reports": ("mod", "medium"),
         "other": ("staff", "low"),
     }
-    assert "appeals.cloudsail.uk" in (cats.get("bans_appeals") or server).blurb
+    assert (cats.get("bans_appeals") or server).blurb == (
+        "Please tell us your **IGN** and **what happened**. If you're banned "
+        "from Discord, use https://appeals.cloudsail.uk instead."
+    )
     assert server.role == "staff"
     assert cats.label_for("store") == "🛒 Store"
     assert cats.label_for("gone") == "gone"

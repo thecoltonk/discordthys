@@ -26,11 +26,13 @@ from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
+from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.heartbeat import send_heartbeat
 from nephthys.discord_ops.send import edit_text_response
 from nephthys.discord_ops.send import followup_text
 from nephthys.discord_ops.send import NO_MENTIONS
 from nephthys.discord_ops.send import respond_text
+from nephthys.discord_ops.send import send_embed
 from nephthys.discord_ops.send import send_text
 from nephthys.errors.errors import PermissionDenied
 from nephthys.errors.errors import TicketAlreadyClosedError
@@ -93,14 +95,18 @@ async def tickets_channel(bot: "SupportBot") -> discord.TextChannel | None:
 
 
 def opener_content(
-    ticket: Ticket, opener_discord_id: int, *, community_link: str | None
+    ticket: Ticket,
+    opener_discord_id: int,
+    *,
+    community_link: str | None,
+    header: bool = True,
 ) -> str:
+    """The opener text. `header=False` leaves out "Ticket T-<n>" (embed mode,
+    where it's the embed title)."""
     copy = get_copy().tickets
     cats = get_ticket_categories()
-    lines = [
-        copy.opener_header.format(number=ticket.number),
-        copy.welcome.format(user=f"<@{opener_discord_id}>"),
-    ]
+    lines = [copy.opener_header.format(number=ticket.number)] if header else []
+    lines.append(copy.welcome.format(user=f"<@{opener_discord_id}>"))
     if community_link:
         lines.append(copy.escalated_note.format(link=community_link))
     if ticket.category:
@@ -146,9 +152,29 @@ async def post_opener(
     bot: "SupportBot", ticket: Ticket, thread: Any, *, first: bool
 ) -> Any:
     opener = await tickets.get_opener(ticket)
-    content = opener_content(
-        ticket, opener.discord_id, community_link=await community_link_for(bot, ticket)
-    )
+    community_link = await community_link_for(bot, ticket)
+    style = get_copy().embeds.ticket_opener
+    if style.enabled:
+        body = opener_content(
+            ticket, opener.discord_id, community_link=community_link, header=False
+        )
+        embed = make_embed(
+            style,
+            title=style.title.format(number=ticket.number),
+            description=style.description.format(body=body),
+            footer=style.footer.format(number=ticket.number),
+        )
+        msg = await send_embed(
+            thread,
+            embed,
+            view=opener_buttons(ticket),
+            # Mentions inside embeds don't ping, so ping the player in the content
+            ping_content=f"<@{opener.discord_id}>" if first else None,
+            ping_users=[opener.discord_id] if first else None,
+        )
+        await pt.set_opener_message(ticket.id, msg.id)
+        return msg
+    content = opener_content(ticket, opener.discord_id, community_link=community_link)
     msg = await send_text(
         thread,
         content,
@@ -378,8 +404,22 @@ async def close_private(
             async with threads.best_effort("unarchive"):
                 await thread.edit(archived=False)
         who = user.mention if user is not None else get_copy().card.someone
+        closed_text = copy.closed.format(user=who)
+        closed_style = get_copy().embeds.ticket_closed
         async with threads.best_effort("send_closed"):
-            await send_text(thread, copy.closed.format(user=who))
+            if closed_style.enabled:
+                await send_embed(
+                    thread,
+                    make_embed(
+                        closed_style,
+                        title=closed_style.title,
+                        description=closed_style.description.format(
+                            message=closed_text
+                        ),
+                    ),
+                )
+            else:
+                await send_text(thread, closed_text)
         if ticket.csat_rating is None:
             async with threads.best_effort("send_csat"):
                 await send_text(thread, copy.csat_prompt, view=csat_view(ticket.id))

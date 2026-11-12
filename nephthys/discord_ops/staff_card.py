@@ -23,6 +23,8 @@ from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import AISuggestion
 from nephthys.database.tables import Ticket
 from nephthys.database.tables import User
+from nephthys.discord_ops.embeds import make_embed
+from nephthys.discord_ops.formatting import ticket_ref
 from nephthys.discord_ops.send import send_embed
 from nephthys.discord_ops.threads import best_effort
 from nephthys.discord_ops.threads import thread_link
@@ -35,10 +37,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 DESCRIPTION_MAX = 1000
-
-COLOUR_WAITING = discord.Colour.gold()
-COLOUR_CLAIMED = discord.Colour.blurple()
-COLOUR_RESOLVED = discord.Colour.green()
 
 
 @dataclass(frozen=True)
@@ -78,8 +76,10 @@ def mention(user: User | None) -> str:
     return f"<@{user.discord_id}>" if user else get_copy().card.someone
 
 
-def status_line(ctx: CardContext) -> tuple[str, discord.Colour]:
+def status_line(ctx: CardContext) -> tuple[str, str]:
+    """The status text and its hex colour ([embeds.staff_card] color_*)."""
     card = get_copy().card
+    style = get_copy().embeds.staff_card
     t = ctx.ticket
     reopened = card.reopened_suffix if t.reopened_at is not None else ""
     if t.status == TicketStatus.CLOSED:
@@ -93,13 +93,13 @@ def status_line(ctx: CardContext) -> tuple[str, discord.Colour]:
             if ctx.claimer
             else card.no_credit
         )
-        return card.status_resolved.format(by=by, credit=credit), COLOUR_RESOLVED
+        return card.status_resolved.format(by=by, credit=credit), style.color_resolved
     if ctx.claimer is not None:
         return (
             card.status_claimed.format(claimer=mention(ctx.claimer), reopened=reopened),
-            COLOUR_CLAIMED,
+            style.color_claimed,
         )
-    return card.status_waiting.format(reopened=reopened), COLOUR_WAITING
+    return card.status_waiting.format(reopened=reopened), style.color_waiting
 
 
 def past_tickets_text(count: int) -> str:
@@ -159,25 +159,28 @@ def private_category_text(ticket: Ticket) -> str:
 
 def build_card_embed(ctx: CardContext, guild_id: int) -> discord.Embed:
     card = get_copy().card
+    style = get_copy().embeds.staff_card
     t = ctx.ticket
     private = t.surface == TicketSurface.PRIVATE
     status, colour = status_line(ctx)
     if private:
-        title = card.private_title.format(
+        title = style.private_title.format(
             number=t.number, category=private_category_text(t)
         )
-        description = (t.description or "").strip() or card.awaiting_first_message
+        question = (t.description or "").strip() or card.awaiting_first_message
     else:
-        title = card.title.format(id=t.id, title=t.title or card.untitled)
-        description = (t.description or "").strip() or card.no_text
-    if len(description) > DESCRIPTION_MAX:
-        description = description[: DESCRIPTION_MAX - 1] + "…"
+        title = style.title.format(id=t.id, title=t.title or card.untitled)
+        question = (t.description or "").strip() or card.no_text
+    if len(question) > DESCRIPTION_MAX:
+        question = question[: DESCRIPTION_MAX - 1] + "…"
 
-    embed = discord.Embed(
-        title=title[:256],
+    embed = make_embed(
+        style,
+        title=title,
+        description=style.description.format(question=question),
+        footer=style.footer.format(id=t.id, ref=ticket_ref(t)),
+        color=colour,
         url=thread_link(guild_id, t.thread_id),
-        description=description,
-        colour=colour,
         timestamp=t.created_at,
     )
     embed.add_field(
@@ -228,7 +231,6 @@ def build_card_embed(ctx: CardContext, guild_id: int) -> discord.Embed:
         )
     if (line := ai_line(ctx.suggestion)) is not None:
         embed.add_field(name=card.field_ai, value=line, inline=False)
-    embed.set_footer(text=card.footer.format(id=t.id))
     return embed
 
 

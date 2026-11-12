@@ -35,7 +35,13 @@ A private, Mava-style ticket system, enabled by setting `TICKETS_CHANNEL_ID`:
 
 ## Changing what the bot says
 
-Every message players and staff see lives in [`copy/copy.toml`](copy/copy.toml), with comments listing each key's `{placeholders}`. Edit it and save: changes apply within a few seconds, with no restart. Invalid edits are logged and ignored. See DEPLOY.md §6.
+Every message players and staff see lives in [`copy/copy.toml`](copy/copy.toml), with comments listing each key's `{placeholders}`. That includes each embed's title, description, colour, footer and thumbnail (`[embeds.*]`).
+
+- To change just a few strings, copy [`copy/copy.local.toml.example`](copy/copy.local.toml.example) to `copy/copy.local.toml` (gitignored) and uncomment the keys you want to change. They override `copy.toml` key by key.
+- Saved changes apply within a few seconds, with no restart.
+- Invalid edits are logged and ignored.
+
+See DEPLOY.md §6.
 
 ## Development
 

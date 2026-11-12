@@ -20,3 +20,6 @@ data/
 
 # AI nonsense
 .commandcode
+
+# Local copy overrides (see copy/copy.local.toml.example)
+copy/copy.local.toml

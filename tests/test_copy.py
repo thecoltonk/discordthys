@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 
 from nephthys.core import copytext
-from nephthys.core.copytext import Copy
 from nephthys.core.copytext import CopyError
 from nephthys.core.copytext import CopyStore
 from nephthys.core.copytext import DEFAULT_COPY
@@ -24,8 +23,8 @@ def test_shipped_copy_matches_defaults_exactly():
 
 def test_every_field_is_documented_with_its_placeholders():
     text = dump_toml()
-    for section_name in Copy.model_fields:
-        section_cls = type(getattr(DEFAULT_COPY, section_name))
+    for section_name, section in copytext._sections(DEFAULT_COPY):
+        section_cls = type(section)
         assert f"[{section_name}]" in text
         for name in section_cls.model_fields:
             assert f"\n{name} = " in text

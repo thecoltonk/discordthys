@@ -267,3 +267,53 @@ Entries 101–103 (lock and archive on close) are superseded by 113–120.
 118. **A rating clicked on an old prompt after a reopen is recorded** (first click still counts) but **doesn't archive the open ticket.**
 119. **Migration `cloudsail_004`** adds `ticket.archived_at` and backfills it from `closed_at` for private tickets that were already closed, since they were archived on close under the old behaviour. The sweep therefore never touches them. Tested forwards and backwards, with a backfill check on real rows.
 120. **New env vars:** `CSAT_TIMEOUT_HOURS` (a positive number, so fractions like `0.5` work) and `TICKETS_LOCK_ON_CLOSE`. Both are in `.env.example`.
+
+## Follow-up: silent summary, copy overrides, configurable embeds
+
+**Process**
+
+121. **This work is on the same branch as the CSAT change** and goes into PR #4: the session can only push to one designated branch, and #4 wasn't merged yet. PR #4 is retitled to cover both changes.
+
+**Silent summary**
+
+122. **The daily summary is sent with Discord's @silent flag** (`silent=True`). It appears in the staff channel but sends no push or desktop notifications. Nothing else is silent: #tickets alerts still ping their roles.
+
+**Copy override file**
+
+123. **`COPY_OVERRIDE_FILE` (default `copy/copy.local.toml`) sits on top of `COPY_FILE`:** defaults ← `copy.toml` ← `copy.local.toml`.
+    - The merge is deep, key by key, including nested `[embeds.*]` sections: any key in the override wins, and anything missing falls back.
+    - The file is gitignored and excluded from the Docker image (it's host-local). It's served through the existing read-only `./copy` directory mount, so no new mount is needed.
+124. **Each file is validated on its own first, so errors name the file they're in.** The merged result is validated too.
+    - Live reload watches both files' modification times. An invalid edit to either is logged and the previous text stays live.
+    - Deleting the override falls back to `copy.toml`. The base file disappearing briefly (mid-save) is ignored.
+125. **Missing files.** A missing override at the default path is normal and logged at info level. An explicitly set `COPY_OVERRIDE_FILE` that doesn't exist is fatal at startup, matching `COPY_FILE`.
+126. **`copy/copy.local.toml.example` is generated** from the defaults (`python -m nephthys.core.copytext --example`), and a test keeps it in sync.
+    - Every key is listed *commented out* with its default value, its description and its placeholders, grouped under live `[section]` headers.
+    - Uncommenting a line overrides exactly that key. Copying the file as-is changes nothing, so defaults can still evolve.
+127. **`--check` accepts several files** (base, then override) and validates each file and their merge.
+
+**Configurable embeds**
+
+128. **Every embed the bot sends has an `[embeds.<name>]` section** with `title`, `description`, `color` (hex, `""` = none), `footer` and `thumbnail_url` (`""`, or an http(s) URL). The sections are `sticky`, `tickets_panel`, `ticket_opener`, `ticket_closed`, `staff_card`, `daily_summary`, `stats`, `waiting`, `ai_shadow` and `ai_public`.
+    - Titles, descriptions and footers are templates with per-key placeholders, e.g. `{question}` for staff cards, `{lines}` for `/waiting`, `{answer}` for AI, `{body}` and `{number}` for the opener.
+    - **The defaults reproduce the previous look exactly** (same text, colours and footers; no thumbnails), and a test checks this.
+    - All embeds are now built through one helper (`discord_ops/embeds.py`), which also enforces Discord's length limits.
+129. **Some embeds need extra keys:**
+    - Staff cards have one colour per status (`color_waiting`, `color_claimed`, `color_resolved`; gold, blurple and green as before) and a separate `private_title` for #tickets.
+    - `/stats` has a `title_one_day`.
+    - The sticky has a `description_no_faq`.
+130. **The #tickets opener and closing message were plain text, not embeds.** To keep "defaults = current look", their sections have `enabled = false` by default; set `enabled = true` to send them as embeds.
+    - In embed mode, "Ticket T-<n>" becomes the embed title and the welcome, picks and blurb become the description, with the buttons unchanged.
+    - The first opener still pings the player through a mention-only content line, because mentions inside embeds don't ping. The line contains no link, so nothing can unfurl. Reposts don't ping.
+    - The CSAT prompt stays text.
+131. **Keys moved, so each text has one home:**
+    - `[sticky] title/body/body_no_faq` → `[embeds.sticky]` (`[sticky]` is gone);
+    - `[tickets] panel_title/panel_body` → `[embeds.tickets_panel]`;
+    - `[card] title/private_title/footer` → `[embeds.staff_card]`;
+    - `[summary] title/period` → `[embeds.daily_summary]`;
+    - `[stats] stats_title*` → `[embeds.stats]`;
+    - `[commands] waiting_title` → `[embeds.waiting]`;
+    - `[ai] shadow_title/shadow_footer/public_title/public_footer` → `[embeds.ai_*]`.
+
+    A file that still uses an old key fails with a message naming the new location, rather than a generic "extra inputs" error. An empty leftover `[sticky]` header is ignored.
+132. **The every-placeholder stress test now runs twice:** with the opener and closing as text, and as embeds. Every declared placeholder in both modes is proven to be supplied by the code. The link-preview sweep still holds, because embed messages only ever carry mention-only content.

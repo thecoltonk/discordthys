@@ -31,6 +31,7 @@ from nephthys.database.tables import Ticket
 from nephthys.discord_ops import flows
 from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
+from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.send import respond_text
 from nephthys.discord_ops.send import send_embed
 from nephthys.discord_ops.send import send_text
@@ -145,11 +146,12 @@ def shadow_embed(
     ticket: Ticket, suggestion: AISuggestion, guild_id: int
 ) -> discord.Embed:
     ai_copy = get_copy().ai
-    embed = discord.Embed(
-        title=ai_copy.shadow_title.format(id=ticket.id, title=ticket.title or "")[:256],
+    style = get_copy().embeds.ai_shadow
+    embed = make_embed(
+        style,
+        title=style.title.format(id=ticket.id, title=ticket.title or ""),
+        description=style.description.format(answer=suggestion.answer or ""),
         url=threads.thread_link(guild_id, ticket.thread_id),
-        description=suggestion.answer or "",
-        colour=discord.Colour.dark_teal(),
     )
     embed.add_field(
         name=ai_copy.shadow_field_confidence,
@@ -159,7 +161,6 @@ def shadow_embed(
         name=ai_copy.shadow_field_sources,
         value=sources_text(list(suggestion.kb_sources)),
     )
-    embed.set_footer(text=ai_copy.shadow_footer)
     return embed
 
 
@@ -186,17 +187,15 @@ async def post_shadow(bot: "SupportBot", ticket: Ticket, suggestion: AISuggestio
 
 def public_embed(suggestion: AISuggestion) -> discord.Embed:
     ai_copy = get_copy().ai
-    embed = discord.Embed(
-        title=ai_copy.public_title,
-        description=suggestion.answer or "",
-        colour=discord.Colour.dark_teal(),
-    )
-    embed.set_footer(
-        text=ai_copy.public_footer.format(
+    style = get_copy().embeds.ai_public
+    return make_embed(
+        style,
+        title=style.title,
+        description=style.description.format(answer=suggestion.answer or ""),
+        footer=style.footer.format(
             sources=", ".join(suggestion.kb_sources) or ai_copy.no_sources
-        )
+        ),
     )
-    return embed
 
 
 async def post_public(bot: "SupportBot", ticket: Ticket, suggestion: AISuggestion):

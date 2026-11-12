@@ -16,6 +16,7 @@ from nephthys.database.enums import TicketSurface
 from nephthys.discord_ops import private_flow
 from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
+from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.flows import is_question
 from nephthys.discord_ops.private_flow import Player
 from nephthys.discord_ops.send import followup_text
@@ -27,17 +28,15 @@ from nephthys.ui.ticket_buttons import panel_view
 
 log = logging.getLogger(__name__)
 
-PANEL_COLOUR = discord.Colour.blurple()
-
 
 def panel_embed(community_channel_id: int) -> discord.Embed:
-    copy = get_copy().tickets
-    return discord.Embed(
-        title=copy.panel_title,
-        description=copy.panel_body.format(
+    style = get_copy().embeds.tickets_panel
+    return make_embed(
+        style,
+        title=style.title,
+        description=style.description.format(
             community_channel=f"<#{community_channel_id}>"
         ),
-        colour=PANEL_COLOUR,
     )
 
 

@@ -21,6 +21,7 @@ AI_ANSWER_MODES = ("off", "shadow", "public")
 DEFAULT_AI_BASE_URL = "https://ai.hackclub.com/proxy/v1"
 
 DEFAULT_COPY_FILE = "copy/copy.toml"
+DEFAULT_COPY_OVERRIDE_FILE = "copy/copy.local.toml"
 DEFAULT_TICKET_CATEGORIES_FILE = "copy/ticket_categories.toml"
 # Env vars that used to hold text; text now lives in copy/copy.toml
 DEPRECATED_TEXT_ENV = ("STICKY_TITLE", "STICKY_BODY")
@@ -68,6 +69,9 @@ class Settings:
     # Message text (copy/copy.toml)
     copy_file: str
     copy_file_explicit: bool
+    # Local overrides on top of copy_file (gitignored; any key wins)
+    copy_override_file: str
+    copy_override_file_explicit: bool
     deprecated_env_set: tuple[str, ...]
     timezone: str
 
@@ -317,6 +321,9 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         sticky_debounce_seconds=debounce,
         copy_file=get("COPY_FILE", DEFAULT_COPY_FILE) or DEFAULT_COPY_FILE,
         copy_file_explicit=get("COPY_FILE") is not None,
+        copy_override_file=get("COPY_OVERRIDE_FILE", DEFAULT_COPY_OVERRIDE_FILE)
+        or DEFAULT_COPY_OVERRIDE_FILE,
+        copy_override_file_explicit=get("COPY_OVERRIDE_FILE") is not None,
         deprecated_env_set=tuple(n for n in DEPRECATED_TEXT_ENV if get(n) is not None),
         timezone=get("TIMEZONE", "Europe/London") or "Europe/London",
         ticket_categories=categories,

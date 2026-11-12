@@ -6,6 +6,11 @@
 #
 # {placeholders} are filled in by the bot; each key lists the ones it accepts.
 # Use {{ and }} for literal braces. Discord markdown works (**bold**, [link](url)).
+# [embeds.*] sections set the title, description, color (hex), footer and
+# thumbnail of each kind of embed.
+#
+# To change only a few strings, prefer copy/copy.local.toml (see
+# copy/copy.local.toml.example): it overrides this file key by key.
 #
 # Regenerate the defaults with:  python -m nephthys.core.copytext > copy/copy.toml
 
@@ -36,27 +41,6 @@ thread_name_fallback = "Question from {name}"
 # Private reply when a button fails unexpectedly.
 something_went_wrong = "something went wrong there — staff have been told!"
 
-[sticky]
-# The "how it works" message at the bottom of #community-help.
-title = "How #community-help works"
-# Used when FAQ_URL is set.
-# Placeholders: {faq_url}
-body = '''
-**Post your question as a new message in this channel** and a thread will be opened for it. Anyone can help out, and staff will be along soon!
-
-• Keep all follow-ups inside your thread.
-• Once you're sorted, hit **Mark as resolved** in your thread.
-• Got a new question later? Just post a new message.
-
-Before posting, check the FAQ: {faq_url}'''
-# Used when FAQ_URL is unset.
-body_no_faq = '''
-**Post your question as a new message in this channel** and a thread will be opened for it. Anyone can help out, and staff will be along soon!
-
-• Keep all follow-ups inside your thread.
-• Once you're sorted, hit **Mark as resolved** in your thread.
-• Got a new question later? Just post a new message.'''
-
 [errors]
 # Private (ephemeral) refusals.
 not_allowed = "only the person who asked or a staff member can do that, sorry!"
@@ -83,7 +67,6 @@ ip_unconfigured = "the server address hasn't been set up yet (SERVER_ADDRESS)."
 resolved = "resolved ✅"
 # Private reply to /reopen.
 reopened = "re-opened 🔄"
-waiting_title = "Waiting for staff"
 waiting_empty = "nothing waiting — nice work, team!"
 # One line per waiting ticket. {ref} is #<id> or T-<number>; {last_message} is a relative time.
 # Placeholders: {id}, {last_message}, {link}, {ref}, {title}
@@ -93,8 +76,6 @@ waiting_more = "_…and more. Showing the oldest {limit}._"
 
 [card]
 # Staff ticket cards in STAFF_CHANNEL_ID.
-# Placeholders: {id}, {title}
-title = "#{id} · {title}"
 untitled = "Untitled question"
 no_text = "*(no text — see the thread)*"
 # Stands in for an unknown user.
@@ -136,11 +117,6 @@ ai_not_helpful = "👎 rated not helpful"
 ai_fixed = "✅ player said it fixed it"
 ai_needs_human = "🙋 player still needs a human"
 open_thread_button = "Open thread"
-# Placeholders: {id}
-footer = "Ticket #{id}"
-# #tickets card title.
-# Placeholders: {category}, {number}
-private_title = "T-{number} · {category}"
 category_pending = "category not picked yet"
 awaiting_first_message = "*(waiting for the player's first message)*"
 field_priority = "Priority"
@@ -156,10 +132,6 @@ escalated_to_value = "[T-{number}]({link})"
 
 [stats]
 # Shared by /stats and the daily summary.
-# Placeholders: {days}, {surface}
-stats_title = "{surface} — last {days} days"
-# Placeholders: {surface}
-stats_title_one_day = "{surface} — last 1 day"
 surface_community = "#community-help"
 surface_tickets = "#tickets"
 field_opened = "Opened"
@@ -193,10 +165,6 @@ days = "{n} days"
 
 [summary]
 # The daily summary post.
-# Placeholders: {surface}
-title = "📊 {surface} daily summary"
-# Placeholders: {since}, {until}
-period = "{since} → {until}"
 field_by_category = "By category"
 # Placeholders: {count}, {days}
 field_waiting = "Waiting > {days} days ({count})"
@@ -220,17 +188,11 @@ ai_attempts_reasons = "Attempts 24h: {attempts} ({skipped} not posted: {reasons}
 
 [ai]
 # AI answers (shadow suggestions for staff, public answers for players).
-public_title = "🤖 Automated answer"
-# Placeholders: {sources}
-public_footer = "I'm a bot answering from the Cloudsail knowledge base, and I can be wrong. Sources: {sources}"
 fixed_button = "This fixed it"
 need_human_button = "I still need a human"
 need_human_reply = "no worries — a human will be along to help soon! feel free to add any extra details while you wait."
-# Placeholders: {id}, {title}
-shadow_title = "🤖 AI suggestion (shadow) · #{id} {title}"
 shadow_field_confidence = "Confidence"
 shadow_field_sources = "Sources"
-shadow_footer = "Not shown to the player. Would this have been a good answer?"
 no_sources = "none"
 helpful_button = "Helpful"
 not_helpful_button = "Not helpful"
@@ -246,10 +208,6 @@ outcome_needs_human = "🙋 {user} still needs a human"
 
 [tickets]
 # #tickets: the panel, private ticket threads, closing, CSAT and escalation.
-panel_title = "Need help?"
-# The sticky ticket panel in #tickets.
-# Placeholders: {community_channel}
-panel_body = "First, check the known issues and see if {community_channel} can sort it. If not, hit the button below to open a private thread with the team."
 create_button = "Create Ticket"
 # Private thread name (max 100 characters; longer is cut).
 # Placeholders: {name}, {number}
@@ -306,3 +264,154 @@ escalate_done = "escalated to {link}"
 already_escalated = "this was already escalated: {link}"
 not_community_thread = "use this inside a #community-help ticket thread."
 tickets_disabled = "#tickets isn't set up (TICKETS_CHANNEL_ID)."
+
+[embeds.sticky]
+# The "how it works" sticky at the bottom of #community-help.
+title = "How #community-help works"
+# Used when FAQ_URL is set.
+# Placeholders: {faq_url}
+description = '''
+**Post your question as a new message in this channel** and a thread will be opened for it. Anyone can help out, and staff will be along soon!
+
+• Keep all follow-ups inside your thread.
+• Once you're sorted, hit **Mark as resolved** in your thread.
+• Got a new question later? Just post a new message.
+
+Before posting, check the FAQ: {faq_url}'''
+# Hex colour, e.g. #5865F2 ("" = none).
+color = "#5865F2"
+footer = ""
+# Optional image URL (https://...).
+thumbnail_url = ""
+# Used when FAQ_URL is unset.
+description_no_faq = '''
+**Post your question as a new message in this channel** and a thread will be opened for it. Anyone can help out, and staff will be along soon!
+
+• Keep all follow-ups inside your thread.
+• Once you're sorted, hit **Mark as resolved** in your thread.
+• Got a new question later? Just post a new message.'''
+
+[embeds.tickets_panel]
+# The sticky "Need help?" panel in #tickets.
+title = "Need help?"
+# Placeholders: {community_channel}
+description = "First, check the known issues and see if {community_channel} can sort it. If not, hit the button below to open a private thread with the team."
+# Hex colour, e.g. #5865F2 ("" = none).
+color = "#5865F2"
+footer = ""
+# Optional image URL (https://...).
+thumbnail_url = ""
+
+[embeds.ticket_opener]
+# The #tickets opener. Off by default (plain text, as before); set enabled = true
+# to send it as an embed. {body} is the welcome, picks and blurb.
+# Placeholders: {number}
+title = "Ticket T-{number}"
+# Placeholders: {body}
+description = "{body}"
+# Hex colour, e.g. #5865F2 ("" = none).
+color = "#5865F2"
+# Placeholders: {number}
+footer = ""
+# Optional image URL (https://...).
+thumbnail_url = ""
+# true = send as an embed; false = plain text.
+enabled = false
+
+[embeds.ticket_closed]
+# The #tickets closing message. Off by default (plain text); enabled = true sends
+# it as an embed. {message} is [tickets] closed.
+title = ""
+# Placeholders: {message}
+description = "{message}"
+# Hex colour, e.g. #5865F2 ("" = none).
+color = "#2ECC71"
+footer = ""
+# Optional image URL (https://...).
+thumbnail_url = ""
+# true = send as an embed; false = plain text.
+enabled = false
+
+[embeds.staff_card]
+# Staff ticket cards (both channels). The colour follows the ticket status.
+# #community-help cards.
+# Placeholders: {id}, {title}
+title = "#{id} · {title}"
+# Placeholders: {question}
+description = "{question}"
+# Hex colour like #5865F2 (empty = none).
+color = ""
+# Placeholders: {id}, {ref}
+footer = "Ticket #{id}"
+# Optional image URL (https://...).
+thumbnail_url = ""
+# #tickets cards.
+# Placeholders: {category}, {number}
+private_title = "T-{number} · {category}"
+# Hex colour, e.g. #5865F2 ("" = none).
+color_waiting = "#F1C40F"
+# Hex colour, e.g. #5865F2 ("" = none).
+color_claimed = "#5865F2"
+# Hex colour, e.g. #5865F2 ("" = none).
+color_resolved = "#2ECC71"
+
+[embeds.daily_summary]
+# The daily summary (one embed per channel).
+# Placeholders: {surface}
+title = "📊 {surface} daily summary"
+# Placeholders: {since}, {until}
+description = "{since} → {until}"
+# Hex colour, e.g. #5865F2 ("" = none).
+color = "#5865F2"
+footer = ""
+# Optional image URL (https://...).
+thumbnail_url = ""
+
+[embeds.stats]
+# /stats (one embed per channel).
+# Placeholders: {days}, {surface}
+title = "{surface} — last {days} days"
+# Placeholders: {days}, {surface}
+description = ""
+# Hex colour, e.g. #5865F2 ("" = none).
+color = "#5865F2"
+footer = ""
+# Optional image URL (https://...).
+thumbnail_url = ""
+# Placeholders: {surface}
+title_one_day = "{surface} — last 1 day"
+
+[embeds.waiting]
+# /waiting. {lines} is the list of tickets.
+title = "Waiting for staff"
+# Placeholders: {lines}
+description = "{lines}"
+# Hex colour, e.g. #5865F2 ("" = none).
+color = "#E67E22"
+footer = ""
+# Optional image URL (https://...).
+thumbnail_url = ""
+
+[embeds.ai_shadow]
+# AI suggestions posted to staff (shadow mode).
+# Placeholders: {id}, {title}
+title = "🤖 AI suggestion (shadow) · #{id} {title}"
+# Placeholders: {answer}
+description = "{answer}"
+# Hex colour, e.g. #5865F2 ("" = none).
+color = "#11806A"
+footer = "Not shown to the player. Would this have been a good answer?"
+# Optional image URL (https://...).
+thumbnail_url = ""
+
+[embeds.ai_public]
+# AI answers posted to players (public mode).
+title = "🤖 Automated answer"
+# Placeholders: {answer}
+description = "{answer}"
+# Hex colour, e.g. #5865F2 ("" = none).
+color = "#11806A"
+# Placeholders: {sources}
+footer = "I'm a bot answering from the Cloudsail knowledge base, and I can be wrong. Sources: {sources}"
+# Optional image URL (https://...).
+thumbnail_url = ""

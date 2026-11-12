@@ -1,0 +1,140 @@
+import os
+from pathlib import Path
+
+import pytest
+
+from nephthys.core import copytext
+from nephthys.core.copytext import Copy
+from nephthys.core.copytext import CopyError
+from nephthys.core.copytext import CopyStore
+from nephthys.core.copytext import DEFAULT_COPY
+from nephthys.core.copytext import dump_toml
+from nephthys.core.copytext import load_copy_file
+from nephthys.core.copytext import parse_copy
+from nephthys.core.copytext import placeholders_in
+
+REPO_COPY = Path(__file__).parents[1] / "copy" / "copy.toml"
+
+
+def test_shipped_copy_matches_defaults_exactly():
+    assert load_copy_file(REPO_COPY) == DEFAULT_COPY
+    # Regenerate with: python -m nephthys.core.copytext > copy/copy.toml
+    assert REPO_COPY.read_text(encoding="utf-8") == dump_toml()
+
+
+def test_every_field_is_documented_with_its_placeholders():
+    text = dump_toml()
+    for section_name in Copy.model_fields:
+        section_cls = type(getattr(DEFAULT_COPY, section_name))
+        assert f"[{section_name}]" in text
+        for name in section_cls.model_fields:
+            assert f"\n{name} = " in text
+            for p in section_cls.PLACEHOLDERS.get(name, ()):
+                assert "{" + p + "}" in text
+
+
+def test_partial_override_keeps_other_defaults():
+    copy = parse_copy('[community]\nresolved = "done! thanks {user}"\n')
+    assert copy.community.resolved == "done! thanks {user}"
+    assert copy.community.reopened == DEFAULT_COPY.community.reopened
+    assert copy.card == DEFAULT_COPY.card
+
+
+def test_empty_file_is_all_defaults():
+    assert parse_copy("") == DEFAULT_COPY
+
+
+@pytest.mark.parametrize(
+    ("toml", "expected"),
+    [
+        ('[community]\nresolvd = "x"\n', "resolvd"),  # typo'd key
+        ('[comunity]\nresolved = "x"\n', "comunity"),  # typo'd section
+        ('[community]\nresolved = "by {usr}"\n', "{usr}"),  # unknown placeholder
+        ('[community]\nreopen_button = "{user}"\n', "allowed: none"),  # none allowed
+        ('[community]\nresolved = "by {}"\n', "positional"),
+        ('[community]\nresolved = "by {user"\n', "invalid template"),
+        ("[community]\nresolved = 5\n", "resolved"),
+        ("not toml =", "invalid TOML"),
+    ],
+)
+def test_invalid_copy_is_rejected_with_a_useful_message(toml: str, expected: str):
+    with pytest.raises(CopyError) as exc:
+        parse_copy(toml, "copy.toml")
+    assert expected in str(exc.value)
+
+
+def test_literal_braces_allowed():
+    copy = parse_copy('[community]\nreopen_button = "{{re-open}}"\n')
+    assert copy.community.reopen_button.format() == "{re-open}"
+
+
+def test_placeholders_in():
+    assert placeholders_in("a {x} b {y!r} {z:>3} {{lit}}") == {"x", "y", "z"}
+
+
+def write(path: Path, text: str, mtime: float) -> None:
+    path.write_text(text, encoding="utf-8")
+    os.utime(path, (mtime, mtime))
+
+
+def test_live_reload_and_bad_edits_are_ignored(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(copytext, "RELOAD_CHECK_SECONDS", 0)
+    f = tmp_path / "copy.toml"
+    write(f, '[community]\nreopen_button = "Open again"\n', 1_000)
+    store = CopyStore(f)
+    assert store.load(required=True).community.reopen_button == "Open again"
+
+    write(f, '[community]\nreopen_button = "Re-open please"\n', 2_000)
+    assert store.get().community.reopen_button == "Re-open please"
+
+    write(f, '[community]\nreopen_button = "{oops}"\n', 3_000)  # invalid edit
+    assert store.get().community.reopen_button == "Re-open please"
+
+    f.unlink()  # mid-save / removed: keep current
+    assert store.get().community.reopen_button == "Re-open please"
+
+
+def test_reload_is_rate_limited(tmp_path: Path):
+    f = tmp_path / "copy.toml"
+    write(f, '[community]\nreopen_button = "A"\n', 1_000)
+    store = CopyStore(f)
+    store.load(required=True)
+    write(f, '[community]\nreopen_button = "B"\n', 2_000)
+    assert store.get().community.reopen_button == "A"  # checked < 5s ago
+
+
+def test_missing_file(tmp_path: Path):
+    assert CopyStore(tmp_path / "nope.toml").load(required=False) == DEFAULT_COPY
+    with pytest.raises(CopyError):
+        CopyStore(tmp_path / "nope.toml").load(required=True)
+
+
+def test_invalid_file_fails_startup(tmp_path: Path):
+    f = tmp_path / "copy.toml"
+    f.write_text('[card]\ntitle = "{nope}"\n')
+    with pytest.raises(CopyError):
+        CopyStore(f).load(required=True)
+
+
+def test_main_exits_on_invalid_copy(tmp_path: Path, caplog):
+    from nephthys.__main__ import load_copy_or_exit
+    from tests.helpers import make_settings
+
+    bad = tmp_path / "copy.toml"
+    bad.write_text("[sticky]\nbody = '{faq}'\n")
+    with pytest.raises(SystemExit) as exc:
+        load_copy_or_exit(make_settings(COPY_FILE=str(bad)))
+    assert exc.value.code == 2
+
+    good = tmp_path / "good.toml"
+    good.write_text("")
+    with caplog.at_level("WARNING"):
+        load_copy_or_exit(make_settings(COPY_FILE=str(good), STICKY_TITLE="x"))
+    assert "STICKY_TITLE is no longer used" in caplog.text
+
+
+def test_cli_check(tmp_path: Path, capsys):
+    assert copytext._main(["x", "--check", str(REPO_COPY)]) == 0
+    bad = tmp_path / "bad.toml"
+    bad.write_text("[x]\n")
+    assert copytext._main(["x", "--check", str(bad)]) == 1

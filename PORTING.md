@@ -33,6 +33,7 @@ These supersede the matching rows above and the macro / staff-feed sections belo
 | Staff feed | Replaced by **Nephthys-style staff ticket cards**. Each card shows the question, the author with their past-ticket count, status and claimer, a category select, and a thread link. The card is edited on claim, resolve and re-open. |
 | Categories | `TICKET_CATEGORIES` (default Gameplay, Bug, Claims, Economy, Store, Other). The category is stored on the ticket and shown in `/stats` and the daily summary. |
 | Daily summary | Posted to `STAFF_CHANNEL_ID` at `DAILY_SUMMARY_TIME` / `DAILY_SUMMARY_TIMEZONE` (default 09:00 America/Phoenix). |
+| #tickets (Phase 2) | Built. See README "#tickets" and DECISIONS entries 85–112. Staff alerts reuse the staff card (private surface); private tickets use T-<n> numbers from `TICKET_NUMBER_START`; categories live in `copy/ticket_categories.toml`. |
 | AI (optional) | An OpenAI-compatible client (Hack Club AI by default). It auto-categorises new tickets, and its answers are grounded only in `kb/*.md`. Shadow mode is the default; public mode is opt-in. |
 
 ---

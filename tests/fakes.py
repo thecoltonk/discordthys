@@ -67,6 +67,7 @@ class FakeWorld:
         # (channel_id, message_id) -> the message the bot sent there
         self.messages: dict[tuple[int, int], SentMessage] = {}
         self.edits: list[tuple[int, int, dict[str, Any]]] = []
+        self.text_channels: dict[int, MagicMock] = {}
 
 
 class FakePartialMessage:
@@ -124,7 +125,9 @@ def make_thread(world: FakeWorld, thread_id: int, parent_id: int) -> MagicMock:
     thread.id = thread_id
     thread.parent_id = parent_id
     thread.archived = False
+    thread.locked = False
     thread.human_messages = []
+    thread.added_users = []
 
     async def send(content: str | None = None, **kwargs: Any) -> SentMessage:
         if thread.archived:
@@ -143,7 +146,14 @@ def make_thread(world: FakeWorld, thread_id: int, parent_id: int) -> MagicMock:
     async def edit(**kwargs: Any) -> MagicMock:
         if "archived" in kwargs:
             thread.archived = kwargs["archived"]
+        if "locked" in kwargs:
+            thread.locked = kwargs["locked"]
         return thread
+
+    async def add_user(user: Any) -> None:
+        if getattr(thread, "add_user_fails", False):
+            raise discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "nope")
+        thread.added_users.append(user.id)
 
     async def delete(**kwargs: Any) -> None:
         world.threads.pop(thread_id, None)
@@ -160,6 +170,10 @@ def make_thread(world: FakeWorld, thread_id: int, parent_id: int) -> MagicMock:
     thread.edit = AsyncMock(side_effect=edit)
     thread.delete = AsyncMock(side_effect=delete)
     thread.history = history
+    thread.add_user = AsyncMock(side_effect=add_user)
+    thread.get_partial_message = MagicMock(
+        side_effect=lambda mid: FakePartialMessage(world, thread_id, mid)
+    )
     thread.deleted = False
     world.threads[thread_id] = thread
     return thread
@@ -184,11 +198,14 @@ class FakeBot:
             await self.tasks.pop(0)
 
     def get_channel(self, channel_id: int) -> Any:
-        return self.world.threads.get(channel_id)
+        return self.world.threads.get(channel_id) or self.world.text_channels.get(
+            channel_id
+        )
 
     async def fetch_channel(self, channel_id: int) -> Any:
-        if channel_id in self.world.threads:
-            return self.world.threads[channel_id]
+        found = self.get_channel(channel_id)
+        if found is not None:
+            return found
         raise not_found()
 
     def get_partial_messageable(self, channel_id: int) -> FakeMessageable:
@@ -268,3 +285,36 @@ def make_interaction(
     interaction.response.send_message = AsyncMock(side_effect=send_message)
     interaction.original_response = AsyncMock(side_effect=original_response)
     return interaction
+
+
+def make_text_channel(bot: "FakeBot", channel_id: int) -> MagicMock:
+    """A text channel that can create (private) threads, e.g. #tickets."""
+    world = bot.world
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = channel_id
+    channel.created_threads = []
+    channel.create_thread_fails = False
+    messageable = FakeMessageable(world, channel_id)
+
+    async def create_thread(**kwargs: Any) -> MagicMock:
+        if channel.create_thread_fails:
+            raise discord.HTTPException(MagicMock(status=400, reason="Bad"), "nope")
+        thread = make_thread(world, next_id(), channel_id)
+        thread.name = kwargs["name"]
+        thread.type = kwargs.get("type")
+        thread.invitable = kwargs.get("invitable")
+        channel.created_threads.append((thread, kwargs))
+        return thread
+
+    def history(**kwargs: Any):
+        async def gen():
+            for m in reversed(world.channel_history[channel_id]):
+                yield m
+
+        return gen()
+
+    channel.create_thread = AsyncMock(side_effect=create_thread)
+    channel.send = AsyncMock(side_effect=messageable.send)
+    channel.history = history
+    world.text_channels[channel_id] = channel
+    return channel

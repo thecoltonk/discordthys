@@ -17,10 +17,15 @@ async def migrated_db():
     from nephthys.database.tables import Ticket
     from nephthys.piccolo_migrations import cloudsail_001_init
     from nephthys.piccolo_migrations import cloudsail_002_cards_categories_ai
+    from nephthys.piccolo_migrations import cloudsail_003_private_tickets
 
     await Ticket.raw("DROP SCHEMA IF EXISTS public CASCADE")
     await Ticket.raw("CREATE SCHEMA public")
-    for migration in (cloudsail_001_init, cloudsail_002_cards_categories_ai):
+    for migration in (
+        cloudsail_001_init,
+        cloudsail_002_cards_categories_ai,
+        cloudsail_003_private_tickets,
+    ):
         await Ticket.raw(postgresql_code_block(migration.FORWARDS))
     yield
 
@@ -34,4 +39,16 @@ async def db(migrated_db):
         "TRUNCATE app_user, ticket, bot_message, sticky_message, ai_suggestion "
         "RESTART IDENTITY CASCADE"
     )
+    await Ticket.raw("ALTER SEQUENCE ticket_number_seq RESTART WITH 1")
     yield
+
+
+@pytest.fixture(autouse=True)
+def default_copy():
+    """Each test starts (and ends) with the built-in default text."""
+    from nephthys.core.copytext import DEFAULT_COPY
+    from nephthys.core.copytext import use_copy
+
+    use_copy(DEFAULT_COPY)
+    yield
+    use_copy(DEFAULT_COPY)

@@ -8,8 +8,8 @@ import pytest
 from nephthys.cogs.community_help import CommunityHelp
 from nephthys.core import ai_store
 from nephthys.core import tickets
+from nephthys.core.copytext import DEFAULT_COPY as C
 from nephthys.core.queries import get_unanswered_tickets
-from nephthys.core.transcript import TRANSCRIPT
 from nephthys.database.enums import TicketStatus
 from nephthys.database.enums import UserType
 from nephthys.database.tables import AISuggestion
@@ -106,7 +106,7 @@ async def test_shadow_feedback(kb_dir: Path):
 
     player = make_interaction(bot, make_user(), message=message)
     await AIFeedbackButton(1, "up").callback(player)
-    assert player.response.send_message.call_args.args[0] == TRANSCRIPT.staff_only
+    assert player.response.send_message.call_args.args[0] == C.errors.staff_only
 
     mod = make_user(staff=True)
     i = make_interaction(bot, mod, message=message)
@@ -167,7 +167,7 @@ async def test_public_mode_fixed_resolves(kb_dir: Path):
     bot = ai_bot(kb_dir, AI_ANSWER_MODE="public")
     _, ticket, op = await ask(bot)
     answer_msg = bot.sends(ticket.thread_id)[-1]
-    assert answer_msg.embed.title == TRANSCRIPT.ai_public_title
+    assert answer_msg.embed.title == C.ai.public_title
     assert "faq.md" in answer_msg.embed.footer.text
     assert [c.custom_id for c in answer_msg.view.children] == [
         "cs:aifix:1",
@@ -178,7 +178,7 @@ async def test_public_mode_fixed_resolves(kb_dir: Path):
     message = SimpleNamespace(embeds=[answer_msg.embed])
     rando = make_interaction(bot, make_user(), message=message)
     await AIFixedButton(1).callback(rando)
-    assert rando.response.send_message.call_args.args[0] == TRANSCRIPT.not_allowed
+    assert rando.response.send_message.call_args.args[0] == C.errors.not_allowed
 
     i = make_interaction(bot, op, message=message)
     await AIFixedButton(1).callback(i)
@@ -190,9 +190,7 @@ async def test_public_mode_fixed_resolves(kb_dir: Path):
 
     again = make_interaction(bot, op, message=message)
     await AINeedHumanButton(1).callback(again)
-    assert (
-        again.response.send_message.call_args.args[0] == TRANSCRIPT.ai_already_answered
-    )
+    assert again.response.send_message.call_args.args[0] == C.errors.ai_already_answered
 
 
 async def test_public_mode_needs_human_keeps_waiting(kb_dir: Path):
@@ -202,7 +200,7 @@ async def test_public_mode_needs_human_keeps_waiting(kb_dir: Path):
     i = make_interaction(bot, op, message=message)
     await AINeedHumanButton(1).callback(i)
 
-    assert bot.sends(ticket.thread_id)[-1].content == TRANSCRIPT.ai_need_human_reply
+    assert bot.sends(ticket.thread_id)[-1].content == C.ai.need_human_reply
     t = await tickets.require_ticket(ticket.id)
     assert t.status == TicketStatus.OPEN and t.assigned_to is None
     assert [w.id for w in await get_unanswered_tickets()] == [ticket.id]

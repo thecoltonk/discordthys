@@ -11,7 +11,7 @@ from typing import Any
 
 import discord
 
-from nephthys.core.transcript import TRANSCRIPT
+from nephthys.core.copytext import get_copy
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class ResolveButton(
         self.ticket_id = ticket_id
         super().__init__(
             discord.ui.Button(
-                label=TRANSCRIPT.resolve_button,
+                label=get_copy().community.resolve_button,
                 style=discord.ButtonStyle.success,
                 emoji="✅",
                 custom_id=f"cs:resolve:{ticket_id}",
@@ -55,7 +55,7 @@ class ReopenButton(
         self.ticket_id = ticket_id
         super().__init__(
             discord.ui.Button(
-                label=TRANSCRIPT.reopen_button,
+                label=get_copy().community.reopen_button,
                 style=discord.ButtonStyle.secondary,
                 emoji="🔄",
                 custom_id=f"cs:reopen:{ticket_id}",
@@ -109,7 +109,7 @@ class CategorySelect(
         super().__init__(
             discord.ui.Select(
                 custom_id=f"cs:cat:{ticket_id}",
-                placeholder="Set a category…",
+                placeholder=get_copy().card.category_placeholder,
                 min_values=1,
                 max_values=1,
                 options=[
@@ -136,7 +136,9 @@ class CategorySelect(
         from nephthys.discord_ops.flows import set_category_from_interaction
 
         values = (interaction.data or {}).get("values") or self.item.values
-        await set_category_from_interaction(interaction, self.ticket_id, values[0])
+        await set_category_from_interaction(
+            interaction, self.ticket_id, values[0] if values else None
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -154,9 +156,10 @@ class AIFeedbackButton(
         self.suggestion_id = suggestion_id
         self.verdict = verdict
         up = verdict == "up"
+        ai_copy = get_copy().ai
         super().__init__(
             discord.ui.Button(
-                label="Helpful" if up else "Not helpful",
+                label=ai_copy.helpful_button if up else ai_copy.not_helpful_button,
                 emoji="👍" if up else "👎",
                 style=discord.ButtonStyle.success if up else discord.ButtonStyle.danger,
                 custom_id=f"cs:aifb:{suggestion_id}:{verdict}",
@@ -191,7 +194,7 @@ class AIFixedButton(
         self.suggestion_id = suggestion_id
         super().__init__(
             discord.ui.Button(
-                label=TRANSCRIPT.ai_fixed_button,
+                label=get_copy().ai.fixed_button,
                 emoji="✅",
                 style=discord.ButtonStyle.success,
                 custom_id=f"cs:aifix:{suggestion_id}",
@@ -226,7 +229,7 @@ class AINeedHumanButton(
         self.suggestion_id = suggestion_id
         super().__init__(
             discord.ui.Button(
-                label=TRANSCRIPT.ai_need_human_button,
+                label=get_copy().ai.need_human_button,
                 emoji="🙋",
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"cs:aihuman:{suggestion_id}",
@@ -257,7 +260,19 @@ def staff_card_view(
     view = discord.ui.View(timeout=None)
     view.add_item(CategorySelect(ticket_id, categories, current))
     view.add_item(
-        discord.ui.Button(label="Open thread", url=thread_url, emoji="🧵", row=1)
+        discord.ui.Button(
+            label=get_copy().card.open_thread_button, url=thread_url, emoji="🧵", row=1
+        )
+    )
+    return view
+
+
+def link_only_view(thread_url: str) -> discord.ui.View:
+    view = discord.ui.View(timeout=None)
+    view.add_item(
+        discord.ui.Button(
+            label=get_copy().card.open_thread_button, url=thread_url, emoji="🧵"
+        )
     )
     return view
 

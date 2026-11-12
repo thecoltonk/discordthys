@@ -1,0 +1,81 @@
+# Cloudsail Support: #tickets categories (PRODUCT.md §2).
+#
+# Read once at startup - restart the bot after editing:  docker compose restart bot
+# Validate first with:  python -m nephthys.core.ticket_categories --check <file>
+#
+# Each [[categories]] entry becomes a button on a new ticket. A category either
+# has [[categories.subcategories]] (the player picks one next) or is a "leaf"
+# that uses its own priority.
+#
+#   key       stable ID stored on tickets (a-z, 0-9, _). Don't rename keys that
+#             open tickets use; add a new category instead.
+#   label     button text (max 80 characters); emoji is optional
+#   role      who gets pinged on the staff alert: "staff", "store", "mod"
+#             (STAFF_ROLE_ID / STORE_ROLE_ID / MOD_ROLE_ID) or a numeric role ID.
+#             High priority tickets also ping the Staff role.
+#   priority  "low", "medium" or "high"
+#   blurb     shown after the pick: tell the player what to include
+#
+# Regenerate the defaults with:
+#   python -m nephthys.core.ticket_categories > copy/ticket_categories.toml
+
+
+[[categories]]
+key = "server_issue"
+label = "Server Issue"
+emoji = "❗"
+role = "staff"
+blurb = "What kind of server issue is it?"
+
+  [[categories.subcategories]]
+  key = "urgent"
+  label = "Urgent"
+  emoji = "💥"
+  priority = "high"
+  blurb = "Sorry about that! Staff have been alerted. Please tell us **what happened**, your **IGN**, **where and when** it happened, and attach **screenshots** if you have them."
+
+  [[categories.subcategories]]
+  key = "bug_report"
+  label = "Bug Report"
+  emoji = "🔧"
+  priority = "medium"
+  blurb = "Thanks for reporting a bug! Please tell us **what happened**, your **IGN**, **where and when** it happened, and attach **screenshots** if you have them."
+
+  [[categories.subcategories]]
+  key = "other_technical"
+  label = "Other Technical"
+  emoji = "💻"
+  priority = "low"
+  blurb = "Please tell us **what's going on**, your **IGN**, **where and when** it happened, and attach **screenshots** if you have them."
+
+[[categories]]
+key = "store"
+label = "Store"
+emoji = "🛒"
+role = "store"
+priority = "medium"
+blurb = "Please tell us your **IGN**, **what you bought**, **roughly when** you bought it, and **what's wrong**."
+
+[[categories]]
+key = "bans_appeals"
+label = "Bans & Appeals"
+emoji = "🔨"
+role = "mod"
+priority = "medium"
+blurb = "Please tell us your **IGN** and **what happened**. If you're banned from Discord, use https://appeals.cloudsail.uk instead."
+
+[[categories]]
+key = "reports"
+label = "Reports"
+emoji = "🚩"
+role = "mod"
+priority = "medium"
+blurb = "Please tell us **who** you're reporting, **what** they did, **where and when** it happened, and attach any **evidence** (screenshots or video)."
+
+[[categories]]
+key = "other"
+label = "Other"
+emoji = "❓"
+role = "staff"
+priority = "low"
+blurb = "Please describe what you need help with. This also covers **partnerships** and **website issues**."

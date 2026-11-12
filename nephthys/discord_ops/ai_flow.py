@@ -22,8 +22,8 @@ from nephthys.ai.categorize import suggest_category
 from nephthys.ai.kb import load_kb
 from nephthys.core import ai_store
 from nephthys.core import tickets
+from nephthys.core.copytext import get_copy
 from nephthys.core.permissions import can_resolve
-from nephthys.core.transcript import TRANSCRIPT
 from nephthys.core.users import upsert_user
 from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import AISuggestion
@@ -31,6 +31,9 @@ from nephthys.database.tables import Ticket
 from nephthys.discord_ops import flows
 from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
+from nephthys.discord_ops.send import respond_text
+from nephthys.discord_ops.send import send_embed
+from nephthys.discord_ops.send import send_text
 from nephthys.errors.errors import TicketAlreadyClosedError
 from nephthys.ui.buttons import public_answer_view
 from nephthys.ui.buttons import shadow_feedback_view
@@ -42,11 +45,9 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-NO_MENTIONS = discord.AllowedMentions.none()
-
 
 def sources_text(sources: list[str]) -> str:
-    return ", ".join(f"`{s}`" for s in sources) or "none"
+    return ", ".join(f"`{s}`" for s in sources) or get_copy().ai.no_sources
 
 
 # ---------------------------------------------------------------------------
@@ -143,17 +144,22 @@ async def answer_ticket(bot: "SupportBot", ticket: Ticket) -> AISuggestion | Non
 def shadow_embed(
     ticket: Ticket, suggestion: AISuggestion, guild_id: int
 ) -> discord.Embed:
+    ai_copy = get_copy().ai
     embed = discord.Embed(
-        title=f"🤖 AI suggestion (shadow) · #{ticket.id} {ticket.title or ''}"[:256],
+        title=ai_copy.shadow_title.format(id=ticket.id, title=ticket.title or "")[:256],
         url=threads.thread_link(guild_id, ticket.thread_id),
         description=suggestion.answer or "",
         colour=discord.Colour.dark_teal(),
     )
-    embed.add_field(name="Confidence", value=f"{(suggestion.confidence or 0):.0%}")
-    embed.add_field(name="Sources", value=sources_text(list(suggestion.kb_sources)))
-    embed.set_footer(
-        text="Not shown to the player. Would this have been a good answer?"
+    embed.add_field(
+        name=ai_copy.shadow_field_confidence,
+        value=f"{(suggestion.confidence or 0):.0%}",
     )
+    embed.add_field(
+        name=ai_copy.shadow_field_sources,
+        value=sources_text(list(suggestion.kb_sources)),
+    )
+    embed.set_footer(text=ai_copy.shadow_footer)
     return embed
 
 
@@ -166,26 +172,28 @@ async def post_shadow(bot: "SupportBot", ticket: Ticket, suggestion: AISuggestio
         if ticket.staff_card_message_id and ticket.staff_card_channel_id == channel_id
         else None
     )
-    kwargs: dict[str, Any] = {}
-    if reference is not None:
-        kwargs["reference"] = reference.to_reference(fail_if_not_exists=False)
-    return await channel.send(
-        embed=shadow_embed(ticket, suggestion, bot.settings.guild_id),
+    return await send_embed(
+        channel,
+        shadow_embed(ticket, suggestion, bot.settings.guild_id),
         view=shadow_feedback_view(suggestion.id),
-        allowed_mentions=NO_MENTIONS,
-        **kwargs,
+        reference=(
+            reference.to_reference(fail_if_not_exists=False)
+            if reference is not None
+            else None
+        ),
     )
 
 
 def public_embed(suggestion: AISuggestion) -> discord.Embed:
+    ai_copy = get_copy().ai
     embed = discord.Embed(
-        title=TRANSCRIPT.ai_public_title,
+        title=ai_copy.public_title,
         description=suggestion.answer or "",
         colour=discord.Colour.dark_teal(),
     )
     embed.set_footer(
-        text=TRANSCRIPT.ai_public_footer.format(
-            sources=", ".join(suggestion.kb_sources) or "none"
+        text=ai_copy.public_footer.format(
+            sources=", ".join(suggestion.kb_sources) or ai_copy.no_sources
         )
     )
     return embed
@@ -195,10 +203,8 @@ async def post_public(bot: "SupportBot", ticket: Ticket, suggestion: AISuggestio
     thread = await threads.get_thread(bot, ticket.thread_id)
     if thread is None:
         return None
-    return await thread.send(
-        embed=public_embed(suggestion),
-        view=public_answer_view(suggestion.id),
-        allowed_mentions=NO_MENTIONS,
+    return await send_embed(
+        thread, public_embed(suggestion), view=public_answer_view(suggestion.id)
     )
 
 
@@ -213,7 +219,7 @@ def with_outcome_note(
     if message is None or not message.embeds:
         return None
     embed = message.embeds[0].copy()
-    embed.add_field(name="Outcome", value=note, inline=False)
+    embed.add_field(name=get_copy().ai.field_outcome, value=note, inline=False)
     return embed
 
 
@@ -222,8 +228,9 @@ async def shadow_feedback_from_interaction(
 ) -> None:
     bot = cast("SupportBot", interaction.client)
     actor = threads.actor_from_user(interaction.user, bot.settings.staff_role_id)
+    copy = get_copy()
     if not actor.is_staff:
-        await interaction.response.send_message(TRANSCRIPT.staff_only, ephemeral=True)
+        await respond_text(interaction, copy.errors.staff_only, ephemeral=True)
         return
     user = await upsert_user(actor)
     try:
@@ -233,16 +240,13 @@ async def shadow_feedback_from_interaction(
             user.id,
         )
     except ai_store.OutcomeAlreadySetError:
-        await interaction.response.send_message(
-            "someone already rated this one.", ephemeral=True
-        )
+        await respond_text(interaction, copy.errors.already_rated, ephemeral=True)
         return
     except LookupError:
-        await interaction.response.send_message(
-            TRANSCRIPT.ticket_missing, ephemeral=True
-        )
+        await respond_text(interaction, copy.errors.ticket_missing, ephemeral=True)
         return
-    note = f"{'👍 helpful' if helpful else '👎 not helpful'} — rated by {interaction.user.mention}"
+    template = copy.ai.rated_helpful if helpful else copy.ai.rated_not_helpful
+    note = template.format(user=interaction.user.mention)
     embed = with_outcome_note(interaction.message, note)
     if embed is not None:
         await interaction.response.edit_message(embed=embed, view=None)
@@ -256,22 +260,19 @@ async def public_outcome_from_interaction(
 ) -> None:
     bot = cast("SupportBot", interaction.client)
     actor = threads.actor_from_user(interaction.user, bot.settings.staff_role_id)
+    copy = get_copy()
     suggestion = await ai_store.get_suggestion(suggestion_id)
     if suggestion is None:
-        await interaction.response.send_message(
-            TRANSCRIPT.ticket_missing, ephemeral=True
-        )
+        await respond_text(interaction, copy.errors.ticket_missing, ephemeral=True)
         return
     ticket_id = tickets.fk_id(suggestion.ticket)
     ticket = await tickets.get_ticket(ticket_id)
     if ticket is None:
-        await interaction.response.send_message(
-            TRANSCRIPT.ticket_missing, ephemeral=True
-        )
+        await respond_text(interaction, copy.errors.ticket_missing, ephemeral=True)
         return
     opener = await tickets.get_opener(ticket)
     if not can_resolve(actor, opener.discord_id):
-        await interaction.response.send_message(TRANSCRIPT.not_allowed, ephemeral=True)
+        await respond_text(interaction, copy.errors.not_allowed, ephemeral=True)
         return
 
     user = await upsert_user(actor)
@@ -280,16 +281,11 @@ async def public_outcome_from_interaction(
             suggestion_id, ai_store.FIXED if fixed else ai_store.NEEDS_HUMAN, user.id
         )
     except ai_store.OutcomeAlreadySetError:
-        await interaction.response.send_message(
-            TRANSCRIPT.ai_already_answered, ephemeral=True
-        )
+        await respond_text(interaction, copy.errors.ai_already_answered, ephemeral=True)
         return
 
-    note = (
-        f"✅ {interaction.user.mention} said this fixed it"
-        if fixed
-        else f"🙋 {interaction.user.mention} still needs a human"
-    )
+    template = copy.ai.outcome_fixed if fixed else copy.ai.outcome_needs_human
+    note = template.format(user=interaction.user.mention)
     embed = with_outcome_note(interaction.message, note)
     if embed is not None:
         await interaction.response.edit_message(embed=embed, view=None)
@@ -307,7 +303,5 @@ async def public_outcome_from_interaction(
         thread = await threads.get_thread(bot, ticket.thread_id)
         if thread is not None:
             async with threads.best_effort("ai_need_human"):
-                await thread.send(
-                    TRANSCRIPT.ai_need_human_reply, allowed_mentions=NO_MENTIONS
-                )
+                await send_text(thread, copy.ai.need_human_reply)
         await staff_card.refresh_staff_card(bot, ticket_id)

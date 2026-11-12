@@ -59,7 +59,7 @@ async def seed():
 
 async def test_summary_contents():
     _t1, old = await seed()
-    embed = await build_daily_summary(
+    [embed] = await build_daily_summary(
         now=NOW, guild_id=100, ai_enabled=True, ai_mode="shadow"
     )
     f = fields(embed)
@@ -75,7 +75,7 @@ async def test_summary_contents():
 
 async def test_summary_without_ai():
     await seed()
-    embed = await build_daily_summary(
+    [embed] = await build_daily_summary(
         now=NOW, guild_id=100, ai_enabled=False, ai_mode="shadow"
     )
     assert "🤖 AI" not in fields(embed)
@@ -86,7 +86,7 @@ async def test_send_daily_summary():
     bot = FakeBot()
     await send_daily_summary(cast(Any, bot), now=NOW)
     [msg] = bot.sends(bot.settings.staff_channel_id or 0)
-    assert msg.embed.title == "📊 #community-help daily summary"
+    assert [e.title for e in msg.embeds] == ["📊 #community-help daily summary"]
 
     no_channel = FakeBot(make_settings(STAFF_CHANNEL_ID=""))
     await send_daily_summary(cast(Any, no_channel), now=NOW)

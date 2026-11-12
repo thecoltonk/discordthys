@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from nephthys.discord_ops.send import send_text
+
 if TYPE_CHECKING:
     from nephthys.bot import SupportBot
 
@@ -22,7 +24,8 @@ async def send_heartbeat(bot: "SupportBot", text: str, *, ping: bool = False) ->
     if ping and maintainer:
         content = f"<@{maintainer}> {content}"
     try:
-        await bot.get_partial_messageable(channel_id).send(
+        await send_text(
+            bot.get_partial_messageable(channel_id),
             content,
             allowed_mentions=discord.AllowedMentions(
                 everyone=False,

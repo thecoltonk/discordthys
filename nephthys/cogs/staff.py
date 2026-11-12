@@ -10,80 +10,86 @@ from discord import app_commands
 from discord.ext import commands
 
 from nephthys.bot import SupportBot
+from nephthys.core.copytext import get_copy
 from nephthys.core.queries import get_unanswered_tickets
 from nephthys.core.stats import calculate_stats
 from nephthys.core.stats import StatsSummary
 from nephthys.core.stats import WAITING_THRESHOLD
+from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
+from nephthys.discord_ops.formatting import categories_text
+from nephthys.discord_ops.formatting import csat_text
+from nephthys.discord_ops.formatting import format_minutes
+from nephthys.discord_ops.formatting import leaderboard_text
+from nephthys.discord_ops.formatting import priorities_text
+from nephthys.discord_ops.formatting import surface_name
+from nephthys.discord_ops.formatting import ticket_line
+from nephthys.discord_ops.send import followup_embed
+from nephthys.discord_ops.send import followup_embeds
+from nephthys.discord_ops.send import followup_text
+from nephthys.discord_ops.send import respond_text
 from nephthys.discord_ops.threads import actor_from_user
-from nephthys.discord_ops.threads import thread_link
 
 log = logging.getLogger(__name__)
 
 WAITING_LIMIT = 15
 TITLE_MAX = 60
-STAFF_ONLY = "this command is for staff only."
-
-
-def short_title(ticket: Ticket) -> str:
-    title = ticket.title or ticket.description or f"Ticket #{ticket.id}"
-    title = discord.utils.escape_markdown(title.replace("\n", " "))
-    return title if len(title) <= TITLE_MAX else title[: TITLE_MAX - 1] + "…"
-
-
-def format_minutes(minutes: float | None) -> str:
-    if minutes is None:
-        return "n/a"
-    if minutes < 60:
-        return f"{minutes:.0f} min"
-    if minutes < 60 * 48:
-        return f"{minutes / 60:.1f} h"
-    return f"{minutes / 1440:.1f} days"
 
 
 def waiting_lines(guild_id: int, waiting: list[Ticket]) -> list[str]:
-    return [
-        f"• [#{t.id} {short_title(t)}]({thread_link(guild_id, t.thread_id)}) — "
-        f"last message {discord.utils.format_dt(t.last_msg_at, 'R')}"
-        for t in waiting
-    ]
+    template = get_copy().commands.waiting_line
+    return [ticket_line(template, t, guild_id, TITLE_MAX) for t in waiting]
 
 
-def stats_embed(summary: StatsSummary, days: int) -> discord.Embed:
-    embed = discord.Embed(
-        title=f"#community-help — last {days} day{'s' if days != 1 else ''}",
-        colour=discord.Colour.blurple(),
+def stats_embed(
+    summary: StatsSummary, days: int, surface: TicketSurface = TicketSurface.COMMUNITY
+) -> discord.Embed:
+    stats = get_copy().stats
+    name = surface_name(surface)
+    title = (
+        stats.stats_title_one_day.format(surface=name)
+        if days == 1
+        else stats.stats_title.format(surface=name, days=days)
     )
-    embed.add_field(name="Opened", value=str(summary.opened))
+    embed = discord.Embed(title=title, colour=discord.Colour.blurple())
+    embed.add_field(name=stats.field_opened, value=str(summary.opened))
     embed.add_field(
-        name="Resolved",
-        value=f"{summary.resolved} ({summary.resolved_without_staff} without staff)",
+        name=stats.field_resolved,
+        value=stats.resolved_value.format(
+            resolved=summary.resolved, without_staff=summary.resolved_without_staff
+        ),
     )
     embed.add_field(
-        name="Median first staff response",
+        name=stats.field_median,
         value=format_minutes(summary.median_first_response_minutes),
     )
-    embed.add_field(name="Open (unclaimed) now", value=str(summary.open_now))
-    embed.add_field(name="In progress now", value=str(summary.in_progress_now))
+    embed.add_field(name=stats.field_open_now, value=str(summary.open_now))
+    embed.add_field(name=stats.field_in_progress, value=str(summary.in_progress_now))
     embed.add_field(
-        name=f"Waiting > {WAITING_THRESHOLD.days} days",
+        name=stats.field_waiting.format(days=WAITING_THRESHOLD.days),
         value=str(summary.waiting_over_threshold),
     )
+    if surface == TicketSurface.PRIVATE:
+        embed.add_field(
+            name=stats.field_csat,
+            value=csat_text(summary.csat_average, summary.csat_count),
+        )
+        if summary.by_priority:
+            embed.add_field(
+                name=stats.field_by_priority,
+                value=priorities_text(summary.by_priority),
+                inline=False,
+            )
     if summary.by_category:
         embed.add_field(
-            name="Opened by category",
-            value=", ".join(f"{k} {v}" for k, v in summary.by_category.items())[:1024],
+            name=stats.field_by_category,
+            value=categories_text(summary.by_category, surface),
             inline=False,
         )
-    leaderboard = (
-        "\n".join(
-            f"{i}. <@{e.user.discord_id}> — {e.count}"
-            for i, e in enumerate(summary.top_claimers, start=1)
-        )
-        or "nobody yet"
-    )
     embed.add_field(
-        name="Top helpers (resolved, by claimer)", value=leaderboard, inline=False
+        name=stats.field_top_helpers,
+        value=leaderboard_text(summary.top_claimers),
+        inline=False,
     )
     return embed
 
@@ -103,24 +109,24 @@ class Staff(commands.Cog):
     @app_commands.guild_only()
     async def waiting(self, interaction: discord.Interaction) -> None:
         if not self.is_staff(interaction):
-            await interaction.response.send_message(STAFF_ONLY, ephemeral=True)
+            await respond_text(
+                interaction, get_copy().errors.staff_only, ephemeral=True
+            )
             return
         await interaction.response.defer(ephemeral=True)
         waiting = await get_unanswered_tickets(limit=WAITING_LIMIT + 1)
         if not waiting:
-            await interaction.followup.send(
-                "nothing waiting — nice work, team!", ephemeral=True
-            )
+            await followup_text(interaction, get_copy().commands.waiting_empty)
             return
         lines = waiting_lines(self.bot.settings.guild_id, waiting[:WAITING_LIMIT])
         if len(waiting) > WAITING_LIMIT:
-            lines.append(f"_…and more. Showing the oldest {WAITING_LIMIT}._")
+            lines.append(get_copy().commands.waiting_more.format(limit=WAITING_LIMIT))
         embed = discord.Embed(
-            title="Waiting for staff",
+            title=get_copy().commands.waiting_title,
             description="\n".join(lines),
             colour=discord.Colour.orange(),
         )
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await followup_embed(interaction, embed)
 
     @app_commands.command(name="stats", description="Support stats for #community-help")
     @app_commands.describe(days="How many days to look back (default 7)")
@@ -131,14 +137,20 @@ class Staff(commands.Cog):
         days: app_commands.Range[int, 1, 365] = 7,
     ) -> None:
         if not self.is_staff(interaction):
-            await interaction.response.send_message(STAFF_ONLY, ephemeral=True)
+            await respond_text(
+                interaction, get_copy().errors.staff_only, ephemeral=True
+            )
             return
         await interaction.response.defer(ephemeral=True)
         now = datetime.now(UTC)
-        summary = await calculate_stats(since=now - timedelta(days=days), until=now)
-        await interaction.followup.send(
-            embed=stats_embed(summary, days), ephemeral=True
-        )
+        since = now - timedelta(days=days)
+        embeds = [stats_embed(await calculate_stats(since=since, until=now), days)]
+        if self.bot.settings.tickets_enabled:
+            private = await calculate_stats(
+                since=since, until=now, surface=TicketSurface.PRIVATE
+            )
+            embeds.append(stats_embed(private, days, TicketSurface.PRIVATE))
+        await followup_embeds(interaction, embeds)
 
 
 async def setup(bot: SupportBot) -> None:

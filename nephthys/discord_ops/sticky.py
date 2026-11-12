@@ -1,4 +1,5 @@
-"""Sticky "how it works" message kept at the bottom of #community-help.
+"""Sticky messages kept at the bottom of a channel: the "how it works" note in
+#community-help and the ticket panel in #tickets.
 
 After a new top-level question, the sticky is reposted once things have been
 quiet for `debounce` seconds. The new sticky is sent *before* the old one is
@@ -8,11 +9,14 @@ it never creates a ticket or thread.
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import discord
 
+from nephthys.core.copytext import get_copy
 from nephthys.database.tables import StickyMessage
+from nephthys.discord_ops.send import send_embed
 
 if TYPE_CHECKING:
     from nephthys.bot import SupportBot
@@ -22,23 +26,37 @@ log = logging.getLogger(__name__)
 STICKY_COLOUR = discord.Colour.blurple()
 
 
-def build_sticky_embed(title: str, body: str, faq_url: str) -> discord.Embed:
-    description = body.replace("{faq_url}", faq_url or "(ask staff)")
-    return discord.Embed(title=title, description=description, colour=STICKY_COLOUR)
+def build_sticky_embed(faq_url: str) -> discord.Embed:
+    """The sticky, without the FAQ line when FAQ_URL is unset."""
+    sticky = get_copy().sticky
+    description = sticky.body.format(faq_url=faq_url) if faq_url else sticky.body_no_faq
+    return discord.Embed(
+        title=sticky.title, description=description, colour=STICKY_COLOUR
+    )
+
+
+type StickyRender = Callable[[], tuple[discord.Embed, discord.ui.View | None]]
 
 
 class StickyManager:
-    def __init__(self, bot: "SupportBot", channel_id: int, debounce: float):
+    def __init__(
+        self,
+        bot: "SupportBot",
+        channel_id: int,
+        debounce: float,
+        render: StickyRender | None = None,
+    ):
         self.bot = bot
         self.channel_id = channel_id
         self.debounce = debounce
+        # Builds the sticky's embed (and optional buttons); defaults to the
+        # #community-help "how it works" message
+        self.render: StickyRender = render or (
+            lambda: (build_sticky_embed(bot.settings.faq_url), None)
+        )
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self._dirty_at = 0.0
-
-    def embed(self) -> discord.Embed:
-        s = self.bot.settings
-        return build_sticky_embed(s.sticky_title, s.sticky_body, s.faq_url)
 
     def schedule(self) -> None:
         """Note new activity; repost once it's been quiet for `debounce` seconds."""
@@ -74,9 +92,8 @@ class StickyManager:
                 .where(StickyMessage.channel_id == self.channel_id)
                 .first()
             )
-            new = await channel.send(
-                embed=self.embed(), allowed_mentions=discord.AllowedMentions.none()
-            )
+            embed, view = self.render()
+            new = await send_embed(channel, embed, view=view)
             await StickyMessage.insert(
                 StickyMessage(channel_id=self.channel_id, message_id=new.id)
             ).on_conflict(

@@ -20,20 +20,21 @@ The bot only makes **outbound** connections (to the Discord gateway and API). Yo
 
      | Permission | Why |
      |---|---|
-     | View Channels | see #community-help |
-     | Send Messages | post the sticky message |
+     | View Channels | see #community-help and #tickets |
+     | Send Messages | post the sticky message and the ticket panel |
      | Read Message History | react to questions; check the sticky position |
      | Add Reactions | 🤔 / ✅ on questions |
      | Embed Links | sticky, `/stats` and `/waiting` embeds |
-     | Create Public Threads | one thread per question |
+     | Create Public Threads | one thread per #community-help question |
+     | Create Private Threads | one private thread per #tickets ticket |
      | Send Messages in Threads | auto-reply, closing messages, AI answers |
-     | Manage Threads | archive and unarchive threads; delete orphaned threads |
+     | Manage Threads | archive, unarchive, lock and unlock threads; add players to private threads; delete orphaned threads |
      | Manage Messages | remove reactions and delete the old sticky |
 
-   - Or use this URL with your application ID (permissions integer `326417607744`):
+   - Or use this URL with your application ID (permissions integer `395137084480`):
 
      ```
-     https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&scope=bot+applications.commands&permissions=326417607744
+     https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&scope=bot+applications.commands&permissions=395137084480
      ```
 4. Open the URL and add the bot to the Cloudsail server.
 
@@ -52,6 +53,34 @@ The bot only makes **outbound** connections (to the Discord gateway and API). Yo
    - **Log channel:** errors and "online" notices (`LOG_CHANNEL_ID`).
    - The bot needs View Channel, Send Messages and Embed Links in both.
 6. Copy these IDs: the server (`GUILD_ID`), #community-help (`COMMUNITY_CHANNEL_ID`), the Staff role (`STAFF_ROLE_ID`), and optionally the staff channel, the log channel and your own user ID (`MAINTAINER_ID`).
+
+### #tickets (private tickets, optional)
+
+Skip this section to run #community-help only: #tickets is off while `TICKETS_CHANNEL_ID` is blank.
+
+1. **Create a regular text channel**, e.g. `#tickets`, and set these permission overrides:
+
+   | Who | Allow ✅ | Deny ❌ |
+   |---|---|---|
+   | `@everyone` | View Channel, Read Message History, Send Messages in Threads | **Send Messages** (keeps the channel to just the panel), **Create Public Threads**, **Create Private Threads** |
+   | Bot role | View Channel, Send Messages, Embed Links, Read Message History, **Create Private Threads**, Send Messages in Threads, **Manage Threads**, Manage Messages | |
+   | Staff role, plus the Store and Mod roles if you use them | View Channel, Read Message History, Send Messages in Threads, **Manage Threads** | |
+
+2. **How staff see private threads.** A private thread is visible only to the people in it, plus anyone with **Manage Threads** in the parent channel. So:
+   - The player is added to their own thread automatically, and nobody else is.
+   - Staff (and the Store and Mod roles) need **Manage Threads** on #tickets. Without it they can't open tickets at all, even from the alert link.
+   - Staff open a ticket from the **Open thread** link on its alert card in the staff channel. In #tickets, private threads appear under the threads icon (🧵) at the top of the channel. Posting in a ticket adds you to it, so you get notifications from then on.
+   - The bot creates threads as non-invitable, so players can't add other people.
+3. **Alert pings.** When a player picks a category, the alert card in the staff channel pings that category's role (`STORE_ROLE_ID`, `MOD_ROLE_ID`, or the Staff role). High-priority tickets also ping the Staff role. For a ping to notify anyone, do one of these:
+   - make those roles mentionable (Server Settings → Roles → the role → **Allow anyone to @mention this role**), or
+   - give the bot **Mention @everyone, @here and All Roles** in the staff channel only.
+4. **Set these in `.env`:**
+   - `TICKETS_CHANNEL_ID`: the #tickets channel.
+   - `STORE_ROLE_ID` and `MOD_ROLE_ID` (optional). Categories owned by an unset role ping the Staff role instead.
+   - `TICKET_NUMBER_START`: default `26`, because Mava ended at T-25.
+   - `TICKETS_MAX_OPEN_PER_USER`: default `2`; `0` means no limit.
+5. **Categories, subcategories, priorities, owning roles and blurbs** are in `copy/ticket_categories.toml`. The defaults are PRODUCT.md §2. Edit the file, check it with `docker compose exec bot python -m nephthys.core.ticket_categories --check /app/copy/ticket_categories.toml`, then run `docker compose restart bot`. This file is read at startup only. Don't rename the `key` of a category that open tickets use; add a new category instead.
+6. All #tickets text (the panel, welcome, closing, CSAT, escalation) is in the `[tickets]` section of `copy/copy.toml`, and reloads live like the rest of the copy.
 
 ## 3. Install Docker on the box (Ubuntu 22.04/24.04, arm64)
 
@@ -123,7 +152,7 @@ docker compose ps
 docker compose logs -f bot
 ```
 
-You should see `Synced 6 application commands to guild`, `AI: off` (or `AI: on (...)`) and `Logged in as …`. If you set a log channel, "🟢 Cloudsail Support is online" is posted there.
+You should see `Synced 7 application commands to guild`, `AI: off` (or `AI: on (...)`) and `Logged in as …`. If you set a log channel, "🟢 Cloudsail Support is online" is posted there.
 
 ```bash
 curl -s http://127.0.0.1:3000/health
@@ -142,6 +171,25 @@ This should return `{"healthy": true, ...}`. `docker compose ps` shows the bot a
 7. Check the **staff card** in the staff channel. It flips from 🟡 Waiting to 🔵 Claimed to ✅ Resolved as you go. Pick a category from its menu.
 8. Optional: temporarily set `DAILY_SUMMARY_TIME` a couple of minutes ahead and restart the bot to see the summary.
 
+**#tickets** (if enabled):
+
+9. The "Need help?" panel with **Create Ticket** sits at the bottom of #tickets.
+10. As a non-staff account, click **Create Ticket**.
+    - You get a private reply with a link.
+    - The thread is named `<you> (T-26)` and only you (plus staff) can see it.
+    - The opener shows `Ticket T-26`, the welcome text, five category buttons, and **Close Ticket**.
+11. Pick **Server Issue**. The opener is reposted at the bottom with "You have selected: ❗ Server Issue", the question, and three subcategory buttons.
+12. Pick **Urgent**. The category buttons disappear, though **Close Ticket** stays.
+    - The staff channel gets an alert card pinging the Staff role, showing 🔴 High.
+    - Type a message as the player: it becomes the card's description.
+13. Reply as staff: the card shows 🔵 Claimed.
+14. Click **Close Ticket** as the player.
+    - You should see the closing message and 1–5 rating buttons, and the thread locks and archives.
+    - Rate it: the buttons are replaced by a thank-you, and the card shows CSAT.
+15. As staff, open the thread from the card and run `/reopen`. The thread unlocks and the player is back in it.
+16. In a #community-help thread, run `/escalate` as staff.
+    - The poster gets a private #tickets thread linking back.
+    - The public thread gets a note linking to it, then locks.
 ## 5b. Optional: AI auto-categorisation and answers
 
 Everything AI is off while `AI_API_KEY` is blank. To turn it on:
@@ -163,6 +211,29 @@ What happens next:
 - **Privacy:** the question title and text are sent to the AI provider. Don't enable AI if that isn't acceptable for your community.
 
 ## 6. Operations
+
+**Change what the bot says.** Every player- and staff-facing message is in `copy/copy.toml`. That includes the auto-reply, closing and re-open messages, the sticky, staff card labels, command replies, `/stats` and `/waiting`, the daily summary, and AI answer labels. It's mounted read-only into the container from `./copy`.
+
+1. Edit `/opt/cloudsail-support/copy/copy.toml` on the host and save.
+2. Within about 5 seconds the bot logs `Reloaded copy from copy/copy.toml`, and new messages use the new text.
+   - Messages already posted (e.g. old closing messages) aren't rewritten.
+   - Staff cards pick up the change the next time they update.
+   - The sticky updates on its next repost.
+3. If your edit is invalid, the bot logs `Ignoring invalid copy edit …` with the exact key and problem, and keeps the previous text. Examples: a typo'd key, or a `{placeholder}` that key doesn't accept.
+
+   To check an edit before saving it into place:
+
+   ```bash
+   docker compose exec bot python -m nephthys.core.copytext --check /app/copy/copy.toml
+   ```
+
+4. Each key's comment lists the placeholders it accepts. Use `{{` / `}}` for literal braces. Delete a key to go back to its built-in default.
+5. If `FAQ_URL` is blank, the auto-reply and sticky use their `*_no_faq` variants (no FAQ sentence), and `/faq` privately tells staff "no FAQ configured."
+
+If you set `STICKY_TITLE` / `STICKY_BODY` in an older `.env`, they're ignored now (the bot logs a warning). Move that text into `[sticky]` in `copy.toml`.
+
+All text messages are sent with link previews suppressed, so links in copy never unfurl into big embeds.
+
 
 **Update to the latest code:**
 
@@ -211,3 +282,7 @@ docker compose down
 | `AI_MODEL is required when AI_API_KEY is set` | Set `AI_MODEL` to a model your provider serves. |
 | AI suggestions never appear | Check the logs for `AI answer … not posted: <reason>`. The common reasons are `low_confidence` and `no_answer` (the knowledge base doesn't cover the question). Add the missing facts to `kb/`. |
 | Threads don't archive | Give the bot **Manage Threads**. |
+| Create Ticket says "couldn't open a ticket" | The bot is missing **Create Private Threads** or **Manage Threads** in #tickets. The log channel has the exact error. |
+| Staff can't open a #tickets thread from the alert | Give that role **Manage Threads** in #tickets: private threads are only visible to members and people with Manage Threads. |
+| Alert cards don't notify the role | Make the role mentionable, or give the bot **Mention All Roles** in the staff channel. |
+| `copy/ticket_categories.toml: invalid categories` at startup | Fix the reported key. Check the file with `python -m nephthys.core.ticket_categories --check`. |

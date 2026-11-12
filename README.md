@@ -13,13 +13,29 @@ A Discord support bot for **The Cloudsail Project**'s `#community-help` channel.
 - Anyone can help. The **first staff reply claims** the ticket.
 - The original poster or any staff member can resolve. Resolving adds ✅ to the question, posts a closing message with **Re-open**, and archives the thread. If the poster replies after it's resolved, the ticket re-opens.
 - Staff slash commands:
-  - inside ticket threads: `/faq`, `/ip`, `/resolve`, `/reopen`;
+  - inside ticket threads: `/faq`, `/ip`, `/resolve`, `/reopen`, and `/escalate` (#community-help threads only);
   - anywhere: `/waiting`, `/stats`.
 - Staff ticket cards in the staff channel (status, claimer, category picker), plus a daily summary.
 - Optional AI, off unless `AI_API_KEY` is set:
   - auto-categorises new tickets;
   - suggests answers grounded only in [`kb/`](kb/). It runs in shadow mode by default: suggestions go to staff only, with 👍/👎 buttons.
 - A sticky "how it works" message stays at the bottom of the channel.
+
+## #tickets (Phase 2, optional)
+
+A private, Mava-style ticket system, enabled by setting `TICKETS_CHANNEL_ID`:
+
+- A sticky **Create Ticket** panel opens a private thread named after the player.
+- The player picks a category, then a subcategory. Each pick reposts the opener so the buttons stay at the bottom.
+- At a leaf category, the staff channel gets an alert card that pings the owning role (plus Staff for High priority).
+- The first staff reply claims the ticket.
+- **Close Ticket** (by the player or staff) asks the player for a 1–5 CSAT rating, then locks the thread. Staff can `/reopen`.
+- `/escalate` moves a sensitive #community-help post into a private ticket.
+- Categories live in [`copy/ticket_categories.toml`](copy/ticket_categories.toml). Setup is in DEPLOY.md.
+
+## Changing what the bot says
+
+Every message players and staff see lives in [`copy/copy.toml`](copy/copy.toml), with comments listing each key's `{placeholders}`. Edit it and save: changes apply within a few seconds, with no restart. Invalid edits are logged and ignored. See DEPLOY.md §6.
 
 ## Development
 

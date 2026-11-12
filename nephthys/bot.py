@@ -30,6 +30,7 @@ EXTENSIONS: list[str] = [
     "nephthys.cogs.community_help",
     "nephthys.cogs.staff",
     "nephthys.cogs.ticket_commands",
+    "nephthys.cogs.tickets",
 ]
 
 
@@ -79,8 +80,18 @@ class SupportBot(commands.Bot):
             log.info("Database connection pool started")
 
         from nephthys.ui.buttons import DYNAMIC_ITEMS
+        from nephthys.ui.ticket_buttons import TICKET_DYNAMIC_ITEMS
 
-        self.add_dynamic_items(*DYNAMIC_ITEMS)
+        self.add_dynamic_items(*DYNAMIC_ITEMS, *TICKET_DYNAMIC_ITEMS)
+
+        if self.db_ready and self.settings.tickets_enabled:
+            from nephthys.core.private_tickets import align_number_sequence
+
+            await align_number_sequence(self.settings.ticket_number_start)
+            if not self.settings.staff_channel_id:
+                log.warning(
+                    "#tickets is on but STAFF_CHANNEL_ID is unset: no staff alerts"
+                )
 
         for ext in EXTENSIONS:
             await self.load_extension(ext)

@@ -4,6 +4,7 @@ from dataclasses import field
 from datetime import datetime
 from datetime import timedelta
 from datetime import UTC
+from statistics import fmean
 from statistics import median
 
 from nephthys.core.queries import get_unanswered_tickets
@@ -15,6 +16,8 @@ from nephthys.database.tables import User
 
 WAITING_THRESHOLD = timedelta(days=3)
 UNCATEGORISED = "Uncategorised"
+UNSET_PRIORITY = "unset"
+PRIORITY_ORDER = ("high", "medium", "low", UNSET_PRIORITY)
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,11 @@ class StatsSummary:
     by_category: dict[str, int] = field(default_factory=dict)
     # The waiting-over-threshold tickets themselves (oldest first)
     waiting_tickets: list[Ticket] = field(default_factory=list)
+    # #tickets: opened in the window by priority (low/medium/high/unset)
+    by_priority: dict[str, int] = field(default_factory=dict)
+    # #tickets: CSAT ratings given in the window
+    csat_average: float | None = None
+    csat_count: int = 0
 
 
 def minutes_between(start: datetime, end: datetime) -> float:
@@ -72,8 +80,16 @@ async def calculate_stats(
     summary.opened = len(opened)
     category_counts = Counter(t.category or UNCATEGORISED for t in opened)
     summary.by_category = dict(
-        sorted(category_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        # Most common first; "Uncategorised" always last
+        sorted(
+            category_counts.items(),
+            key=lambda kv: (kv[0] == UNCATEGORISED, -kv[1], kv[0]),
+        )
     )
+    priority_counts = Counter(t.priority or UNSET_PRIORITY for t in opened)
+    summary.by_priority = {
+        p: priority_counts[p] for p in PRIORITY_ORDER if priority_counts.get(p)
+    }
     response_times = first_response_minutes(opened)
     summary.median_first_response_minutes = (
         median(response_times) if response_times else None
@@ -104,6 +120,16 @@ async def calculate_stats(
             for uid, count in top
             if uid in users
         ]
+
+    rated = await Ticket.objects().where(
+        (Ticket.surface == surface)
+        & Ticket.csat_rating.is_not_null()
+        & (Ticket.csat_at >= since)
+        & (Ticket.csat_at < until)
+    )
+    ratings = [t.csat_rating for t in rated if t.csat_rating is not None]
+    summary.csat_count = len(ratings)
+    summary.csat_average = fmean(ratings) if ratings else None
 
     summary.open_now = await Ticket.count().where(
         (Ticket.surface == surface) & (Ticket.status == TicketStatus.OPEN)

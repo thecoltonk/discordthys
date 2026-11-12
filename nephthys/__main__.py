@@ -44,6 +44,31 @@ async def run(settings: Settings) -> None:
         await health.stop()
 
 
+def load_copy_or_exit(settings: Settings) -> None:
+    """Load copy/copy.toml (all message text). Invalid copy is fatal at startup;
+    later edits are validated on reload and ignored if invalid."""
+    from nephthys.core.copytext import configure_copy
+    from nephthys.core.copytext import CopyError
+
+    for name in settings.deprecated_env_set:
+        logging.warning(
+            f"{name} is no longer used: message text now lives in "
+            f"{settings.copy_file}. Move your text there and unset {name}."
+        )
+    from nephthys.core.ticket_categories import configure_ticket_categories
+    from nephthys.core.ticket_categories import TicketCategoriesError
+
+    try:
+        configure_copy(settings.copy_file, required=settings.copy_file_explicit)
+        configure_ticket_categories(
+            settings.ticket_categories_file,
+            required=settings.ticket_categories_file_explicit,
+        )
+    except (CopyError, TicketCategoriesError) as e:
+        print(e, file=sys.stderr)
+        sys.exit(2)
+
+
 def start() -> None:
     try:
         settings = get_settings()
@@ -51,6 +76,7 @@ def start() -> None:
         print(e, file=sys.stderr)
         sys.exit(2)
     configure_logging(settings)
+    load_copy_or_exit(settings)
 
     try:
         import uvloop

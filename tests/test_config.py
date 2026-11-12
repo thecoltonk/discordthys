@@ -17,7 +17,8 @@ def test_minimal_settings():
     assert s.stale_ticket_days is None
     assert s.sticky_enabled is False  # disabled in BASE_ENV
     assert make_settings(STICKY_ENABLED="").sticky_enabled is True  # default
-    assert "{faq_url}" in s.sticky_body
+    assert s.copy_file == "copy/copy.toml" and not s.copy_file_explicit
+    assert s.deprecated_env_set == ()
 
 
 def test_missing_required_vars_are_all_reported():
@@ -51,9 +52,10 @@ def test_stale_days_non_positive_disables():
     assert make_settings(STALE_TICKET_DAYS="3").stale_ticket_days == 3
 
 
-def test_sticky_body_newlines():
-    s = make_settings(STICKY_BODY="a\\nb")
-    assert s.sticky_body == "a\nb"
+def test_copy_file_and_deprecated_text_env():
+    s = make_settings(COPY_FILE="/etc/copy.toml", STICKY_BODY="old text")
+    assert s.copy_file == "/etc/copy.toml" and s.copy_file_explicit
+    assert s.deprecated_env_set == ("STICKY_BODY",)
 
 
 def test_categories_default_and_custom():
@@ -111,3 +113,27 @@ def test_ai_settings():
         make_settings(AI_ANSWER_MODE="loud")
     with pytest.raises(ConfigError):
         make_settings(AI_ANSWER_MIN_CONFIDENCE="1.5")
+
+
+def test_tickets_settings():
+    s = make_settings()
+    assert not s.tickets_enabled
+    assert s.ticket_number_start == 26
+    assert s.tickets_max_open_per_user == 2
+    assert s.ticket_categories_file == "copy/ticket_categories.toml"
+    s = make_settings(
+        TICKETS_CHANNEL_ID="600", STORE_ROLE_ID="301", TICKET_NUMBER_START="100"
+    )
+    assert (
+        s.tickets_enabled
+        and s.tickets_channel_id == 600
+        and s.ticket_number_start == 100
+    )
+    assert s.role_id_for("store") == 301
+    assert s.role_id_for("mod") == s.staff_role_id  # falls back to Staff
+    assert s.role_id_for("staff") == 300
+    assert s.role_id_for("12345") == 12345
+    with pytest.raises(ConfigError):
+        make_settings(TICKET_NUMBER_START="0")
+    with pytest.raises(ConfigError):
+        make_settings(TICKETS_MAX_OPEN_PER_USER="-1")

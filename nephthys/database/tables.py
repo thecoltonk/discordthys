@@ -3,9 +3,11 @@ from piccolo.columns import BigInt
 from piccolo.columns import Boolean
 from piccolo.columns import DoublePrecision
 from piccolo.columns import ForeignKey
+from piccolo.columns import Integer
 from piccolo.columns import OnDelete
 from piccolo.columns import OnUpdate
 from piccolo.columns import Serial
+from piccolo.columns import SmallInt
 from piccolo.columns import Text
 from piccolo.columns import Timestamptz
 from piccolo.columns.defaults.timestamptz import TimestamptzNow
@@ -41,7 +43,8 @@ class Ticket(Table, tablename="ticket"):
     surface = TicketSurfaceColumn(default=TicketSurface.COMMUNITY)
 
     channel_id = BigInt()
-    message_id = BigInt(unique=True)
+    # The question message (#community-help only; NULL for private tickets)
+    message_id = BigInt(unique=True, null=True, default=None)
     thread_id = BigInt(unique=True)
 
     title = Text(null=True)
@@ -81,6 +84,15 @@ class Ticket(Table, tablename="ticket"):
     # One of TICKET_CATEGORIES (stored by name), and who set it: "ai" | "staff"
     category = Text(null=True, default=None)
     category_source = Text(null=True, default=None)
+
+    # #tickets (private) only
+    number = Integer(unique=True, null=True, default=None)  # shown as T-<number>
+    subcategory = Text(null=True, default=None)
+    priority = Text(null=True, default=None)  # low | medium | high
+    opener_message_id = BigInt(null=True, default=None)
+    escalated_from = Integer(null=True, default=None)  # FK ticket.id in SQL
+    csat_rating = SmallInt(null=True, default=None)  # 1-5
+    csat_at = Timestamptz(null=True, default=None)
 
     # The staff ticket card in STAFF_CHANNEL_ID
     staff_card_channel_id = BigInt(null=True, default=None)

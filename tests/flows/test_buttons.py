@@ -40,7 +40,15 @@ async def test_slash_commands_serialize():
     for ext in EXTENSIONS:
         await bot.load_extension(ext)
     payloads = {c.name: c.to_dict(bot.tree) for c in bot.tree.get_commands()}
-    assert set(payloads) == {"waiting", "stats", "faq", "ip", "resolve", "reopen"}
+    assert set(payloads) == {
+        "waiting",
+        "stats",
+        "faq",
+        "ip",
+        "resolve",
+        "reopen",
+        "escalate",
+    }
     days = payloads["stats"]["options"][0]
     assert days["min_value"] == 1 and days["max_value"] == 365
     await bot.close()

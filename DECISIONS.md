@@ -119,3 +119,133 @@ Entries 6, 14, 34 and 35 (about `?macros`) are superseded by 44–47. Entry 13 (
     - on `ticket`: `category`, `category_source`, `staff_card_channel_id`, `staff_card_message_id`.
 
     These come from migration `cloudsail_002`, which was tested forwards and backwards. Outcome and mode values are `TEXT` with `CHECK` constraints rather than Postgres enums, which are easier to extend.
+
+## Follow-up: configurable copy, suppressed link previews, optional FAQ
+
+Entry 16 (sticky text via `STICKY_TITLE`/`STICKY_BODY`) is superseded by 72–80.
+
+**Configurable copy**
+
+72. **All message text lives in `copy/copy.toml`.** It's grouped into sections: `community`, `sticky`, `errors`, `commands`, `card`, `stats`, `summary`, `ai`, about 100 keys in all. The built-in defaults are the previous text, word for word.
+    - The shipped file is generated from those defaults (`python -m nephthys.core.copytext > copy/copy.toml`), and a test fails if the two drift apart.
+    - Every key carries a comment with its purpose and the placeholders it accepts.
+73. **What's in scope:** everything players or staff read.
+    - That includes the auto-reply, closing, stale and re-open messages; button and select labels; the sticky; private errors; command replies; staff cards; `/stats`, `/waiting` and the daily summary; and AI embeds, labels and outcome notes.
+    - **Not in scope:**
+      - slash-command names and descriptions (Discord metadata, registered at startup);
+      - log-channel heartbeats (maintainer diagnostics);
+      - emojis inside buttons and reactions (reactions already have env vars);
+      - user data and numbers;
+      - the `?` used when a confidence or stale-days value is missing;
+      - skip-reason codes such as `low_confidence`, which are shown as-is in the summary.
+74. **It's a directory mount (`./copy:/app/copy:ro`), not a single-file mount.** Most editors save by replacing the file, and a single-file bind mount keeps pointing at the old inode, so edits would silently never reach the container. The image also bakes in `copy/copy.toml`, so it works without the mount.
+75. **Live reload, like `kb/`.**
+    - The file's modification time is checked at most every 5 seconds, when text is next needed.
+    - A valid edit applies to new messages. An invalid edit (TOML error, unknown key or section, unknown or positional placeholder, wrong type) is logged with the exact key and reason, and **the previous text stays live**. A missing file mid-save is ignored.
+    - Already-posted messages aren't rewritten.
+76. **At startup, an invalid copy file is fatal**: exit code 2 with every problem listed, the same as config errors.
+    - A missing file at the default path falls back to the built-in text with a warning.
+    - A missing file at an explicitly set `COPY_FILE` is an error.
+    - `python -m nephthys.core.copytext --check <file>` validates a file without starting the bot.
+77. **Partial files are fine.** Missing keys use the built-in default, so you can trim `copy.toml` down to just what you change. Unknown keys are rejected, so typos aren't silently ignored.
+78. **Placeholders are declared per key** and validated at load time.
+    - Each key may only use its declared placeholders, plus `{{` and `}}` for literal braces.
+    - A test builds a copy where every template uses *every* placeholder it's allowed, then runs every message path. So code that forgets to supply a declared placeholder would fail CI rather than crash in production.
+79. **Text that used to be computed is now split into explicit keys,** so it can be reworded without code changes:
+    - plurals: `past_tickets_one`/`_many`, `stats_title_one_day`;
+    - FAQ variants: `auto_reply` / `auto_reply_no_faq`, `sticky.body` / `body_no_faq`;
+    - the card status line: `status_resolved` = `{by}{credit}`, with `resolved_by`, `resolved_automatically`, `credit`, `no_credit` and `reopened_suffix` as separate keys.
+80. **`STICKY_TITLE` / `STICKY_BODY` were removed.** If they're still set, startup logs a warning naming the replacement, and the values are ignored. They aren't merged into the copy, because two sources of truth for one string is worse.
+
+**Link previews**
+
+81. **Every bot text message is sent with `suppress_embeds=True`.** That covers channel and thread messages, public and private interaction responses, follow-ups, and heartbeats.
+    - All sends go through `discord_ops/send.py`. A test sweeps every message and interaction response the full flow produces and asserts this.
+82. **Rich-embed messages are the exception.** Cards, the sticky, `/stats`, `/waiting`, the daily summary and AI answers are sent *without* `suppress_embeds`, because Discord's flag would hide the bot's own embed too.
+    - They're sent with no message content, so there's nothing to unfurl. Links inside an embed never unfurl.
+    - The same test asserts that embed messages carry no content.
+
+**FAQ_URL unset**
+
+83. **The auto-reply and sticky switch to their `*_no_faq` variants,** with no FAQ sentence and no dangling "check the FAQ".
+    - `/faq` replies privately to staff with `commands.faq_unconfigured` (default "no FAQ configured.") and posts nothing in the thread.
+    - No other message references the FAQ.
+
+**Fix found by the new tests**
+
+84. **The staff card's category select now checks for staff before reading the selection.** An empty selection, which Discord shouldn't send but could, used to raise. It's now a no-op.
+
+## Phase 2: #tickets (PRODUCT.md §2)
+
+**Process**
+
+85. **Step 0 (copy.toml, suppressed link previews, optional FAQ) was already its own commit (`073a34e`)** from the previous round, in PR #3, which wasn't merged yet. All work must go on the one designated branch, so Phase 2 is stacked on that branch and PR #3 now covers both. It was retitled rather than replaced with a new PR, because a branch can only have one open PR.
+
+**Panel and creation**
+
+86. **The panel is a sticky** that reuses `StickyManager`, which now takes a render function, so it can carry an embed *and* the Create Ticket button. It reposts after human messages in #tickets and after Discord's "X started a thread" notices, but never after its own messages.
+87. **DEPLOY.md recommends denying Send Messages to `@everyone` in #tickets,** so the channel is just the panel. Players talk inside their threads.
+88. **Create Ticket immediately creates a private, non-invitable thread** and adds the player.
+    - The thread name defaults to `"{name} (T-{number})"`. PRODUCT says it's "named after the user"; the number is appended so that two tickets from the same player can be told apart. The format is configurable in copy.
+    - The player gets a private reply with the link.
+89. **Ticket numbers come from a Postgres sequence** that's aligned on every startup to the highest of `TICKET_NUMBER_START` (default 26), the largest existing number + 1, and the sequence's own next value. It never moves backwards, never reuses a number, and is race-free. A failed thread creation leaves a gap in the numbers, which is harmless.
+90. **Players are limited to `TICKETS_MAX_OPEN_PER_USER` open tickets** (default 2; 0 = unlimited). Anyone at the limit gets a private reply linking their open tickets. PRODUCT doesn't specify a limit; 2 lets someone have, say, a store issue and a report open at once while stopping spam.
+91. **If adding the player to the thread fails,** the thread is deleted and no ticket is created, so there's never a ticket the player can't see.
+
+**The opener and category flow**
+
+92. **The opener is a single message**, reposted on each pick. It contains the `Ticket T-<n>` header, the welcome, the stacked "You have selected" lines and the blurb, with the category or subcategory buttons and **Close Ticket** fixed on the last row. The first opener pings the player; reposts don't.
+93. **Reposting posts the new opener first, then deletes the old one,** so there's never a moment with no buttons. Only the opener or staff can pick, and the first pick wins (atomic). Stale or double clicks get a private "already chosen".
+94. **The opener is rendered from the ticket's state,** not by appending to old text, so a repost is always consistent.
+95. **Categories live in `copy/ticket_categories.toml`**: categories, optional subcategories, priority, owning role, emoji and blurb.
+    - The defaults match PRODUCT.md §2 exactly. A test keeps the shipped file in sync with them.
+    - Roles are named (`staff`, `store`, `mod` → env IDs) or numeric. `store` and `mod` fall back to the Staff role when their IDs are unset.
+    - The file is read **at startup only**, unlike copy.toml, because category keys are baked into live buttons. An invalid file stops startup with every problem listed.
+    - It's limited to 20 categories and 20 subcategories, because the last button row is Close Ticket.
+96. **A category with subcategories shows its blurb as the question** ("What kind of server issue is it?"). The leaf blurb (from the subcategory, or from a category with no subcategories) tells the player what to include.
+
+**Staff side**
+
+97. **The staff alert is the existing staff card** (private surface), posted when a leaf is reached rather than when the ticket is created, as asked.
+    - Its title is `T-<n> · <category> › <subcategory>`. It shows priority, status and claimer, CSAT once rated, and escalation links.
+    - It has no category select, because the player picked the category. It just has an "Open thread" link.
+98. **The alert pings the category's role, plus the Staff role for High priority** (deduplicated).
+    - The ping is a link-free content line on the card message ("@Role new 🔴 High ticket"). The send helper rejects any URL in that line, so the "nothing to unfurl" rule still holds.
+    - DEPLOY.md explains that roles must be mentionable, or the bot needs Mention All Roles in the staff channel.
+99. **The player's first message becomes the ticket description** (and title) and appears on the card. PRODUCT's alert includes the first message, which usually arrives after the category pick, so the card is edited when it does.
+100. **The first staff reply claims, the same as #community-help.** It reuses the same reply tracker. Private tickets never auto-reopen: the thread is locked, so only staff can post in it.
+
+**Close, CSAT and reopen**
+
+101. **Close Ticket (opener or staff) and `/resolve` (staff) share one flow:** the closing message, then the CSAT prompt, then lock + archive. Credit goes to the claimer, as before.
+102. **CSAT is 1–5 buttons, opener only, first click counts** (atomic). There's one rating per ticket. If a rated ticket is reopened and closed again, the prompt isn't posted again.
+     - The rating replaces the prompt with a thank-you.
+     - It's stored on the ticket (`csat_rating`, `csat_at`) and shown on the card.
+103. **Clicking a CSAT button in the locked, archived thread is expected to work,** because interactions don't need send permission. This is listed as untested-live in the PR.
+104. **`/reopen` (staff only for private tickets)** unarchives and unlocks the thread, re-adds the player, posts a note, and refreshes the card. Players can't re-open private tickets.
+105. **`/faq`, `/ip`, `/resolve` and `/reopen` now work in #tickets threads too.**
+106. **Stale auto-close skips #tickets.** Private tickets are closed by people, with CSAT.
+
+**`/escalate`**
+
+107. **`/escalate` (staff, in a #community-help ticket thread)** does the following:
+     - creates a private ticket for the *original poster*, named and numbered as usual, with the community title and description copied and `escalated_from` set;
+     - posts a link back in the private opener;
+     - posts a note in the public thread linking to the private one;
+     - resolves the community ticket, swaps 🤔 for ✅, then locks and archives the public thread;
+     - shows "Escalated to" and "Escalated from" on both cards.
+108. **`delete_original` (optional, default off)** first copies the question text into the private thread (before the opener, so the buttons stay last), then deletes the public message. The deletion handler skips escalated tickets, so the community ticket's record survives.
+109. **A second `/escalate` on the same post** replies privately with the existing link. Escalating needs #tickets to be enabled.
+
+**Stats**
+
+110. **`/stats` and the daily summary each send one embed per channel.** The #tickets embed only appears when #tickets is enabled.
+     - #tickets adds the CSAT average (ratings given in the window), counts by priority (High, Medium, Low, then not picked yet) and by category (labels from the categories file).
+     - `/waiting` and the summary's waiting list cover both channels, shown as `#id` or `T-n`.
+     - "Uncategorised" now always sorts last.
+111. **AI never runs on #tickets:** these are private, and PRODUCT doesn't ask for it.
+112. **New schema (migration `cloudsail_003`, tested forwards and backwards):**
+     - new `ticket` columns: `number` (unique), `subcategory`, `priority` (CHECK), `opener_message_id`, `escalated_from` (FK), `csat_rating` (1–5), `csat_at`;
+     - `message_id` is now nullable;
+     - `category_source` accepts `player`;
+     - a new `ticket_number_seq` sequence.

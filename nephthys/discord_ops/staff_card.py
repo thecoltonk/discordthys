@@ -13,14 +13,20 @@ from typing import TYPE_CHECKING
 import discord
 
 from nephthys.core import ai_store
+from nephthys.core import private_tickets
 from nephthys.core import tickets
+from nephthys.core.copytext import get_copy
+from nephthys.core.ticket_categories import get_ticket_categories
 from nephthys.core.users import get_user
 from nephthys.database.enums import TicketStatus
+from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import AISuggestion
 from nephthys.database.tables import Ticket
 from nephthys.database.tables import User
+from nephthys.discord_ops.send import send_embed
 from nephthys.discord_ops.threads import best_effort
 from nephthys.discord_ops.threads import thread_link
+from nephthys.ui.buttons import link_only_view
 from nephthys.ui.buttons import staff_card_view
 
 if TYPE_CHECKING:
@@ -34,14 +40,6 @@ COLOUR_WAITING = discord.Colour.gold()
 COLOUR_CLAIMED = discord.Colour.blurple()
 COLOUR_RESOLVED = discord.Colour.green()
 
-AI_OUTCOME_LABELS = {
-    ai_store.PENDING: "awaiting feedback",
-    ai_store.HELPFUL: "👍 rated helpful",
-    ai_store.NOT_HELPFUL: "👎 rated not helpful",
-    ai_store.FIXED: "✅ player said it fixed it",
-    ai_store.NEEDS_HUMAN: "🙋 player still needs a human",
-}
-
 
 @dataclass(frozen=True)
 class CardContext:
@@ -51,6 +49,8 @@ class CardContext:
     closer: User | None
     past_tickets: int
     suggestion: AISuggestion | None
+    escalated_from: Ticket | None = None
+    escalated_to: Ticket | None = None
 
 
 async def load_card_context(ticket: Ticket) -> CardContext:
@@ -65,52 +65,111 @@ async def load_card_context(ticket: Ticket) -> CardContext:
         closer=await user(ticket.closed_by),
         past_tickets=await tickets.count_past_tickets(ticket),
         suggestion=await ai_store.latest_posted_for_ticket(ticket.id),
+        escalated_from=(
+            await tickets.get_ticket(ticket.escalated_from)
+            if ticket.escalated_from is not None
+            else None
+        ),
+        escalated_to=await private_tickets.escalation_of(ticket.id),
     )
 
 
 def mention(user: User | None) -> str:
-    return f"<@{user.discord_id}>" if user else "someone"
+    return f"<@{user.discord_id}>" if user else get_copy().card.someone
 
 
 def status_line(ctx: CardContext) -> tuple[str, discord.Colour]:
+    card = get_copy().card
     t = ctx.ticket
-    reopened = " (re-opened)" if t.reopened_at is not None else ""
+    reopened = card.reopened_suffix if t.reopened_at is not None else ""
     if t.status == TicketStatus.CLOSED:
-        who = (
-            "automatically (stale)"
+        by = (
+            card.resolved_automatically
             if ctx.closer is None
-            else f"by {mention(ctx.closer)}"
+            else card.resolved_by.format(user=mention(ctx.closer))
         )
         credit = (
-            f" · credit {mention(ctx.claimer)}" if ctx.claimer else " · no staff credit"
+            card.credit.format(user=mention(ctx.claimer))
+            if ctx.claimer
+            else card.no_credit
         )
-        return f"✅ Resolved {who}{credit}", COLOUR_RESOLVED
+        return card.status_resolved.format(by=by, credit=credit), COLOUR_RESOLVED
     if ctx.claimer is not None:
-        return f"🔵 Claimed by {mention(ctx.claimer)}{reopened}", COLOUR_CLAIMED
-    return f"🟡 Waiting for staff{reopened}", COLOUR_WAITING
+        return (
+            card.status_claimed.format(claimer=mention(ctx.claimer), reopened=reopened),
+            COLOUR_CLAIMED,
+        )
+    return card.status_waiting.format(reopened=reopened), COLOUR_WAITING
 
 
 def past_tickets_text(count: int) -> str:
+    card = get_copy().card
     if count == 0:
-        return "first ticket"
-    return f"{count} past ticket{'s' if count != 1 else ''}"
+        return card.first_ticket
+    template = card.past_tickets_one if count == 1 else card.past_tickets_many
+    return template.format(count=count)
+
+
+def ai_outcome_label(outcome: str) -> str:
+    card = get_copy().card
+    return {
+        ai_store.PENDING: card.ai_pending,
+        ai_store.HELPFUL: card.ai_helpful,
+        ai_store.NOT_HELPFUL: card.ai_not_helpful,
+        ai_store.FIXED: card.ai_fixed,
+        ai_store.NEEDS_HUMAN: card.ai_needs_human,
+    }.get(outcome, outcome)
 
 
 def ai_line(suggestion: AISuggestion | None) -> str | None:
     if suggestion is None:
         return None
     confidence = (
-        f" ({suggestion.confidence:.0%})" if suggestion.confidence is not None else ""
+        f"{suggestion.confidence:.0%}" if suggestion.confidence is not None else "?"
     )
-    outcome = AI_OUTCOME_LABELS.get(suggestion.outcome, suggestion.outcome)
-    return f"{suggestion.mode} answer{confidence} — {outcome}"
+    return get_copy().card.ai_line.format(
+        mode=suggestion.mode,
+        confidence=confidence,
+        outcome=ai_outcome_label(suggestion.outcome),
+    )
+
+
+def priority_label(priority: str | None) -> str:
+    copy = get_copy().tickets
+    return {
+        "low": copy.priority_low,
+        "medium": copy.priority_medium,
+        "high": copy.priority_high,
+    }.get(priority or "", priority or "?")
+
+
+def private_category_text(ticket: Ticket) -> str:
+    cats = get_ticket_categories()
+    category = cats.get(ticket.category)
+    if not ticket.category:
+        return get_copy().card.category_pending
+    parts = [category.display if category else ticket.category]
+    sub = category.sub(ticket.subcategory) if category else None
+    if sub is not None:
+        parts.append(sub.display)
+    elif ticket.subcategory:
+        parts.append(ticket.subcategory)
+    return " › ".join(parts)
 
 
 def build_card_embed(ctx: CardContext, guild_id: int) -> discord.Embed:
+    card = get_copy().card
     t = ctx.ticket
+    private = t.surface == TicketSurface.PRIVATE
     status, colour = status_line(ctx)
-    title = f"#{t.id} · {t.title or 'Untitled question'}"
-    description = (t.description or "").strip() or "*(no text — see the thread)*"
+    if private:
+        title = card.private_title.format(
+            number=t.number, category=private_category_text(t)
+        )
+        description = (t.description or "").strip() or card.awaiting_first_message
+    else:
+        title = card.title.format(id=t.id, title=t.title or card.untitled)
+        description = (t.description or "").strip() or card.no_text
     if len(description) > DESCRIPTION_MAX:
         description = description[: DESCRIPTION_MAX - 1] + "…"
 
@@ -122,26 +181,63 @@ def build_card_embed(ctx: CardContext, guild_id: int) -> discord.Embed:
         timestamp=t.created_at,
     )
     embed.add_field(
-        name="Asked by",
-        value=f"{mention(ctx.opener)} · {past_tickets_text(ctx.past_tickets)}",
+        name=card.field_asked_by,
+        value=card.asked_by.format(
+            user=mention(ctx.opener), past_tickets=past_tickets_text(ctx.past_tickets)
+        ),
         inline=True,
     )
-    embed.add_field(name="Status", value=status, inline=True)
-    if t.category:
-        category = f"{t.category}{' (AI)' if t.category_source == 'ai' else ''}"
+    embed.add_field(name=card.field_status, value=status, inline=True)
+    if private:
+        embed.add_field(
+            name=card.field_priority, value=priority_label(t.priority), inline=True
+        )
+        if t.csat_rating is not None:
+            embed.add_field(
+                name=card.field_csat,
+                value=card.csat_value.format(rating=t.csat_rating),
+                inline=True,
+            )
     else:
-        category = "—"
-    embed.add_field(name="Category", value=category, inline=True)
+        if t.category:
+            category = (
+                card.category_ai.format(category=t.category)
+                if t.category_source == "ai"
+                else t.category
+            )
+        else:
+            category = card.category_none
+        embed.add_field(name=card.field_category, value=category, inline=True)
+    if ctx.escalated_from is not None:
+        embed.add_field(
+            name=card.field_escalated,
+            value=card.escalated_value.format(
+                id=ctx.escalated_from.id,
+                link=thread_link(guild_id, ctx.escalated_from.thread_id),
+            ),
+            inline=True,
+        )
+    if ctx.escalated_to is not None:
+        embed.add_field(
+            name=card.field_escalated_to,
+            value=card.escalated_to_value.format(
+                number=ctx.escalated_to.number,
+                link=thread_link(guild_id, ctx.escalated_to.thread_id),
+            ),
+            inline=True,
+        )
     if (line := ai_line(ctx.suggestion)) is not None:
-        embed.add_field(name="🤖 AI", value=line, inline=False)
-    embed.set_footer(text=f"Ticket #{t.id}")
+        embed.add_field(name=card.field_ai, value=line, inline=False)
+    embed.set_footer(text=card.footer.format(id=t.id))
     return embed
 
 
 def build_card_view(ticket: Ticket, categories: tuple[str, ...], guild_id: int):
-    return staff_card_view(
-        ticket.id, categories, ticket.category, thread_link(guild_id, ticket.thread_id)
-    )
+    url = thread_link(guild_id, ticket.thread_id)
+    if ticket.surface == TicketSurface.PRIVATE:
+        # The player picks the category themselves; staff just get the link
+        return link_only_view(url)
+    return staff_card_view(ticket.id, categories, ticket.category, url)
 
 
 async def render(bot: "SupportBot", ticket: Ticket):
@@ -153,14 +249,24 @@ async def render(bot: "SupportBot", ticket: Ticket):
     return embed, view
 
 
-async def post_staff_card(bot: "SupportBot", ticket: Ticket) -> None:
+async def post_staff_card(
+    bot: "SupportBot",
+    ticket: Ticket,
+    *,
+    ping_content: str | None = None,
+    ping_roles: list[int] | None = None,
+) -> None:
     channel_id = bot.settings.staff_channel_id
     if not channel_id:
         return
     embed, view = await render(bot, ticket)
     async with best_effort("staff_card_post"):
-        msg = await bot.get_partial_messageable(channel_id).send(
-            embed=embed, view=view, allowed_mentions=discord.AllowedMentions.none()
+        msg = await send_embed(
+            bot.get_partial_messageable(channel_id),
+            embed,
+            view=view,
+            ping_content=ping_content,
+            ping_roles=ping_roles,
         )
         await tickets.set_staff_card(ticket.id, channel_id, msg.id)
 

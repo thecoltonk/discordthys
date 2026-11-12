@@ -1,0 +1,308 @@
+# Cloudsail Support: every message the bot sends to players and staff.
+#
+# Edit the text, save, and it applies within a few seconds (no restart).
+# If an edit is invalid, the bot logs an error and keeps the previous text.
+# Delete a key to fall back to the built-in default.
+#
+# {placeholders} are filled in by the bot; each key lists the ones it accepts.
+# Use {{ and }} for literal braces. Discord markdown works (**bold**, [link](url)).
+#
+# Regenerate the defaults with:  python -m nephthys.core.copytext > copy/copy.toml
+
+
+[community]
+# #community-help messages players see.
+# Posted in each new ticket thread when FAQ_URL is set.
+# Placeholders: {faq_url}
+auto_reply = "someone should be along to help you soon! in the meantime check out the [FAQ]({faq_url}). once your question is answered, hit the button below to mark it as resolved :D"
+# Posted in each new ticket thread when FAQ_URL is unset.
+auto_reply_no_faq = "someone should be along to help you soon! once your question is answered, hit the button below to mark it as resolved :D"
+# Button label.
+resolve_button = "Mark as resolved"
+# Button label.
+reopen_button = "Re-open"
+# Closing message ({user} is a mention that doesn't ping).
+# Placeholders: {user}
+resolved = "marked as resolved by {user} — got another question? make a new post!"
+# Closing message for automatic stale closes.
+# Placeholders: {days}
+resolved_stale = "closing this one since it's been quiet for {days} days — got another question? make a new post!"
+# Posted when a ticket is re-opened (button, /reopen or the poster replying).
+# Placeholders: {user}
+reopened = "re-opened by {user}! someone will be along to help soon."
+# Thread name when the question has no text (e.g. only an image).
+# Placeholders: {name}
+thread_name_fallback = "Question from {name}"
+# Private reply when a button fails unexpectedly.
+something_went_wrong = "something went wrong there — staff have been told!"
+
+[sticky]
+# The "how it works" message at the bottom of #community-help.
+title = "How #community-help works"
+# Used when FAQ_URL is set.
+# Placeholders: {faq_url}
+body = '''
+**Post your question as a new message in this channel** and a thread will be opened for it. Anyone can help out, and staff will be along soon!
+
+• Keep all follow-ups inside your thread.
+• Once you're sorted, hit **Mark as resolved** in your thread.
+• Got a new question later? Just post a new message.
+
+Before posting, check the FAQ: {faq_url}'''
+# Used when FAQ_URL is unset.
+body_no_faq = '''
+**Post your question as a new message in this channel** and a thread will be opened for it. Anyone can help out, and staff will be along soon!
+
+• Keep all follow-ups inside your thread.
+• Once you're sorted, hit **Mark as resolved** in your thread.
+• Got a new question later? Just post a new message.'''
+
+[errors]
+# Private (ephemeral) refusals.
+not_allowed = "only the person who asked or a staff member can do that, sorry!"
+already_resolved = "this ticket is already resolved!"
+not_resolved = "this ticket isn't resolved, so there's nothing to re-open."
+ticket_missing = "i couldn't find a ticket for this thread."
+staff_only = "this command is for staff only."
+not_a_ticket_thread = "use this inside a ticket thread."
+already_rated = "someone already rated this one."
+ai_already_answered = "this has already been answered, thanks!"
+
+[commands]
+# Staff slash commands: /faq, /ip, /resolve, /reopen, /waiting.
+# Posted publicly by /faq.
+# Placeholders: {faq_url}
+faq_reply = "check out the FAQ, it might have your answer: {faq_url}"
+# Private reply to /faq when FAQ_URL is unset.
+faq_unconfigured = "no FAQ configured."
+# Posted publicly by /ip.
+# Placeholders: {server_address}
+ip_reply = "the server address is **{server_address}** — see you in game!"
+ip_unconfigured = "the server address hasn't been set up yet (SERVER_ADDRESS)."
+# Private reply to /resolve.
+resolved = "resolved ✅"
+# Private reply to /reopen.
+reopened = "re-opened 🔄"
+waiting_title = "Waiting for staff"
+waiting_empty = "nothing waiting — nice work, team!"
+# One line per waiting ticket. {ref} is #<id> or T-<number>; {last_message} is a relative time.
+# Placeholders: {id}, {last_message}, {link}, {ref}, {title}
+waiting_line = "• [{ref} {title}]({link}) — last message {last_message}"
+# Placeholders: {limit}
+waiting_more = "_…and more. Showing the oldest {limit}._"
+
+[card]
+# Staff ticket cards in STAFF_CHANNEL_ID.
+# Placeholders: {id}, {title}
+title = "#{id} · {title}"
+untitled = "Untitled question"
+no_text = "*(no text — see the thread)*"
+# Stands in for an unknown user.
+someone = "someone"
+field_asked_by = "Asked by"
+# Placeholders: {past_tickets}, {user}
+asked_by = "{user} · {past_tickets}"
+first_ticket = "first ticket"
+# Placeholders: {count}
+past_tickets_one = "{count} past ticket"
+# Placeholders: {count}
+past_tickets_many = "{count} past tickets"
+field_status = "Status"
+# Placeholders: {reopened}
+status_waiting = "🟡 Waiting for staff{reopened}"
+# Placeholders: {claimer}, {reopened}
+status_claimed = "🔵 Claimed by {claimer}{reopened}"
+# Placeholders: {by}, {credit}
+status_resolved = "✅ Resolved {by}{credit}"
+# Placeholders: {user}
+resolved_by = "by {user}"
+resolved_automatically = "automatically (stale)"
+# Placeholders: {user}
+credit = " · credit {user}"
+no_credit = " · no staff credit"
+reopened_suffix = " (re-opened)"
+field_category = "Category"
+category_none = "—"
+# An AI-set category.
+# Placeholders: {category}
+category_ai = "{category} (AI)"
+category_placeholder = "Set a category…"
+field_ai = "🤖 AI"
+# Placeholders: {confidence}, {mode}, {outcome}
+ai_line = "{mode} answer ({confidence}) — {outcome}"
+ai_pending = "awaiting feedback"
+ai_helpful = "👍 rated helpful"
+ai_not_helpful = "👎 rated not helpful"
+ai_fixed = "✅ player said it fixed it"
+ai_needs_human = "🙋 player still needs a human"
+open_thread_button = "Open thread"
+# Placeholders: {id}
+footer = "Ticket #{id}"
+# #tickets card title.
+# Placeholders: {category}, {number}
+private_title = "T-{number} · {category}"
+category_pending = "category not picked yet"
+awaiting_first_message = "*(waiting for the player's first message)*"
+field_priority = "Priority"
+field_csat = "CSAT"
+# Placeholders: {rating}
+csat_value = "{rating}/5"
+field_escalated = "Escalated from"
+# Placeholders: {id}, {link}
+escalated_value = "[#{id}]({link})"
+field_escalated_to = "Escalated to"
+# Placeholders: {link}, {number}
+escalated_to_value = "[T-{number}]({link})"
+
+[stats]
+# Shared by /stats and the daily summary.
+# Placeholders: {days}, {surface}
+stats_title = "{surface} — last {days} days"
+# Placeholders: {surface}
+stats_title_one_day = "{surface} — last 1 day"
+surface_community = "#community-help"
+surface_tickets = "#tickets"
+field_opened = "Opened"
+field_resolved = "Resolved"
+# Placeholders: {resolved}, {without_staff}
+resolved_value = "{resolved} ({without_staff} without staff)"
+field_median = "Median first staff response"
+field_open_now = "Open (unclaimed) now"
+field_in_progress = "In progress now"
+# Placeholders: {days}
+field_waiting = "Waiting > {days} days"
+field_by_category = "Opened by category"
+uncategorised = "Uncategorised"
+field_by_priority = "By priority"
+priority_unset = "not picked yet"
+field_csat = "CSAT average"
+# Placeholders: {average}, {count}
+csat_value = "{average}/5 from {count} rating(s)"
+csat_none = "no ratings yet"
+field_top_helpers = "Top helpers (resolved, by claimer)"
+# Placeholders: {count}, {rank}, {user}
+leaderboard_line = "{rank}. {user} — {count}"
+leaderboard_empty = "nobody yet"
+not_available = "n/a"
+# Placeholders: {n}
+minutes = "{n} min"
+# Placeholders: {n}
+hours = "{n} h"
+# Placeholders: {n}
+days = "{n} days"
+
+[summary]
+# The daily summary post.
+# Placeholders: {surface}
+title = "📊 {surface} daily summary"
+# Placeholders: {since}, {until}
+period = "{since} → {until}"
+field_by_category = "By category"
+# Placeholders: {count}, {days}
+field_waiting = "Waiting > {days} days ({count})"
+waiting_none = "none 🎉"
+# Placeholders: {id}, {last_message}, {link}, {ref}, {title}
+waiting_line = "• [{ref} {title}]({link}) — {last_message}"
+# Placeholders: {count}
+waiting_more = "…and {count} more (see /waiting)"
+field_ai = "🤖 AI"
+ai_none = "no AI activity"
+# Placeholders: {day_helpful}, {day_pct}, {day_rated}, {week_helpful}, {week_pct}, {week_rated}
+ai_shadow_accuracy = "**Shadow accuracy** (👍 / rated): 24h {day_pct} ({day_helpful}/{day_rated}), 7d {week_pct} ({week_helpful}/{week_rated})"
+# Placeholders: {posted}, {unrated}
+ai_shadow_counts = "Suggestions 24h: {posted} posted, {unrated} unrated"
+# Placeholders: {fixed}, {needs_human}, {no_response}, {posted}, {week_fix_rate}
+ai_public = "**Public answers** 24h: {posted} posted — {fixed} fixed, {needs_human} needed a human, {no_response} no response; 7d fix rate {week_fix_rate}"
+# Placeholders: {attempts}, {skipped}
+ai_attempts = "Attempts 24h: {attempts} ({skipped} not posted)"
+# Placeholders: {attempts}, {reasons}, {skipped}
+ai_attempts_reasons = "Attempts 24h: {attempts} ({skipped} not posted: {reasons})"
+
+[ai]
+# AI answers (shadow suggestions for staff, public answers for players).
+public_title = "🤖 Automated answer"
+# Placeholders: {sources}
+public_footer = "I'm a bot answering from the Cloudsail knowledge base, and I can be wrong. Sources: {sources}"
+fixed_button = "This fixed it"
+need_human_button = "I still need a human"
+need_human_reply = "no worries — a human will be along to help soon! feel free to add any extra details while you wait."
+# Placeholders: {id}, {title}
+shadow_title = "🤖 AI suggestion (shadow) · #{id} {title}"
+shadow_field_confidence = "Confidence"
+shadow_field_sources = "Sources"
+shadow_footer = "Not shown to the player. Would this have been a good answer?"
+no_sources = "none"
+helpful_button = "Helpful"
+not_helpful_button = "Not helpful"
+field_outcome = "Outcome"
+# Placeholders: {user}
+rated_helpful = "👍 helpful — rated by {user}"
+# Placeholders: {user}
+rated_not_helpful = "👎 not helpful — rated by {user}"
+# Placeholders: {user}
+outcome_fixed = "✅ {user} said this fixed it"
+# Placeholders: {user}
+outcome_needs_human = "🙋 {user} still needs a human"
+
+[tickets]
+# #tickets: the panel, private ticket threads, closing, CSAT and escalation.
+panel_title = "Need help?"
+# The sticky ticket panel in #tickets.
+# Placeholders: {community_channel}
+panel_body = "First, check the known issues and see if {community_channel} can sort it. If not, hit the button below to open a private thread with the team."
+create_button = "Create Ticket"
+# Private thread name (max 100 characters; longer is cut).
+# Placeholders: {name}, {number}
+thread_name = "{name} (T-{number})"
+# Placeholders: {number}
+opener_header = "## Ticket T-{number}"
+# Shown at the top of every new ticket.
+# Placeholders: {user}
+welcome = "Hey {user}, thanks for reaching out! Pick the option below that best fits what you need help with."
+# Added to tickets created with /escalate.
+# Placeholders: {link}
+escalated_note = "This ticket was moved here from {link} so we can help you privately."
+# One line per pick; the lines stack up.
+# Placeholders: {choice}
+selected = "You have selected: **{choice}**"
+close_button = "Close Ticket"
+# Private reply to Create Ticket.
+# Placeholders: {link}
+created = "your ticket is ready: {link}"
+# Private reply when TICKETS_MAX_OPEN_PER_USER is reached.
+# Placeholders: {count}, {links}
+too_many_open = "you already have {count} open ticket(s): {links} — please use one of those, or close one first."
+create_failed = "sorry, i couldn't open a ticket right now. please try again in a minute, or ask in #community-help."
+not_your_ticket = "only the person who opened this ticket or staff can do that."
+already_picked = "that's already been chosen!"
+option_gone = "that option isn't available anymore — please ask staff."
+# Posted when a ticket is closed (button or /resolve).
+# Placeholders: {user}
+closed = "this ticket has been closed by {user}. thanks for reaching out!"
+csat_prompt = "how did we do? rate your support from 1 (bad) to 5 (great):"
+# Placeholders: {rating}
+csat_thanks = "thanks for the feedback — you rated us {rating}/5 ⭐"
+csat_not_opener = "only the person who opened this ticket can rate it."
+csat_already = "you've already rated this ticket — thanks!"
+# Placeholders: {user}
+reopened = "this ticket has been re-opened by {user}."
+# Text above the staff alert card; {roles} are the pinged roles.
+# Placeholders: {priority}, {roles}
+alert_ping = "{roles} new **{priority}** ticket"
+priority_low = "🟢 Low"
+priority_medium = "🟡 Medium"
+priority_high = "🔴 High"
+# Posted in the #community-help thread by /escalate before locking it.
+# Placeholders: {link}, {user}
+escalated_public = "this has been moved to a private ticket ({link}) so staff can help {user} privately. 🔒"
+# Copy of the public question, when /escalate deletes the original.
+# Placeholders: {quote}
+escalated_quote = '''
+**Original message:**
+{quote}'''
+# Placeholders: {link}
+escalate_done = "escalated to {link}"
+# Placeholders: {link}
+already_escalated = "this was already escalated: {link}"
+not_community_thread = "use this inside a #community-help ticket thread."
+tickets_disabled = "#tickets isn't set up (TICKETS_CHANNEL_ID)."

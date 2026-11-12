@@ -20,15 +20,10 @@ DEFAULT_CATEGORIES = ("Gameplay", "Bug", "Claims", "Economy", "Store", "Other")
 AI_ANSWER_MODES = ("off", "shadow", "public")
 DEFAULT_AI_BASE_URL = "https://ai.hackclub.com/proxy/v1"
 
-DEFAULT_STICKY_TITLE = "How #community-help works"
-DEFAULT_STICKY_BODY = (
-    "**Post your question as a new message in this channel** and a thread will be "
-    "opened for it. Anyone can help out, and staff will be along soon!\n\n"
-    "• Keep all follow-ups inside your thread.\n"
-    "• Once you're sorted, hit **Mark as resolved** in your thread.\n"
-    "• Got a new question later? Just post a new message.\n\n"
-    "Before posting, check the FAQ: {faq_url}"
-)
+DEFAULT_COPY_FILE = "copy/copy.toml"
+DEFAULT_TICKET_CATEGORIES_FILE = "copy/ticket_categories.toml"
+# Env vars that used to hold text; text now lives in copy/copy.toml
+DEPRECATED_TEXT_ENV = ("STICKY_TITLE", "STICKY_BODY")
 
 
 class ConfigError(ValueError):
@@ -43,6 +38,14 @@ class Settings:
     community_channel_id: int
     staff_role_id: int
     staff_channel_id: int | None
+    # #tickets (Phase 2): disabled when tickets_channel_id is unset
+    tickets_channel_id: int | None
+    store_role_id: int | None
+    mod_role_id: int | None
+    ticket_number_start: int
+    tickets_max_open_per_user: int
+    ticket_categories_file: str
+    ticket_categories_file_explicit: bool
     log_channel_id: int | None
     maintainer_id: int | None
 
@@ -58,8 +61,10 @@ class Settings:
     stale_ticket_days: int | None
     sticky_enabled: bool
     sticky_debounce_seconds: float
-    sticky_title: str
-    sticky_body: str
+    # Message text (copy/copy.toml)
+    copy_file: str
+    copy_file_explicit: bool
+    deprecated_env_set: tuple[str, ...]
     timezone: str
 
     # Categories (#community-help)
@@ -93,6 +98,21 @@ class Settings:
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def tickets_enabled(self) -> bool:
+        return self.tickets_channel_id is not None
+
+    def role_id_for(self, role: str) -> int:
+        """Resolve a ticket category's role ("staff" | "store" | "mod" | ID).
+        Store/Mod fall back to the Staff role when their IDs aren't set."""
+        if role.isdigit():
+            return int(role)
+        if role == "store" and self.store_role_id:
+            return self.store_role_id
+        if role == "mod" and self.mod_role_id:
+            return self.mod_role_id
+        return self.staff_role_id
 
     @property
     def ai_enabled(self) -> bool:
@@ -240,6 +260,15 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         errors.append(f"AI_TIMEOUT_SECONDS must be a number, got {ai_timeout_raw!r}")
         ai_timeout = 30.0
 
+    ticket_number_start = integer("TICKET_NUMBER_START", 26)
+    if ticket_number_start is None or ticket_number_start < 1:
+        errors.append("TICKET_NUMBER_START must be at least 1")
+        ticket_number_start = 26
+    max_open = integer("TICKETS_MAX_OPEN_PER_USER", 2)
+    if max_open is None or max_open < 0:
+        errors.append("TICKETS_MAX_OPEN_PER_USER must be 0 (unlimited) or more")
+        max_open = 2
+
     # OPEN_REACTION may be explicitly set to empty to disable the 🤔 marker
     open_reaction = env.get("OPEN_REACTION", "🤔").strip() or None
 
@@ -249,6 +278,16 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         community_channel_id=snowflake("COMMUNITY_CHANNEL_ID") or 0,
         staff_role_id=snowflake("STAFF_ROLE_ID") or 0,
         staff_channel_id=snowflake("STAFF_CHANNEL_ID", optional=True),
+        tickets_channel_id=snowflake("TICKETS_CHANNEL_ID", optional=True),
+        store_role_id=snowflake("STORE_ROLE_ID", optional=True),
+        mod_role_id=snowflake("MOD_ROLE_ID", optional=True),
+        ticket_number_start=ticket_number_start,
+        tickets_max_open_per_user=max_open,
+        ticket_categories_file=get(
+            "TICKET_CATEGORIES_FILE", DEFAULT_TICKET_CATEGORIES_FILE
+        )
+        or DEFAULT_TICKET_CATEGORIES_FILE,
+        ticket_categories_file_explicit=get("TICKET_CATEGORIES_FILE") is not None,
         log_channel_id=snowflake("LOG_CHANNEL_ID", optional=True),
         maintainer_id=snowflake("MAINTAINER_ID", optional=True),
         database_url=required("DATABASE_URL"),
@@ -260,10 +299,9 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         stale_ticket_days=stale,
         sticky_enabled=boolean("STICKY_ENABLED", True),
         sticky_debounce_seconds=debounce,
-        sticky_title=get("STICKY_TITLE", DEFAULT_STICKY_TITLE) or DEFAULT_STICKY_TITLE,
-        sticky_body=(get("STICKY_BODY", DEFAULT_STICKY_BODY) or DEFAULT_STICKY_BODY)
-        # Allow literal "\n" in .env files for multi-line bodies
-        .replace("\\n", "\n"),
+        copy_file=get("COPY_FILE", DEFAULT_COPY_FILE) or DEFAULT_COPY_FILE,
+        copy_file_explicit=get("COPY_FILE") is not None,
+        deprecated_env_set=tuple(n for n in DEPRECATED_TEXT_ENV if get(n) is not None),
         timezone=get("TIMEZONE", "Europe/London") or "Europe/London",
         ticket_categories=categories,
         daily_summary_enabled=boolean("DAILY_SUMMARY_ENABLED", True),

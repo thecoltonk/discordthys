@@ -7,8 +7,8 @@ import pytest
 from nephthys.cogs.community_help import CommunityHelp
 from nephthys.cogs.ticket_commands import TicketCommands
 from nephthys.core import tickets
+from nephthys.core.copytext import DEFAULT_COPY as C
 from nephthys.core.queries import get_unanswered_tickets
-from nephthys.core.transcript import TRANSCRIPT
 from nephthys.database.enums import TicketStatus
 from nephthys.database.enums import UserType
 from tests.fakes import FakeBot
@@ -40,7 +40,7 @@ async def test_faq_posts_in_thread_without_claiming_or_clearing_waiting():
     i = make_interaction(bot, make_user(staff=True), channel=thread)
     await run(TicketCommands.faq, commands, i)
 
-    assert bot.sends(ticket.thread_id)[-1].content == TRANSCRIPT.faq_reply.format(
+    assert bot.sends(ticket.thread_id)[-1].content == C.commands.faq_reply.format(
         faq_url="https://example.com/faq"
     )
     t = await tickets.require_ticket(ticket.id)
@@ -63,7 +63,7 @@ async def test_ip_and_unconfigured():
     )
     i = make_interaction(bot2, make_user(staff=True), channel=thread2)
     await run(TicketCommands.ip, commands2, i)
-    assert i.response.send_message.call_args.args[0] == TRANSCRIPT.ip_unconfigured
+    assert i.response.send_message.call_args.args[0] == C.commands.ip_unconfigured
     assert i.response.send_message.call_args.kwargs["ephemeral"] is True
 
 
@@ -77,7 +77,7 @@ async def test_commands_refuse_non_staff_and_non_ticket_channels():
     ):
         player = make_interaction(bot, make_user(), channel=thread)
         await run(command, commands, player)
-        assert player.response.send_message.call_args.args[0] == TRANSCRIPT.staff_only
+        assert player.response.send_message.call_args.args[0] == C.errors.staff_only
 
         elsewhere = make_interaction(
             bot, make_user(staff=True), channel=SimpleNamespace(id=5)
@@ -85,7 +85,7 @@ async def test_commands_refuse_non_staff_and_non_ticket_channels():
         await run(command, commands, elsewhere)
         assert (
             elsewhere.response.send_message.call_args.args[0]
-            == TRANSCRIPT.not_a_ticket_thread
+            == C.errors.not_a_ticket_thread
         )
 
 
@@ -95,23 +95,23 @@ async def test_resolve_and_reopen_commands():
 
     i = make_interaction(bot, mod, channel=thread)
     await run(TicketCommands.resolve, commands, i)
-    assert i.followup.send.call_args.args[0] == TRANSCRIPT.command_resolved
+    assert i.followup.send.call_args.args[0] == C.commands.resolved
     t = await tickets.require_ticket(ticket.id)
     assert t.status == TicketStatus.CLOSED and t.assigned_to is None
     assert bot.reactions_on(q.id) == {"✅"} and thread.archived
 
     again = make_interaction(bot, mod, channel=thread)
     await run(TicketCommands.resolve, commands, again)
-    assert again.followup.send.call_args.args[0] == TRANSCRIPT.already_resolved
+    assert again.followup.send.call_args.args[0] == C.errors.already_resolved
 
     i = make_interaction(bot, mod, channel=thread)
     await run(TicketCommands.reopen, commands, i)
-    assert i.followup.send.call_args.args[0] == TRANSCRIPT.command_reopened
+    assert i.followup.send.call_args.args[0] == C.commands.reopened
     assert (await tickets.require_ticket(ticket.id)).status == TicketStatus.OPEN
 
     again = make_interaction(bot, mod, channel=thread)
     await run(TicketCommands.reopen, commands, again)
-    assert again.followup.send.call_args.args[0] == TRANSCRIPT.not_resolved
+    assert again.followup.send.call_args.args[0] == C.errors.not_resolved
 
 
 async def test_question_mark_messages_are_normal_replies_now():

@@ -7,7 +7,7 @@ import pytest
 
 from nephthys.cogs.community_help import CommunityHelp
 from nephthys.core import tickets
-from nephthys.core.transcript import TRANSCRIPT
+from nephthys.core.copytext import DEFAULT_COPY as C
 from nephthys.database.enums import BotMessageKind
 from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import User
@@ -138,7 +138,7 @@ async def test_resolve_button_by_op(bot, cog):
 
     thread = bot.world.threads[ticket.thread_id]
     closing = bot.sends(ticket.thread_id)[-1]
-    assert closing.content == TRANSCRIPT.resolved.format(user=op.mention)
+    assert closing.content == C.community.resolved.format(user=op.mention)
     assert button_ids(closing.view) == [f"cs:reopen:{ticket.id}"]
     assert bot.reactions_on(msg.id) == {"✅"}
     assert thread.archived is True
@@ -150,7 +150,7 @@ async def test_resolve_button_refused_for_other_players(bot, cog):
     await ResolveButton(ticket.id).callback(interaction)
 
     interaction.followup.send.assert_awaited_once()
-    assert interaction.followup.send.call_args.args[0] == TRANSCRIPT.not_allowed
+    assert interaction.followup.send.call_args.args[0] == C.errors.not_allowed
     assert interaction.followup.send.call_args.kwargs["ephemeral"] is True
     t = await tickets.require_ticket(ticket.id)
     assert t.status == TicketStatus.OPEN
@@ -161,7 +161,7 @@ async def test_resolve_twice_says_already_resolved(bot, cog):
     await ResolveButton(ticket.id).callback(make_interaction(bot, op))
     second = make_interaction(bot, make_user(staff=True))
     await ResolveButton(ticket.id).callback(second)
-    assert second.followup.send.call_args.args[0] == TRANSCRIPT.already_resolved
+    assert second.followup.send.call_args.args[0] == C.errors.already_resolved
 
 
 async def test_reopen_button(bot, cog):
@@ -176,7 +176,7 @@ async def test_reopen_button(bot, cog):
     thread = bot.world.threads[ticket.thread_id]
     assert thread.archived is False
     assert bot.reactions_on(msg.id) == {"🤔"}
-    assert bot.sends(ticket.thread_id)[-1].content == TRANSCRIPT.reopened.format(
+    assert bot.sends(ticket.thread_id)[-1].content == C.community.reopened.format(
         user=mod.mention
     )
 

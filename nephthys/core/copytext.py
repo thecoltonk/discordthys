@@ -916,17 +916,22 @@ class CopyStore:
         self.override = override
         self.paths = [p for p in (path, override) if p is not None]
         self._copy = DEFAULT_COPY
-        self._mtimes: tuple[float | None, ...] = ()
+        # Per file: (mtime_ns, size, inode), or None while it's missing. The
+        # inode catches editors that save by writing a new file and renaming
+        # it over the old one, even when the timestamp doesn't move.
+        self._mtimes: tuple[tuple[int, int, int] | None, ...] = ()
         self._checked_at = 0.0
         self._lock = threading.Lock()
 
-    def _current_mtimes(self) -> tuple[float | None, ...]:
-        out: list[float | None] = []
+    def _current_mtimes(self) -> tuple[tuple[int, int, int] | None, ...]:
+        out: list[tuple[int, int, int] | None] = []
         for p in self.paths:
             try:
-                out.append(p.stat().st_mtime)
+                st = p.stat()
             except OSError:
                 out.append(None)
+            else:
+                out.append((st.st_mtime_ns, st.st_size, st.st_ino))
         return tuple(out)
 
     def load(self, *, required: bool, override_required: bool = False) -> Copy:
@@ -954,26 +959,47 @@ class CopyStore:
         if self.paths:
             now = time.monotonic()
             if now - self._checked_at >= RELOAD_CHECK_SECONDS:
-                with self._lock:
-                    self._checked_at = now
-                    self._maybe_reload()
+                self.poll()
         return self._copy
 
-    def _maybe_reload(self) -> None:
+    def poll(self) -> str | None:
+        """Check the files now and reload if they changed. Returns "reloaded",
+        "rejected" or None (nothing to do). The bot calls this every few
+        seconds, so edits are picked up (and logged) even while it's idle."""
+        if not self.paths:
+            return None
+        with self._lock:
+            self._checked_at = time.monotonic()
+            return self._maybe_reload()
+
+    def _maybe_reload(self) -> str | None:
         mtimes = self._current_mtimes()
         if mtimes == self._mtimes:
-            return
+            return None
         # The base file vanishing is usually a mid-save: wait for it to come back
         base_was_there = bool(self._mtimes) and self._mtimes[0] is not None
         if self.path is not None and mtimes[0] is None and base_was_there:
-            return
+            return None
+        changed = [
+            str(p)
+            for i, p in enumerate(self.paths)
+            if i >= len(self._mtimes) or self._mtimes[i] != mtimes[i]
+        ]
         self._mtimes = mtimes
         try:
             self._copy = load_layers(self.paths)
         except (CopyError, OSError) as e:
-            log.error(f"Ignoring invalid copy edit (keeping the previous text): {e}")
-            return
-        log.info(f"Reloaded copy from {' + '.join(str(p) for p in self.paths)}")
+            log.error(
+                f"Copy edit rejected ({', '.join(changed)} changed); keeping the "
+                f"previous text: {e}"
+            )
+            return "rejected"
+        loaded = [str(p) for p in self.paths if p.is_file()]
+        log.info(
+            f"Copy reloaded ({', '.join(changed)} changed); now using "
+            f"{' + '.join(loaded) or 'the built-in defaults'}"
+        )
+        return "reloaded"
 
 
 _store = CopyStore()
@@ -994,6 +1020,11 @@ def configure_copy(
 
 def get_copy() -> Copy:
     return _store.get()
+
+
+def poll_copy() -> str | None:
+    """Check the copy files for edits now (see `CopyStore.poll`)."""
+    return _store.poll()
 
 
 def use_copy(copy: Copy) -> None:
@@ -1156,5 +1187,6 @@ __all__ = [
     "configure_copy",
     "get_copy",
     "parse_copy",
+    "poll_copy",
     "use_copy",
 ]

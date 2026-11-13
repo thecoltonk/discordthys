@@ -183,3 +183,73 @@ def test_buttons_take_label_and_emoji_from_copy():
 def test_bad_button_faces_are_rejected(toml: str, problem: str):
     with pytest.raises(CopyError, match=problem):
         parse_copy(toml)
+
+
+def test_replaced_file_with_same_mtime_and_size_is_reloaded(tmp_path: Path, caplog):
+    """Editors that save by writing a new file and renaming it over the old one
+    (vim, VS Code, many others). Even with an identical timestamp and size, the
+    new inode is noticed."""
+    import logging
+
+    f = tmp_path / "copy.toml"
+    write(f, '[community]\nreopen_button = "Aaaa"\n', 1_000)
+    store = CopyStore(f)
+    store.load(required=True)
+
+    tmp = tmp_path / "copy.toml.swp"
+    write(tmp, '[community]\nreopen_button = "Bbbb"\n', 1_000)  # same mtime, size
+    os.replace(tmp, f)
+    with caplog.at_level(logging.INFO, logger="nephthys.core.copytext"):
+        assert store.poll() == "reloaded"
+    assert store.get().community.reopen_button == "Bbbb"
+    assert f"Copy reloaded ({f} changed)" in caplog.text
+    assert store.poll() is None  # nothing new
+
+
+def test_poll_logs_reloads_and_rejections(tmp_path: Path, caplog):
+    import logging
+
+    f = tmp_path / "copy.toml"
+    write(f, '[community]\nreopen_button = "A"\n', 1_000)
+    store = CopyStore(f)
+    store.load(required=True)
+    with caplog.at_level(logging.INFO, logger="nephthys.core.copytext"):
+        # poll() ignores the 5-second throttle that get() applies
+        write(f, '[community]\nreopen_button = "{oops}"\n', 2_000)
+        assert store.poll() == "rejected"
+        write(f, '[community]\nreopen_button = "B"\n', 3_000)
+        assert store.poll() == "reloaded"
+    rejected = [r for r in caplog.records if "rejected" in r.getMessage()]
+    assert len(rejected) == 1 and rejected[0].levelno == logging.ERROR
+    assert "reopen_button" in rejected[0].getMessage()
+    assert "{oops}" in rejected[0].getMessage()
+    assert store.get().community.reopen_button == "B"
+
+
+async def test_bot_watches_copy_while_idle(monkeypatch):
+    import asyncio
+
+    from nephthys.bot import SupportBot
+    from tests.helpers import make_settings
+
+    polls: list[int] = []
+    monkeypatch.setattr(copytext, "RELOAD_CHECK_SECONDS", 0.01)
+    monkeypatch.setattr(copytext, "poll_copy", lambda: polls.append(1))
+    bot = SupportBot(make_settings(), connect_db=False)
+    task = asyncio.create_task(bot.watch_copy())
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert len(polls) >= 2
+    await bot.close()
+
+
+def test_compose_mounts_the_copy_directory_not_single_files():
+    """A single-file bind mount keeps pointing at the old inode once an editor
+    replaces the file, so edits would never reach the container."""
+    compose = (Path(__file__).parent.parent / "docker-compose.yml").read_text()
+    mounts = [
+        line.strip().lstrip("- ").strip("\"'")
+        for line in compose.splitlines()
+        if "/app/copy" in line and not line.strip().startswith("#")
+    ]
+    assert mounts == ["./copy:/app/copy:ro"]

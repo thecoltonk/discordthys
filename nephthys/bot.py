@@ -121,6 +121,7 @@ class SupportBot(commands.Bot):
 
         self.configure_jobs()
         self.scheduler.start()
+        self.spawn(self.watch_copy(), name="copy-watcher")
         log.info(
             f"AI: {'on' if self.ai_client else 'off'}"
             + (
@@ -193,6 +194,20 @@ class SupportBot(commands.Bot):
         task = asyncio.create_task(guarded(), name=name)
         self.background_tasks.add(task)
         task.add_done_callback(self.background_tasks.discard)
+
+    async def watch_copy(self) -> None:
+        """Check copy/ for edits every few seconds, so a reload (or a rejected
+        edit) is applied and logged straight away, not only when some text is
+        next needed."""
+        from nephthys.core.copytext import poll_copy
+        from nephthys.core.copytext import RELOAD_CHECK_SECONDS
+
+        while True:
+            await asyncio.sleep(RELOAD_CHECK_SECONDS)
+            try:
+                poll_copy()
+            except Exception:
+                log.exception("Copy watcher failed")
 
     async def run_daily_summary(self) -> None:
         from nephthys.tasks.daily_summary import send_daily_summary

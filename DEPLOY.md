@@ -229,11 +229,11 @@ cd /opt/cloudsail-support && cp copy/copy.local.toml.example copy/copy.local.tom
 Every key is listed there, commented out, with its default value. Uncomment and edit only what you want to change. Any key in `copy/copy.local.toml` (`COPY_OVERRIDE_FILE`) overrides `copy.toml`, and the file is gitignored.
 
 1. Edit `/opt/cloudsail-support/copy/copy.local.toml` (or `copy.toml`) on the host and save.
-2. Within about 5 seconds the bot logs `Reloaded copy from copy/copy.toml`, and new messages use the new text.
+2. Within about 5 seconds the bot logs `Copy reloaded (/app/copy/copy.local.toml changed); now using …`, and new messages use the new text. This works with editors that save by replacing the file, because `./copy` is mounted as a directory. Don't change it to single-file mounts: those keep showing the old file.
    - Messages already posted (e.g. old closing messages) aren't rewritten.
    - Staff cards pick up the change the next time they update.
    - The sticky updates on its next repost.
-3. If your edit is invalid, the bot logs `Ignoring invalid copy edit …` with the exact key and problem, and keeps the previous text. Examples: a typo'd key, or a `{placeholder}` that key doesn't accept.
+3. If your edit is invalid, the bot logs `Copy edit rejected (… changed); keeping the previous text:` with the exact key and problem, and keeps the previous text. Examples: a typo'd key, or a `{placeholder}` that key doesn't accept.
 
    To check an edit before saving it into place:
 

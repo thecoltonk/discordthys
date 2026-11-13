@@ -1,0 +1,10 @@
+# Rollback: deploys the old login-only Worker (legacy-login-worker.js) under the
+# same name and route, replacing the skin Worker's code.
+#   npx wrangler deploy --config wrangler.legacy.toml
+name = "cloudsail-support-skin"
+main = "legacy-login-worker.js"
+compatibility_date = "2026-10-01"
+
+routes = [
+  { pattern = "support.cloudsail.uk/*", zone_name = "cloudsail.uk" },
+]

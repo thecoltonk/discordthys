@@ -1,0 +1,523 @@
+/* Cloudsail skin for Zammad's agent ticket view (legacy desktop UI, 7.2).
+ *
+ * Nothing here applies on its own. Every rule hangs off a class that skin.js
+ * adds once it has checked the page:
+ *   html.cs-skin   the skin is on in this browser
+ *   .cs-chat       a ticket whose conversation is shown as chat bubbles
+ *   .cs-composer   a ticket whose reply form is the chat composer
+ * No class, no effect: with the script off or failing, Zammad looks stock.
+ *
+ * Selectors start with #app so they outrank Zammad's own
+ * "#app.navigation-collapsed ..." variants.
+ */
+
+/* The switch under the composer exists with the skin off too ("Chat view"),
+   so these few rules are the only unscoped ones. skin.js creates the element. */
+.cs-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 880px;
+  margin: 4px auto 0;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-muted, #8e9399);
+}
+.cs-bar-switch {
+  flex: none;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cs-bar-switch:hover,
+.cs-bar-switch:focus-visible {
+  color: var(--text-link, #2392e0);
+}
+
+@media screen {
+  /* ---------------------------------------------------------------- tokens
+     Cloudsail colours. Change the brand here; everything else follows. Text
+     colours stay Zammad's own, so bubbles are light tints in the light theme
+     and deep tints in the dark one, and arbitrary HTML (emails) stays legible. */
+  #app .cs-chat {
+    --cs-brand: #0f7a9c;            /* send button, focus, accents */
+    --cs-brand-ink: #ffffff;
+    --cs-in: #edf1f4;               /* player bubbles (left) */
+    --cs-out: #d3ecf5;              /* agent bubbles (right) */
+    --cs-note: #fff1b8;             /* internal notes */
+    --cs-note-line: #e5b93c;
+    --cs-note-ink: #7a5600;
+    --cs-chip: rgba(100, 116, 128, 0.12);
+    --cs-muted: var(--text-muted, #8e9399);
+    --cs-radius: 18px;
+    --cs-radius-tight: 5px;
+  }
+  [data-theme="dark"] #app .cs-chat {
+    --cs-brand: #2aa3c9;
+    --cs-brand-ink: #06222c;
+    --cs-in: #383b42;
+    --cs-out: #11495e;
+    --cs-note: #54460f;
+    --cs-note-line: #b8922a;
+    --cs-note-ink: #f3d77a;
+    --cs-chip: rgba(255, 255, 255, 0.08);
+  }
+
+  /* --------------------------------------------------------------- bubbles */
+  #app .cs-chat .ticketZoom .ticket-article {
+    max-width: 920px;
+    margin-top: 12px;
+    padding: 0 20px 10px;
+  }
+
+  #app .cs-chat .ticket-article-item {
+    padding: 0 0 2px;
+    --cs-bubble: var(--cs-out);
+  }
+  #app .cs-chat .ticket-article-item.customer { --cs-bubble: var(--cs-in); }
+  #app .cs-chat .ticket-article-item.is-internal { --cs-bubble: var(--cs-note); }
+  #app .cs-chat .ticket-article-item.cs-first { padding-top: 10px; }
+
+  /* Day divider, drawn from data skin.js puts on the first message of a day. */
+  #app .cs-chat .ticket-article-item.cs-day::before {
+    content: var(--cs-day);
+    display: block;
+    width: max-content;
+    margin: 14px auto 4px;
+    padding: 3px 12px;
+    border-radius: 999px;
+    background: var(--cs-chip);
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+  }
+
+  /* The row: player on the left, agents on the right. */
+  #app .cs-chat .ticket-article-item > .article-content {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    padding: 0 72px 0 42px;
+  }
+  #app .cs-chat .ticket-article-item.agent > .article-content {
+    justify-content: flex-end;
+    padding: 0 42px 0 72px;
+  }
+  #app .cs-chat .ticket-article-item.system > .article-content {
+    justify-content: center;
+    padding: 0 42px;
+  }
+
+  /* Sender name above the first bubble of a group. */
+  #app .cs-chat .ticket-article-item.cs-first > .article-content::before {
+    content: var(--cs-name);
+    flex: 0 0 100%;
+    padding: 0 12px 3px;
+    color: var(--cs-muted);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: left;
+  }
+  #app .cs-chat .ticket-article-item.agent.cs-first > .article-content::before { text-align: right; }
+  #app .cs-chat .ticket-article-item.system.cs-first > .article-content::before { text-align: center; }
+
+  /* Avatar next to the last bubble of a group. */
+  #app .cs-chat .ticket-article-item .js-avatar .avatar {
+    display: none;
+    position: absolute !important;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: auto;
+    margin: 0 !important;
+    transform: scale(0.8);
+    transform-origin: bottom left;
+  }
+  #app .cs-chat .ticket-article-item.agent .js-avatar .avatar {
+    left: auto;
+    right: 0;
+    transform-origin: bottom right;
+  }
+  #app .cs-chat .ticket-article-item.cs-last .js-avatar .avatar { display: block; }
+
+  #app .cs-chat .ticket-article-item .bubble-gap {
+    min-width: 0;
+    max-width: min(76%, 620px);
+  }
+  #app .cs-chat .ticket-article-item .internal-border {
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+  }
+  #app .cs-chat .ticket-article-item .bubble-arrow { display: none; }
+
+  #app .cs-chat .ticket-article-item .textBubble {
+    padding: 8px 13px;
+    border: 0 !important;
+    border-radius: var(--cs-radius);
+    box-shadow: none;
+    background: var(--cs-bubble);
+    overflow-wrap: anywhere;
+  }
+  #app .cs-chat .ticket-article-item.is-internal .textBubble {
+    box-shadow: inset 0 0 0 1px var(--cs-note-line);
+  }
+
+  /* Grouped bubbles share a tight corner on the sender's side. */
+  #app .cs-chat .ticket-article-item.customer:not(.cs-first) .textBubble { border-top-left-radius: var(--cs-radius-tight); }
+  #app .cs-chat .ticket-article-item.customer:not(.cs-last) .textBubble { border-bottom-left-radius: var(--cs-radius-tight); }
+  #app .cs-chat .ticket-article-item.agent:not(.cs-first) .textBubble { border-top-right-radius: var(--cs-radius-tight); }
+  #app .cs-chat .ticket-article-item.agent:not(.cs-last) .textBubble { border-bottom-right-radius: var(--cs-radius-tight); }
+
+  /* "<name> (Player via Discord)" is the bot's first line on every mirrored
+     message. It is shown as the sender name instead; the text stays in the
+     article, only hidden. */
+  #app .cs-chat .ticket-article-item.cs-via .textBubble-content > .richtext-content > :first-child { display: none; }
+
+  /* Zammad's "See more" fade has to match the bubble it sits in. */
+  #app .cs-chat .ticket-article-item .textBubble-overflowContainer { background: var(--cs-bubble); }
+  #app .cs-chat .ticket-article-item .textBubble-overflowContainer::before {
+    background: linear-gradient(transparent, var(--cs-bubble));
+  }
+
+  /* Attachments inside a bubble: no heading, no divider running past the
+     bubble's edge, just the files. */
+  #app .cs-chat .ticket-article-item .textBubble .attachments.attachments--list:not(:empty) {
+    margin: 6px 0 0;
+    padding: 4px 0 0;
+    border-top: 1px solid var(--cs-chip);
+  }
+  #app .cs-chat .ticket-article-item .textBubble .attachments.attachments--list.attachments--wo-body { border-top: 0; margin-top: 0; }
+  #app .cs-chat .ticket-article-item .textBubble .attachments--list > .icon:first-child,
+  #app .cs-chat .ticket-article-item .textBubble .attachments--list > .attachments-title {
+    display: none;
+  }
+  #app .cs-chat .ticket-article-item .textBubble .attachment.attachment--preview {
+    padding: 5px 0;
+    border-bottom: 0;
+  }
+  #app .cs-chat .ticket-article-item .textBubble .attachment-icon { width: 48px; margin-top: 0; }
+  #app .cs-chat .ticket-article-item .textBubble .attachment-icon img {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+  }
+
+  /* Time under the last bubble of a group; internal notes say so. */
+  #app .cs-chat .ticket-article-item.cs-last::after {
+    content: var(--cs-time);
+    display: block;
+    padding: 3px 84px 0 54px;
+    color: var(--cs-muted);
+    font-size: 11px;
+    line-height: 14px;
+    text-align: left;
+  }
+  #app .cs-chat .ticket-article-item.agent.cs-last::after {
+    padding: 3px 54px 0 84px;
+    text-align: right;
+  }
+  #app .cs-chat .ticket-article-item.system.cs-last::after { text-align: center; }
+  #app .cs-chat .ticket-article-item.is-internal.cs-last::after {
+    content: "Internal note · " var(--cs-time);
+    color: var(--cs-note-ink);
+    font-weight: 600;
+  }
+
+  /* Clutter: From/Channel rows are already folded away by Zammad until a
+     bubble is clicked. The action row (set to internal, split, delete) and
+     the relative time now follow the same rule: click a bubble to see them. */
+  #app .cs-chat .ticket-article-item:not(.state--folde-out) > .js-article-actions,
+  #app .cs-chat .ticket-article-item:not(.state--folde-out) > a > .task-subline,
+  #app .cs-chat .ticket-article-item:not(.state--folde-out) > .task-subline {
+    display: none;
+  }
+  #app .cs-chat .ticket-article-item.state--folde-out { padding-bottom: 10px; }
+  /* The folded-out details (From, Channel, ...) as a quiet card instead of
+     Zammad's dark strips, which were drawn to hug a full-width bubble. */
+  #app .cs-chat .ticket-article-item .article-meta {
+    margin: 4px 0;
+    padding: 8px 12px 4px;
+    border-radius: 10px;
+    background: var(--cs-chip);
+    color: var(--text-normal);
+    font-size: 12px;
+  }
+  #app .cs-chat .ticket-article-item .article-meta-clip { margin: 0 72px 0 42px; }
+  #app .cs-chat .ticket-article-item.agent .article-meta-clip { margin: 0 42px 0 72px; }
+
+  /* A reply is always a note here, so the per-message "reply by email" style
+     actions would only start a draft the composer turns back into a note. */
+  #app .cs-composer .ticket-article-item .article-action[data-type*="Reply"],
+  #app .cs-composer .ticket-article-item .article-action[data-type*="Forward"] {
+    display: none;
+  }
+
+  /* -------------------------------------------------------------- composer */
+  #app .cs-composer .article-new {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    max-width: none;
+    margin: 0;
+    padding: 10px 20px 8px;
+    background: var(--background-primary);
+    box-shadow: 0 -1px 0 var(--border);
+  }
+  #app .cs-composer .article-add {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: 880px;
+    margin: 0 auto;
+  }
+
+  /* Zammad's controls row: avatar and article-type picker go, the
+     internal/public toggle stays and becomes a labelled pill. */
+  #app .cs-composer .article-add .editControls {
+    position: static;
+    order: 2;
+    display: flex;
+    align-items: center;
+    margin: 0;
+  }
+  #app .cs-composer .article-add .editControls > .js-avatar,
+  #app .cs-composer .article-add .editControls > .pop-select {
+    display: none !important;
+  }
+  #app .cs-composer .article-add .js-toggleVisibility {
+    position: static !important;
+    display: flex !important;
+    align-items: center;
+    gap: 5px;
+    height: 40px;
+    padding: 0 14px 0 9px;
+    border: 1px solid var(--border-alt);
+    border-radius: 20px;
+    background: var(--background-secondary);
+    opacity: 1 !important;
+    transform: none !important;
+    z-index: auto;
+  }
+  #app .cs-composer .article-add .js-toggleVisibility .editControls-iconHolder {
+    width: 22px;
+    height: 22px;
+  }
+  #app .cs-composer .article-add .js-toggleVisibility::after {
+    content: "Internal note";
+    color: var(--cs-muted);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  #app .cs-composer .article-add .js-toggleVisibility:hover { border-color: var(--cs-note-line); }
+  #app .cs-composer .article-add.is-internal .js-toggleVisibility {
+    border-color: var(--cs-note-line);
+    background: var(--cs-note);
+  }
+  #app .cs-composer .article-add.is-internal .js-toggleVisibility::after {
+    content: "Internal note: on";
+    color: var(--cs-note-ink);
+    font-weight: 700;
+  }
+  #app .cs-composer .article-add.is-internal .js-toggleVisibility .icon { fill: var(--cs-note-ink); }
+
+  /* The input: one rounded field that grows with the text. */
+  #app .cs-composer .article-add > .article-content {
+    flex: 1 1 auto;
+    order: 1;
+    min-width: 0;
+    padding: 0;
+  }
+  #app .cs-composer .article-add .internal-border {
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+  }
+  #app .cs-composer .article-add .bubble-arrow { display: none; }
+  #app .cs-composer .article-add .textBubble {
+    min-height: 40px;
+    padding: 9px 14px 9px 44px !important;
+    border: 1px solid var(--border-alt) !important;
+    border-radius: 20px;
+    box-shadow: none;
+    background: var(--background-secondary);
+  }
+  #app .cs-composer .article-add .textBubble:focus-within { border-color: var(--cs-brand) !important; }
+  #app .cs-composer .article-add .js-textarea {
+    min-height: 20px !important;
+    max-height: 38vh;
+    overflow-y: auto;
+    line-height: 20px;
+    outline: none;
+  }
+  #app .cs-composer .article-add.cs-empty .js-textarea::before {
+    content: "Message";
+    position: absolute;
+    color: var(--cs-muted);
+    pointer-events: none;
+  }
+  #app .cs-composer .article-add.cs-empty.is-internal .js-textarea::before { content: "Write an internal note"; }
+
+  /* Internal: the whole field turns yellow and says so. */
+  #app .cs-composer .article-add.is-internal .textBubble {
+    border-color: var(--cs-note-line) !important;
+    background: var(--cs-note);
+  }
+  #app .cs-composer .article-add.is-internal .textBubble::before {
+    content: "Internal note · only staff can see this";
+    display: block;
+    margin-bottom: 2px;
+    color: var(--cs-note-ink);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 14px;
+  }
+
+  /* Attachments: Zammad's "select attachment…" link becomes a paperclip. */
+  #app .cs-composer .article-add .article-attachment {
+    left: 5px;
+    right: auto;
+    bottom: 3px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    gap: 0;
+  }
+  #app .cs-composer .article-add .attachmentPlaceholder {
+    width: 32px;
+    height: 32px;
+    transform: none !important;
+  }
+  #app .cs-composer .article-add .attachmentPlaceholder-hint { display: none; }
+  #app .cs-composer .article-add .attachmentPlaceholder-inputHolder {
+    display: block;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+  }
+  #app .cs-composer .article-add .attachmentPlaceholder-inputHolder:hover { background: var(--background-modifier-hover); }
+  #app .cs-composer .article-add .attachmentPlaceholder-label {
+    display: block;
+    width: 32px;
+    height: 32px;
+    margin: 0;
+    overflow: hidden;
+    background: var(--cs-muted);
+    color: transparent;
+    font-size: 0;
+    cursor: pointer;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11.5l-8 8a5 5 0 01-7-7l8.500-8.500a3.300 3.300 0 014.700 4.700L9.800 17a1.700 1.700 0 01-2.400-2.400L15 7'/%3E%3C/svg%3E") center / 20px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 11.5l-8 8a5 5 0 01-7-7l8.500-8.500a3.300 3.300 0 014.700 4.700L9.800 17a1.700 1.700 0 01-2.400-2.400L15 7'/%3E%3C/svg%3E") center / 20px no-repeat;
+  }
+  /* Upload progress floats above the field instead of inside the paperclip. */
+  #app .cs-composer .article-add .attachmentUpload:not(.hide) {
+    position: absolute;
+    left: 0;
+    bottom: 40px;
+    width: 280px;
+    padding: 6px 10px;
+    border: 1px solid var(--border-alt);
+    border-radius: 10px;
+    background: var(--background-secondary);
+    box-shadow: var(--elevation-low);
+    font-size: 12px;
+  }
+  #app .cs-composer .article-add .textBubble > .attachments:not(:empty) {
+    margin: 6px 0 0;
+    padding: 4px 0 0;
+  }
+  #app .cs-composer .article-add .dropArea {
+    margin: 0;
+    border-width: 2px;
+    border-style: dashed;
+    border-radius: 20px;
+    font-size: 14px;
+  }
+  /* Dragging a file over the conversation (not just the field). */
+  #app .cs-composer.cs-drop .article-add .textBubble {
+    border-color: var(--cs-brand) !important;
+    box-shadow: 0 0 0 3px var(--cs-chip);
+  }
+
+  /* Send button (added by skin.js). */
+  #app .cs-composer .article-add > .cs-send {
+    position: relative;
+    order: 3;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--cs-brand);
+    cursor: pointer;
+    transition: opacity 0.12s, transform 0.12s;
+  }
+  #app .cs-composer .article-add > .cs-send::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--cs-brand-ink);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4l7 7-1.400 1.400L13 7.800V20h-2V7.800l-4.600 4.600L5 11z'/%3E%3C/svg%3E") center / 22px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4l7 7-1.400 1.400L13 7.800V20h-2V7.800l-4.600 4.600L5 11z'/%3E%3C/svg%3E") center / 22px no-repeat;
+  }
+  #app .cs-composer .article-add > .cs-send:hover { transform: scale(1.05); }
+  #app .cs-composer .article-add > .cs-send:focus-visible { outline: 2px solid var(--cs-brand); outline-offset: 2px; }
+  #app .cs-composer .article-add.cs-idle > .cs-send { opacity: 0.4; cursor: default; transform: none; }
+  #app .cs-composer .article-add.is-internal > .cs-send { background: var(--cs-note-line); }
+  #app .cs-composer .article-add.is-internal > .cs-send::before { background: #3d2b00; }
+
+  #app .cs-composer .cs-bar--warn .cs-bar-note,
+  #app .cs-composer .cs-bar-note--warn {
+    color: var(--cs-note-ink);
+    font-weight: 600;
+  }
+
+  /* "Jump to newest" appears once you scroll up. */
+  #app .cs-chat .cs-jump { display: none; }
+  #app .cs-composer.cs-unpinned .cs-jump {
+    display: block;
+    position: absolute;
+    top: -48px;
+    right: 28px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid var(--border-alt);
+    border-radius: 50%;
+    background: var(--background-secondary);
+    box-shadow: var(--elevation-low);
+    cursor: pointer;
+  }
+  #app .cs-composer.cs-unpinned .cs-jump::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--cs-muted);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 16.500l-7-7L6.400 8.100l5.600 5.600 5.600-5.600L19 9.500z'/%3E%3C/svg%3E") center / 22px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 16.500l-7-7L6.400 8.100l5.600 5.600 5.600-5.600L19 9.500z'/%3E%3C/svg%3E") center / 22px no-repeat;
+  }
+
+  /* --------------------------------------------------------------- sidebar
+     Same fields, same behaviour: a little less air and softer corners. */
+  #app .cs-chat .tabsSidebar .sidebar-header-headline { padding-top: 22px; padding-bottom: 14px; }
+  #app .cs-chat .tabsSidebar .sidebar[data-tab="ticket"] .form-group { margin-bottom: 10px; }
+  #app .cs-chat .tabsSidebar .sidebar[data-tab="ticket"] .form-control { border-radius: 8px; }
+  #app .cs-chat .tabsSidebar .sidebar[data-tab="ticket"] .formGroup-label label,
+  #app .cs-chat .tabsSidebar .sidebar[data-tab="ticket"] .sidebar-content > form label {
+    letter-spacing: 0.02em;
+  }
+}

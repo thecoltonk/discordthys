@@ -192,6 +192,10 @@ class CardCopy(Section):
         "csat_value": {"rating"},
         "escalated_value": {"id", "link"},
         "escalated_to_value": {"number", "link"},
+        "zammad_value": {"number", "link"},
+        "zammad_value_no_link": {"number"},
+        "zammad_group": {"group"},
+        "zammad_agent": {"name"},
     }
 
     untitled: str = "Untitled question"
@@ -236,6 +240,23 @@ class CardCopy(Section):
     escalated_value: str = "[#{id}]({link})"
     field_escalated_to: str = "Escalated to"
     escalated_to_value: str = "[T-{number}]({link})"
+    field_zammad: str = "Zammad"
+    zammad_value: str = Field(
+        default="[#{number}]({link})",
+        description="Link to the Zammad ticket (needs ZAMMAD_PUBLIC_URL).",
+    )
+    zammad_value_no_link: str = Field(
+        default="#{number}",
+        description="The Zammad ticket number when ZAMMAD_PUBLIC_URL is unset.",
+    )
+    zammad_group: str = Field(
+        default=" · {group}",
+        description="Added after the Zammad ticket: the group it is in now.",
+    )
+    zammad_agent: str = Field(
+        default="{name} (Zammad)",
+        description="A Zammad agent, where the card would mention a Discord user.",
+    )
 
 
 class StatsCopy(Section):
@@ -246,6 +267,7 @@ class StatsCopy(Section):
         "resolved_value": {"resolved", "without_staff"},
         "field_waiting": {"days"},
         "leaderboard_line": {"rank", "user", "count"},
+        "zammad_backlog": {"pending", "failed", "oldest"},
         "minutes": {"n"},
         "hours": {"n"},
         "days": {"n"},
@@ -270,6 +292,12 @@ class StatsCopy(Section):
     field_top_helpers: str = "Top helpers (resolved, by claimer)"
     leaderboard_line: str = "{rank}. {user} — {count}"
     leaderboard_empty: str = "nobody yet"
+    field_zammad: str = "Zammad sync"
+    zammad_ok: str = "✅ in sync"
+    zammad_backlog: str = Field(
+        default="⚠️ {pending} queued (oldest {oldest}) · {failed} failed",
+        description="Shown in /stats while the Zammad sync has a backlog or failures.",
+    )
     not_available: str = "n/a"
     minutes: str = "{n} min"
     hours: str = "{n} h"
@@ -441,6 +469,38 @@ class TicketsCopy(Section):
     already_escalated: str = "this was already escalated: {link}"
     not_community_thread: str = "use this inside a #community-help ticket thread."
     tickets_disabled: str = "#tickets isn't set up (TICKETS_CHANNEL_ID)."
+
+
+class ZammadCopy(Section):
+    """Zammad replies posted into #tickets threads."""
+
+    PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
+        "agent_name": {"name"},
+        "fallback_reply": {"name", "text"},
+        "attachment_skipped": {"filename"},
+    }
+
+    agent_name: str = Field(
+        default="{name}",
+        description=(
+            "The name shown on an agent's reply (max 80 characters; Discord "
+            'does not allow "discord" in it).'
+        ),
+    )
+    unknown_agent: str = Field(
+        default="Support", description="Used when an agent has no usable name."
+    )
+    fallback_reply: str = Field(
+        default="**{name} (Support):** {text}",
+        description=(
+            "Plain bot message used when the reply can't be posted under the "
+            "agent's name."
+        ),
+    )
+    attachment_skipped: str = Field(
+        default="📎 *{filename} couldn't be attached here.*",
+        description="Added when an agent's attachment is too large or unavailable.",
+    )
 
 
 HEX_COLOUR = re.compile(r"^#?[0-9a-fA-F]{6}$")
@@ -677,6 +737,7 @@ class Copy(BaseModel):
     summary: SummaryCopy = SummaryCopy()
     ai: AICopy = AICopy()
     tickets: TicketsCopy = TicketsCopy()
+    zammad: ZammadCopy = ZammadCopy()
     embeds: EmbedsCopy = EmbedsCopy()
 
 

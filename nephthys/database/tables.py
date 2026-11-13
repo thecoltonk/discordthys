@@ -4,6 +4,7 @@ from piccolo.columns import Boolean
 from piccolo.columns import DoublePrecision
 from piccolo.columns import ForeignKey
 from piccolo.columns import Integer
+from piccolo.columns import JSONB
 from piccolo.columns import OnDelete
 from piccolo.columns import OnUpdate
 from piccolo.columns import Serial
@@ -35,6 +36,8 @@ class User(Table, tablename="app_user"):
     # Cached from the Staff role on each upsert; the role is the source of truth
     helper = Boolean(default=False)
     admin = Boolean(default=False)
+    # The Zammad customer mirroring this player ("discord:<id>")
+    zammad_user_id = Integer(null=True, default=None)
     created_at = Timestamptz(default=TimestamptzNow())
 
 
@@ -96,6 +99,15 @@ class Ticket(Table, tablename="ticket"):
     # When the closed #tickets thread was archived (after CSAT or the timeout)
     archived_at = Timestamptz(null=True, default=None)
 
+    # Zammad mirror (#tickets only; NULL until the ticket exists in Zammad)
+    zammad_ticket_id = Integer(unique=True, null=True, default=None)
+    zammad_ticket_number = Text(null=True, default=None)
+    zammad_group = Text(null=True, default=None)
+    # Claimed / closed from Zammad: the agent's Zammad display name (there is
+    # no Discord user to reference)
+    assigned_name = Text(null=True, default=None)
+    closed_by_name = Text(null=True, default=None)
+
     # The staff ticket card in STAFF_CHANNEL_ID
     staff_card_channel_id = BigInt(null=True, default=None)
     staff_card_message_id = BigInt(null=True, default=None)
@@ -139,4 +151,32 @@ class AISuggestion(Table, tablename="ai_suggestion"):
     message_id = BigInt(null=True, default=None)
     rated_by = ForeignKey(references=User, null=True, on_delete=OnDelete.set_null)
     rated_at = Timestamptz(null=True, default=None)
+    created_at = Timestamptz(default=TimestamptzNow())
+
+
+class ZammadOutbox(Table, tablename="zammad_outbox"):
+    """Queued sync work, both directions. See `nephthys.zammad.outbox`."""
+
+    id = Serial(primary_key=True)
+    ticket = ForeignKey(references=Ticket, on_delete=OnDelete.cascade)
+    direction = Text()  # to_zammad | to_discord
+    kind = Text()
+    payload = JSONB(default={})
+    dedupe_key = Text(unique=True, null=True, default=None)
+    status = Text(default="pending")  # pending | done | failed
+    attempts = Integer(default=0)
+    next_attempt_at = Timestamptz(default=TimestamptzNow())
+    last_error = Text(null=True, default=None)
+    created_at = Timestamptz(default=TimestamptzNow())
+    done_at = Timestamptz(null=True, default=None)
+
+
+class ZammadMessageMap(Table, tablename="zammad_message_map"):
+    """Discord message <-> Zammad article, and where it was written."""
+
+    id = Serial(primary_key=True)
+    ticket = ForeignKey(references=Ticket, on_delete=OnDelete.cascade)
+    origin = Text()  # discord | zammad
+    discord_message_id = BigInt(unique=True, null=True, default=None)
+    zammad_article_id = Integer(null=True, default=None)
     created_at = Timestamptz(default=TimestamptzNow())

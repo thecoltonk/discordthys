@@ -26,3 +26,8 @@ AI_ANSWERS = Counter(
     "AI answer attempts",
     ["mode", "result"],  # result: posted | <skip reason>
 )
+ZAMMAD_WEBHOOKS = Counter(
+    "cloudsail_zammad_webhooks_total",
+    "Zammad webhook calls received",
+    ["result"],  # ok | bad_signature | bad_payload | error
+)

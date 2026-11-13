@@ -15,16 +15,27 @@
 #             High priority tickets also ping the Staff role.
 #   priority  "low", "medium" or "high"
 #   blurb     shown after the pick: tell the player what to include
+#   zammad_group  the Zammad group tickets of this category are created in
+#             (only used when the Zammad sync is on; default: the label).
+#             `nephthys zammad-setup` checks that every group exists.
+#
+# [zammad.priorities] maps low/medium/high to Zammad priority names.
 #
 # Regenerate the defaults with:
 #   python -m nephthys.core.ticket_categories > copy/ticket_categories.toml
 
+
+[zammad.priorities]
+low = "1 low"
+medium = "2 normal"
+high = "3 high"
 
 [[categories]]
 key = "server_issue"
 label = "Server Issue"
 emoji = "❗"
 role = "staff"
+zammad_group = "Server Issue"
 blurb = "What kind of server issue is it?"
 
   [[categories.subcategories]]
@@ -53,6 +64,7 @@ key = "store"
 label = "Store"
 emoji = "🛒"
 role = "store"
+zammad_group = "Store"
 priority = "medium"
 blurb = "Please tell us your **IGN**, **what you bought**, **roughly when** you bought it, and **what's wrong**."
 
@@ -61,6 +73,7 @@ key = "bans_appeals"
 label = "Bans & Appeals"
 emoji = "🔨"
 role = "mod"
+zammad_group = "Bans & Appeals"
 priority = "medium"
 blurb = "Please tell us your **IGN** and **what happened**. If you're banned from Discord, use https://appeals.cloudsail.uk instead."
 
@@ -69,6 +82,7 @@ key = "reports"
 label = "Reports"
 emoji = "🚩"
 role = "mod"
+zammad_group = "Reports"
 priority = "medium"
 blurb = "Please tell us **who** you're reporting, **what** they did, **where and when** it happened, and attach any **evidence** (screenshots or video)."
 
@@ -77,5 +91,6 @@ key = "other"
 label = "Other"
 emoji = "❓"
 role = "staff"
+zammad_group = "Other"
 priority = "low"
 blurb = "Please describe what you need help with. This also covers **partnerships** and **website issues**."

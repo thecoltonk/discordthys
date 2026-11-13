@@ -128,6 +128,19 @@
 # field_escalated_to = "Escalated to"
 # Placeholders: {link}, {number}
 # escalated_to_value = "[T-{number}]({link})"
+# field_zammad = "Zammad"
+# Link to the Zammad ticket (needs ZAMMAD_PUBLIC_URL).
+# Placeholders: {link}, {number}
+# zammad_value = "[#{number}]({link})"
+# The Zammad ticket number when ZAMMAD_PUBLIC_URL is unset.
+# Placeholders: {number}
+# zammad_value_no_link = "#{number}"
+# Added after the Zammad ticket: the group it is in now.
+# Placeholders: {group}
+# zammad_group = " · {group}"
+# A Zammad agent, where the card would mention a Discord user.
+# Placeholders: {name}
+# zammad_agent = "{name} (Zammad)"
 
 [stats]
 # Shared by /stats and the daily summary.
@@ -154,6 +167,11 @@
 # Placeholders: {count}, {rank}, {user}
 # leaderboard_line = "{rank}. {user} — {count}"
 # leaderboard_empty = "nobody yet"
+# field_zammad = "Zammad sync"
+# zammad_ok = "✅ in sync"
+# Shown in /stats while the Zammad sync has a backlog or failures.
+# Placeholders: {failed}, {oldest}, {pending}
+# zammad_backlog = "⚠️ {pending} queued (oldest {oldest}) · {failed} failed"
 # not_available = "n/a"
 # Placeholders: {n}
 # minutes = "{n} min"
@@ -263,6 +281,20 @@
 # already_escalated = "this was already escalated: {link}"
 # not_community_thread = "use this inside a #community-help ticket thread."
 # tickets_disabled = "#tickets isn't set up (TICKETS_CHANNEL_ID)."
+
+[zammad]
+# Zammad replies posted into #tickets threads.
+# The name shown on an agent's reply (max 80 characters; Discord does not allow "discord" in it).
+# Placeholders: {name}
+# agent_name = "{name}"
+# Used when an agent has no usable name.
+# unknown_agent = "Support"
+# Plain bot message used when the reply can't be posted under the agent's name.
+# Placeholders: {name}, {text}
+# fallback_reply = "**{name} (Support):** {text}"
+# Added when an agent's attachment is too large or unavailable.
+# Placeholders: {filename}
+# attachment_skipped = "📎 *{filename} couldn't be attached here.*"
 
 [embeds.sticky]
 # The "how it works" sticky at the bottom of #community-help.

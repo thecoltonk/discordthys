@@ -191,6 +191,7 @@ async def claim(ticket_id: int, user_id: int, at: datetime | None = None) -> boo
         .where(
             (Ticket.id == ticket_id)
             & Ticket.assigned_to.is_null()
+            & Ticket.assigned_name.is_null()
             & (Ticket.status != TicketStatus.CLOSED)
         )
         .returning(Ticket.id)
@@ -198,6 +199,40 @@ async def claim(ticket_id: int, user_id: int, at: datetime | None = None) -> boo
     if rows:
         log.info(f"Ticket id={ticket_id} claimed by user_id={user_id}")
     return bool(rows)
+
+
+async def claim_by_name(ticket_id: int, name: str, at: datetime | None = None) -> bool:
+    """Claim for someone with no Discord account here: a Zammad agent whose
+    first public reply counts as the staff claim. Same rules as `claim`."""
+    rows = (
+        await Ticket.update(
+            {
+                Ticket.assigned_name: name,
+                Ticket.assigned_at: at or utcnow(),
+                Ticket.status: TicketStatus.IN_PROGRESS,
+            }
+        )
+        .where(
+            (Ticket.id == ticket_id)
+            & Ticket.assigned_to.is_null()
+            & Ticket.assigned_name.is_null()
+            & (Ticket.status != TicketStatus.CLOSED)
+        )
+        .returning(Ticket.id)
+    )
+    if rows:
+        log.info(f"Ticket id={ticket_id} claimed from Zammad by {name!r}")
+    return bool(rows)
+
+
+async def record_external_staff_message(
+    ticket_id: int, at: datetime | None = None
+) -> None:
+    """A staff reply that didn't come from a Discord user (a Zammad agent):
+    the ticket is no longer waiting on staff."""
+    await Ticket.update(
+        {Ticket.last_msg_at: at or utcnow(), Ticket.last_msg_by: UserType.HELPER}
+    ).where(Ticket.id == ticket_id)
 
 
 # ---------------------------------------------------------------------------
@@ -215,12 +250,17 @@ class ResolveResult:
 
 
 async def resolve(
-    ticket_id: int, resolver: Actor | None, at: datetime | None = None
+    ticket_id: int,
+    resolver: Actor | None,
+    at: datetime | None = None,
+    *,
+    by_name: str | None = None,
 ) -> ResolveResult:
     """Mark a ticket as resolved.
 
     `resolver=None` means the bot is resolving it (e.g. the stale task), which
-    skips the permission check.
+    skips the permission check. `by_name` records who did it when that isn't a
+    Discord user (a Zammad agent).
 
     Raises `PermissionDenied`, `TicketAlreadyClosedError` or `TicketNotFoundError`.
     """
@@ -240,6 +280,7 @@ async def resolve(
             {
                 Ticket.status: TicketStatus.CLOSED,
                 Ticket.closed_by: resolver_user.id if resolver_user else None,
+                Ticket.closed_by_name: by_name if resolver_user is None else None,
                 Ticket.closed_at: at or utcnow(),
             }
         )
@@ -259,22 +300,29 @@ async def resolve(
     return ResolveResult(ticket=ticket, resolved_by=resolver_user, credited_to=credited)
 
 
-async def reopen(ticket_id: int, actor: Actor, at: datetime | None = None) -> Ticket:
+async def reopen(
+    ticket_id: int, actor: Actor | None, at: datetime | None = None
+) -> Ticket:
     """Re-open a resolved ticket. The claim (if any) is kept.
+
+    `actor=None` means the re-open didn't come from a Discord user (it was
+    re-opened in Zammad), which skips the permission check.
 
     Raises `PermissionDenied`, `TicketNotClosedError` or `TicketNotFoundError`.
     """
     ticket = await require_ticket(ticket_id)
-    opener = await get_opener(ticket)
-    if not can_resolve(actor, opener.discord_id):
-        raise PermissionDenied(
-            "Only the person who asked or staff can re-open this ticket",
-            user_id=actor.discord_id,
-        )
-    user = await upsert_user(actor)
+    user: User | None = None
+    if actor is not None:
+        opener = await get_opener(ticket)
+        if not can_resolve(actor, opener.discord_id):
+            raise PermissionDenied(
+                "Only the person who asked or staff can re-open this ticket",
+                user_id=actor.discord_id,
+            )
+        user = await upsert_user(actor)
     new_status = (
         TicketStatus.IN_PROGRESS
-        if ticket.assigned_to is not None
+        if ticket.assigned_to is not None or ticket.assigned_name is not None
         else TicketStatus.OPEN
     )
     rows = (
@@ -282,8 +330,9 @@ async def reopen(ticket_id: int, actor: Actor, at: datetime | None = None) -> Ti
             {
                 Ticket.status: new_status,
                 Ticket.closed_by: None,
+                Ticket.closed_by_name: None,
                 Ticket.closed_at: None,
-                Ticket.reopened_by: user.id,
+                Ticket.reopened_by: user.id if user else None,
                 Ticket.reopened_at: at or utcnow(),
             }
         )
@@ -292,7 +341,7 @@ async def reopen(ticket_id: int, actor: Actor, at: datetime | None = None) -> Ti
     )
     if not rows:
         raise TicketNotClosedError(ticket_id)
-    log.info(f"Reopened ticket id={ticket_id} by user_id={user.id}")
+    log.info(f"Reopened ticket id={ticket_id} by user_id={user.id if user else None}")
     return await require_ticket(ticket_id)
 
 

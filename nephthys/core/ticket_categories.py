@@ -65,6 +65,8 @@ class Category(_Base):
     # Used when there are no subcategories
     priority: Priority = "medium"
     subcategories: tuple[SubCategory, ...] = ()
+    # The Zammad group new tickets of this category go to (default: the label)
+    zammad_group: str | None = Field(default=None, max_length=160)
 
     @model_validator(mode="after")
     def check_category(self):
@@ -77,20 +79,60 @@ class Category(_Base):
             raise ValueError(f"{self.key}: duplicate subcategory keys")
         if len(keys) > MAX_BUTTONS:
             raise ValueError(f"{self.key}: at most {MAX_BUTTONS} subcategories")
+        if not self.zammad_group:
+            # Same-named group by default (frozen model, hence __setattr__)
+            object.__setattr__(self, "zammad_group", self.label)
         return self
 
     @property
     def is_leaf(self) -> bool:
         return not self.subcategories
 
+    @property
+    def group(self) -> str:
+        return self.zammad_group or self.label
+
     def sub(self, key: str | None) -> SubCategory | None:
         return next((s for s in self.subcategories if s.key == key), None)
+
+
+DEFAULT_ZAMMAD_PRIORITIES: dict[str, str] = {
+    "low": "1 low",
+    "medium": "2 normal",
+    "high": "3 high",
+}
+
+
+class ZammadMapping(BaseModel):
+    """How #tickets values map onto Zammad (only used when the sync is on)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    # priority -> the name of a Zammad ticket priority
+    priorities: dict[Priority, str] = Field(
+        default_factory=lambda: dict(DEFAULT_ZAMMAD_PRIORITIES)  # type: ignore[arg-type]
+    )
+
+    @model_validator(mode="after")
+    def check_priorities(self):
+        missing = [p for p in PRIORITIES if not self.priorities.get(p)]
+        if missing:
+            raise ValueError(f"zammad.priorities is missing: {', '.join(missing)}")
+        return self
+
+    def priority(self, priority: str | None) -> str:
+        return self.priorities.get(priority or "medium") or self.priorities["medium"]  # type: ignore[call-overload]
 
 
 class TicketCategories(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     categories: tuple[Category, ...]
+    zammad: ZammadMapping = ZammadMapping()
+
+    @property
+    def zammad_groups(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(c.group for c in self.categories))
 
     @model_validator(mode="after")
     def check_categories(self):
@@ -280,6 +322,11 @@ HEADER = """\
 #             High priority tickets also ping the Staff role.
 #   priority  "low", "medium" or "high"
 #   blurb     shown after the pick: tell the player what to include
+#   zammad_group  the Zammad group tickets of this category are created in
+#             (only used when the Zammad sync is on; default: the label).
+#             `nephthys zammad-setup` checks that every group exists.
+#
+# [zammad.priorities] maps low/medium/high to Zammad priority names.
 #
 # Regenerate the defaults with:
 #   python -m nephthys.core.ticket_categories > copy/ticket_categories.toml
@@ -288,6 +335,10 @@ HEADER = """\
 
 def dump_toml(categories: TicketCategories = DEFAULT_TICKET_CATEGORIES) -> str:
     lines = [HEADER]
+    lines.append("")
+    lines.append("[zammad.priorities]")
+    for p in PRIORITIES:
+        lines.append(f"{p} = {_s(categories.zammad.priorities[p])}")
     for c in categories.categories:
         lines.append("")
         lines.append("[[categories]]")
@@ -296,6 +347,7 @@ def dump_toml(categories: TicketCategories = DEFAULT_TICKET_CATEGORIES) -> str:
         if c.emoji:
             lines.append(f"emoji = {_s(c.emoji)}")
         lines.append(f"role = {_s(c.role)}")
+        lines.append(f"zammad_group = {_s(c.group)}")
         if c.is_leaf:
             lines.append(f"priority = {_s(c.priority)}")
         lines.append(f"blurb = {_s(c.blurb)}")

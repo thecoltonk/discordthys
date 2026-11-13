@@ -1,5 +1,11 @@
 #!/usr/bin/env sh
 set -eu
+
+# One-off commands, e.g. `docker compose run --rm bot zammad-setup`
+if [ "$#" -gt 0 ]; then
+  exec nephthys "$@"
+fi
+
 echo "[entrypoint] Initialising"
 
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then

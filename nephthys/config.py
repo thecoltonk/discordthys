@@ -20,6 +20,9 @@ DEFAULT_CATEGORIES = ("Gameplay", "Bug", "Claims", "Economy", "Store", "Other")
 AI_ANSWER_MODES = ("off", "shadow", "public")
 DEFAULT_AI_BASE_URL = "https://ai.hackclub.com/proxy/v1"
 
+# The bot's service alias on Zammad's Docker network (docker-compose.zammad.yml)
+DEFAULT_ZAMMAD_WEBHOOK_URL = "http://cloudsail-support-bot:3000/zammad/webhook"
+
 DEFAULT_COPY_FILE = "copy/copy.toml"
 DEFAULT_COPY_OVERRIDE_FILE = "copy/copy.local.toml"
 DEFAULT_TICKET_CATEGORIES_FILE = "copy/ticket_categories.toml"
@@ -94,6 +97,24 @@ class Settings:
     ai_timeout_seconds: float
     kb_dir: str
 
+    # Zammad two-way sync for #tickets (off unless url + token are both set)
+    zammad_url: str | None
+    zammad_token: str | None
+    # Admin-capable token used only by `nephthys zammad-setup` (falls back to
+    # zammad_token)
+    zammad_setup_token: str | None
+    # Zammad as browsers (and Discord's image proxy) reach it: ticket links on
+    # staff cards, agent avatars
+    zammad_public_url: str | None
+    zammad_webhook_secret: str | None
+    # Where Zammad's webhook calls the bot (registered by zammad-setup)
+    zammad_webhook_url: str
+    zammad_default_avatar_url: str | None
+    zammad_attachment_max_mb: float
+    zammad_timeout_seconds: float
+    zammad_outbox_max_attempts: int
+    zammad_reconcile_minutes: int
+
     # Runtime
     environment: str
     port: int
@@ -121,6 +142,10 @@ class Settings:
         if role == "mod" and self.mod_role_id:
             return self.mod_role_id
         return self.staff_role_id
+
+    @property
+    def zammad_enabled(self) -> bool:
+        return bool(self.zammad_url and self.zammad_token and self.tickets_enabled)
 
     @property
     def ai_enabled(self) -> bool:
@@ -287,6 +312,53 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         errors.append("TICKETS_MAX_OPEN_PER_USER must be 0 (unlimited) or more")
         max_open = 2
 
+    def number(name: str, default: float, *, minimum: float) -> float:
+        raw = get(name)
+        if raw is None:
+            return default
+        try:
+            value = float(raw)
+            if value < minimum:
+                raise ValueError
+        except ValueError:
+            errors.append(f"{name} must be a number >= {minimum:g}, got {raw!r}")
+            return default
+        return value
+
+    def http_url(name: str) -> str | None:
+        raw = get(name)
+        if raw is None:
+            return None
+        if not raw.lower().startswith(("http://", "https://")):
+            errors.append(f"{name} must start with http:// or https://, got {raw!r}")
+            return None
+        return raw.rstrip("/")
+
+    zammad_url = http_url("ZAMMAD_URL")
+    zammad_token = get("ZAMMAD_TOKEN")
+    zammad_secret = get("ZAMMAD_WEBHOOK_SECRET")
+    if zammad_url and zammad_token:
+        if get("TICKETS_CHANNEL_ID") is None:
+            errors.append(
+                "TICKETS_CHANNEL_ID is required when ZAMMAD_URL and ZAMMAD_TOKEN are "
+                "set (the Zammad sync mirrors #tickets)"
+            )
+        if not zammad_secret:
+            errors.append(
+                "ZAMMAD_WEBHOOK_SECRET is required when ZAMMAD_URL and ZAMMAD_TOKEN "
+                "are set (it signs Zammad's webhook calls to the bot)"
+            )
+        elif len(zammad_secret) < 16:
+            errors.append("ZAMMAD_WEBHOOK_SECRET must be at least 16 characters")
+    zammad_max_attempts = integer("ZAMMAD_OUTBOX_MAX_ATTEMPTS", 25) or 25
+    if zammad_max_attempts < 1:
+        errors.append("ZAMMAD_OUTBOX_MAX_ATTEMPTS must be at least 1")
+        zammad_max_attempts = 25
+    zammad_reconcile = integer("ZAMMAD_RECONCILE_MINUTES", 5)
+    if zammad_reconcile is None or zammad_reconcile < 0:
+        errors.append("ZAMMAD_RECONCILE_MINUTES must be 0 (off) or more")
+        zammad_reconcile = 5
+
     # OPEN_REACTION may be explicitly set to empty to disable the 🤔 marker
     open_reaction = env.get("OPEN_REACTION", "🤔").strip() or None
 
@@ -341,6 +413,17 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         ai_answer_min_confidence=min_conf,
         ai_timeout_seconds=ai_timeout,
         kb_dir=get("KB_DIR", "kb") or "kb",
+        zammad_url=zammad_url,
+        zammad_token=zammad_token,
+        zammad_setup_token=get("ZAMMAD_SETUP_TOKEN"),
+        zammad_public_url=http_url("ZAMMAD_PUBLIC_URL"),
+        zammad_webhook_secret=zammad_secret,
+        zammad_webhook_url=http_url("ZAMMAD_WEBHOOK_URL") or DEFAULT_ZAMMAD_WEBHOOK_URL,
+        zammad_default_avatar_url=http_url("ZAMMAD_DEFAULT_AVATAR_URL"),
+        zammad_attachment_max_mb=number("ZAMMAD_ATTACHMENT_MAX_MB", 10.0, minimum=0),
+        zammad_timeout_seconds=number("ZAMMAD_TIMEOUT_SECONDS", 20.0, minimum=1),
+        zammad_outbox_max_attempts=zammad_max_attempts,
+        zammad_reconcile_minutes=zammad_reconcile,
         environment=get("ENVIRONMENT", "development") or "development",
         port=integer("PORT", 3000) or 3000,
         log_level=get("LOG_LEVEL", "INFO") or "INFO",

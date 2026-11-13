@@ -18,6 +18,7 @@ from nephthys.config import Settings
 
 if TYPE_CHECKING:
     from nephthys.ai.client import ChatClient
+    from nephthys.zammad.sync import ZammadSync
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,8 @@ class SupportBot(commands.Bot):
         from nephthys.ai.client import build_client
 
         self.ai_client: ChatClient | None = build_client(settings)
+        # The Zammad two-way sync for #tickets (None while it's off)
+        self.zammad: ZammadSync | None = None
 
     @property
     def guild_object(self) -> discord.Object:
@@ -92,6 +95,20 @@ class SupportBot(commands.Bot):
                 log.warning(
                     "#tickets is on but STAFF_CHANNEL_ID is unset: no staff alerts"
                 )
+
+        if self.db_ready and self.settings.zammad_enabled:
+            from nephthys.zammad.sync import ZammadSync
+
+            self.zammad = ZammadSync(self)
+            self.zammad.start()
+            log.info(f"Zammad sync: on ({self.settings.zammad_url})")
+            if not self.settings.zammad_public_url:
+                log.warning(
+                    "ZAMMAD_PUBLIC_URL is unset: staff cards won't link to Zammad "
+                    "and agent replies use the default avatar"
+                )
+        else:
+            log.info("Zammad sync: off")
 
         for ext in EXTENSIONS:
             await self.load_extension(ext)
@@ -136,6 +153,15 @@ class SupportBot(commands.Bot):
                 coalesce=True,
                 next_run_time=datetime.now(UTC) + timedelta(minutes=1),
             )
+        if self.zammad is not None and self.settings.zammad_reconcile_minutes:
+            self.scheduler.add_job(
+                self.run_zammad_reconcile,
+                "interval",
+                minutes=self.settings.zammad_reconcile_minutes,
+                max_instances=1,
+                coalesce=True,
+                next_run_time=datetime.now(UTC) + timedelta(seconds=30),
+            )
         if self.settings.daily_summary_enabled and self.settings.staff_channel_id:
             self.scheduler.add_job(
                 self.run_daily_summary,
@@ -178,6 +204,11 @@ class SupportBot(commands.Bot):
         await self.wait_until_ready()
         await archive_expired_tickets(self)
 
+    async def run_zammad_reconcile(self) -> None:
+        await self.wait_until_ready()
+        if self.zammad is not None:
+            await self.zammad.reconcile()
+
     async def run_stale_close(self) -> None:
         from nephthys.tasks.close_stale import close_stale_tickets
 
@@ -208,6 +239,8 @@ class SupportBot(commands.Bot):
             task.cancel()
         if self.scheduler.running:
             self.scheduler.shutdown(wait=False)
+        if self.zammad is not None:
+            await self.zammad.stop()
         await super().close()
         if self.db_ready:
             from piccolo_conf import DB

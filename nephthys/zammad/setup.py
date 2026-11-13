@@ -352,7 +352,16 @@ async def run_setup(
             webhook_id = await setup_webhook(admin, settings, report)
             await setup_trigger(admin, webhook_id, int(me["id"]), report)
         except ZammadError as e:
-            report.problem(f"webhook/trigger: {e}")
+            hint = ""
+            if "resolved" in str(e):
+                # Zammad only accepts a webhook address it can resolve
+                hint = (
+                    " Zammad can't resolve the bot's address. Start the bot on "
+                    "Zammad's Docker network first (docker-compose.zammad.yml), "
+                    "then run this again with `docker compose exec bot nephthys "
+                    "zammad-setup`."
+                )
+            report.problem(f"webhook/trigger: {e}{hint}")
         await setup_no_email(admin, report)
         try:
             names = email_triggers(await admin.list("triggers"))

@@ -317,3 +317,103 @@ Entries 101–103 (lock and archive on close) are superseded by 113–120.
 
     A file that still uses an old key fails with a message naming the new location, rather than a generic "extra inputs" error. An empty leftover `[sticky]` header is ignored.
 132. **The every-placeholder stress test now runs twice:** with the opener and closing as text, and as embeds. Every declared placeholder in both modes is proven to be supplied by the code. The link-preview sweep still holds, because embed messages only ever carry mention-only content.
+
+## Phase 3: Zammad two-way sync for #tickets (PRODUCT.md §2b)
+
+PRODUCT.md's one-way "Zammad mirror" and its non-goal "replying from Zammad back into Discord" are replaced by the two-way design in §2b. Built and tested against **Zammad 7.2.3** running locally in Docker (the same image the docker-compose project uses), as well as an in-process fake.
+
+**Things the real Zammad forced**
+
+133. **The custom attribute is called `discord_uid`, not `discord_id`.** Zammad refuses the name: "Name can't be used because *_id and *_ids are not allowed". Agents see it labelled **Discord ID**. It's a text field on User, shown on view and edit.
+134. **Applying a new attribute restarts Zammad.** `object_manager_attributes_execute_migrations` makes every Zammad process exit and restart (about a minute). `zammad-setup` only runs it when the attribute is new or pending, says so first, and waits up to 4 minutes for Zammad to come back.
+135. **The bot's Zammad user needs group access, not just a role.** Without Full access to a group, Zammad answers 403 for tickets in it, even for admins. `zammad-setup` checks this per category group and names the group that's missing.
+136. **Zammad only accepts a webhook address it can resolve** ("could not be resolved to a safe IP address"). So `zammad-setup` has to run while the bot container is up on Zammad's network: `docker compose exec bot …`, not `run`. The command prints that hint when it sees the error.
+137. **Zammad never returns a webhook's signature token** (it reads back as `**********`), so setup can't compare it and always re-sends it.
+138. **Logins like `discord:123` can't be searched for.** The search treats `:` as field syntax. Lookups search by the email address and then match the login exactly. The customer's Zammad ID is also stored on the bot's user row, so the lookup only happens once per player.
+139. **A webhook is retried 5 times over about two minutes, then dropped** (read from Zammad's `TriggerWebhookJob`). That's why there's a reconcile job (entry 152).
+
+**Zammad → Discord**
+
+140. **One trigger, one webhook.** The trigger is limited to Discord tickets (customer login starts with `discord:`) and fires when:
+     - an article is added that is public, sent by an agent, and not created by the bot's own Zammad user; or
+     - the ticket's state or group changes.
+
+     A lone internal note doesn't fire it. Tested live: an internal note saved *together with* a state change does arrive in the payload, so the trigger alone isn't enough (next entry).
+141. **Internal notes are dropped in the bot as well.** An article is only queued for Discord if `internal` is exactly `false` and the sender is `Agent`. Anything else (missing, null, a string) is dropped. A test closes a ticket with an internal note attached and checks that its text appears nowhere in Discord.
+142. **Three independent guards against echo loops:**
+     - the trigger excludes articles created by the bot's Zammad user;
+     - the bot ignores articles carrying its own marker (stored in the article's `message_id`, e.g. `<discord-msg-123@discord.invalid>`), articles created by its own user, and articles already in its message map;
+     - on the Discord side, replies are posted by a webhook or by the bot itself, and the #tickets cog already ignores both kinds of message.
+143. **The signature is `X-Hub-Signature: sha1=<hex HMAC-SHA1 of the raw body>`** (read from Zammad's source and confirmed on captured deliveries). It's checked in constant time before the body is parsed. Unsigned or wrong calls get 401; while the sync is off the endpoint answers 404. SHA-1 is Zammad's choice and can't be changed from outside; as an HMAC it's still sound.
+144. **The webhook endpoint lives on the existing health server** (port 3000, `/zammad/webhook`), so there's still one process and one port. That port becomes reachable from Zammad's Docker network, including `/health` and `/metrics`, which hold nothing sensitive. It's not published beyond `127.0.0.1` on the host.
+145. **State changes are re-read, not trusted.** A webhook only queues "sync this ticket"; the worker then reads the ticket's current state and group from Zammad and brings Discord in line. Late, repeated or out-of-order deliveries all end in the same place, and the bot's own close echoing back is a no-op.
+146. **Which Zammad states count as closed:** `closed` and `merged`. Everything else (new, open, pending reminder, pending close) is open.
+147. **A close or re-open made in Discord wins until it has reached Zammad.** While it's still queued, Zammad's (older) state is ignored, so a Discord close during a Zammad outage isn't undone by the reconcile job.
+148. **Replies are plain text.** Zammad's HTML is converted: bold, italic, lists, quotes, and links as `text (url)`. Long replies are split at paragraph or line breaks into parts of at most 1900 characters; progress is saved after each part so a crash can't re-post one.
+149. **Do webhooks work in private threads?** Discord's API docs (commit `36adecb`, 10 Nov 2026) say: "Webhooks can send messages to threads by using the `thread_id` query parameter" and "Send a message to the specified thread within a webhook's channel. The thread will automatically be unarchived." They make no exception for private threads and don't mention them either way. **Not tested against live Discord** (no access from the build environment). The fallback therefore covers every failure: if the webhook can't be created or a post fails, the bot posts `**<name> (Support):** <text>` itself and writes one line to the log channel (at most one per 30 minutes). The bot unarchives an archived thread before posting, because the docs don't promise that a webhook can unarchive a *locked* one.
+150. **Webhook names.** Discord rejects usernames containing "discord" or "clyde" and a few symbols; those parts are removed, the name is cut to 80 characters, and "Support" is used if nothing is left.
+151. **Avatars: a Cloudflare Access bypass for `/api/v1/users/image/*` only.**
+     - Zammad serves that path without a login by design (checked in its source and on the running instance), and the address is a hash of the picture, not a user ID.
+     - Rejected: re-uploading avatars to Discord and using the CDN link (those links expire, which would break avatars on old messages); a Cloudflare service token (Discord's image fetcher can't send headers); exposing the bot as an image proxy (a new public endpoint for less benefit).
+     - Without the bypass, or for agents with no picture, `ZAMMAD_DEFAULT_AVATAR_URL` is used.
+     - Agents are never linked to Discord accounts: only the name and picture travel.
+152. **Reconcile job.** Every `ZAMMAD_RECONCILE_MINUTES` (default 5) the bot reads its open tickets, and those closed in the last 2 days, from Zammad and queues any public agent reply or state/group difference it hasn't seen. This covers webhooks lost while the bot was down. It costs two small API calls per such ticket per run.
+153. **First public reply = claim.** The ticket gets `assigned_name` (the agent's Zammad name) instead of `assigned_to`, because there's no Discord user to point at. The card shows "Claimed by <name> (Zammad)". The ticket also stops counting as waiting.
+     - A later reply from Discord staff doesn't steal the claim, and the other way round.
+     - `/stats` counts such tickets as handled by staff, but the "top helpers" list only has Discord users.
+154. **Closing from Zammad shows the agent's name in bold** in the closing message, where a Discord closer would be mentioned. The card shows "Resolved by <name> (Zammad)".
+155. **A reply on a closed, archived ticket** is still delivered. The thread is unarchived for it and archived again afterwards; it stays locked.
+
+**Discord → Zammad**
+
+156. **Title:** `T-<n> <category>`, with the subcategory in brackets when there is one, e.g. `T-27 Server Issue (Urgent)`. The group comes from the top-level category.
+157. **Group and priority mapping live in `copy/ticket_categories.toml`:** `zammad_group` per category (default: the label) and a `[zammad.priorities]` table (default `1 low`, `2 normal`, `3 high`, Zammad's stock names). The shipped file now lists them explicitly.
+158. **The first article is a short header** written as the player: who opened it, category, priority, a link to the thread, the Discord ID, and for escalated tickets the original public question with a link to the public thread.
+159. **Messages typed before a category is picked are kept** and mirrored, in order, once the Zammad ticket exists. If the ticket is closed without ever reaching a category, they're discarded, and no Zammad ticket is created.
+160. **Staff messages from Discord are articles with sender Agent**, created by the bot's Zammad user, with the real name on the first line ("Sam (Staff via Discord)"). Player messages have sender Customer and the player as their origin.
+161. **Attachments** up to `ZAMMAD_ATTACHMENT_MAX_MB` (default 10, Discord's own upload limit for bots) are copied in both directions. Larger or unavailable files are named in the text instead of failing the message. Discord attachment links expire, so a failed download is retried once with a fresh link from Discord.
+162. **Close and re-open leave an internal note** in Zammad saying who did it in Discord. The CSAT rating is an internal note too.
+163. **Not synced:** edits and deletions of messages (either direction), reactions, and the bot's own messages in the thread (opener, closing text, CSAT prompt, `/faq`, `/ip`).
+
+**No email**
+
+164. **Three layers keep email away from Discord customers:**
+     - the bot only ever creates `note` articles, which Zammad doesn't send;
+     - the customer's address is `<id>@discord.invalid`, a reserved domain that can't receive mail;
+     - `zammad-setup` adds `.+@discord\.invalid` to Zammad's `send_no_auto_response_reg_exp` setting, which Zammad's trigger email code checks for every recipient (read from its source). It's a setting changed over the REST API, not a source change.
+
+     Zammad's stock "auto reply" triggers also don't match: they need an email, phone or web article, not a note. Setup lists the active email triggers for information.
+165. **What can't be prevented from outside Zammad:** an agent deliberately choosing the *email* reply type on a Discord ticket. The mail would go to the `.invalid` address and bounce. DEPLOY.md tells agents to use public notes.
+
+**Reliability**
+
+166. **One outbox table for both directions**, worked by one background task. Rows are processed per ticket and direction, oldest first, one at a time.
+     - A failed row is retried after 5s, 10s, 20s … up to 15 minutes (with jitter) and holds back the rows behind it.
+     - Errors that retrying can't fix (most 4xx) are given up on after 3 attempts; anything else after `ZAMMAD_OUTBOX_MAX_ATTEMPTS` (default 25, about 5 hours). A given-up row is stepped over so later messages still arrive.
+     - `nephthys zammad-retry` puts given-up rows back in the queue.
+167. **Idempotency.**
+     - Enqueueing uses a unique key per event (Discord message ID, Zammad article ID), so duplicates are dropped at the door.
+     - If Zammad performs a write but the answer is lost, the retry first looks for what's already there: the customer by login, the ticket by title and customer, the article by its marker.
+     - Mirrored IDs are stored in `zammad_message_map`.
+168. **Discord flows only write to the outbox.** They never call Zammad, and a failure to enqueue is logged, not raised. A test runs the whole ticket flow with Zammad down.
+169. **Reporting.** `/stats` shows "Zammad sync: ✅ in sync" or the queue length, the age of the oldest item and the failed count. The log channel gets:
+     - one message when items are given up on (pinging the maintainer);
+     - one when the backlog is older than 10 minutes, at most every 30 minutes;
+     - one when it has caught up.
+
+     Messages waiting for a category pick aren't counted as backlog.
+170. **Outbox rows are kept.** Finished rows hold the dedupe keys that make reconciliation safe, and the volume is tiny. Nothing prunes them yet.
+
+**Config and setup**
+
+171. **On/off.** The sync is on only when `ZAMMAD_URL` *and* `ZAMMAD_TOKEN` are set. `http://zammad-nginx:8080` is the default in `.env.example` and `docker-compose.zammad.yml`, not in code, so the token is the practical switch. With both set, `ZAMMAD_WEBHOOK_SECRET` (16+ characters) and `TICKETS_CHANNEL_ID` are required at startup.
+172. **The Docker network join is a separate compose file** (`docker-compose.zammad.yml`). An external network that doesn't exist makes `docker compose up` fail, which would break deployments that don't use Zammad if it were in the main file.
+173. **Two tokens.** The bot runs with a token that has only `ticket.agent`. `zammad-setup` uses `ZAMMAD_SETUP_TOKEN` (admin.object, admin.webhook, admin.trigger, admin.group, admin.channel_email) when set, so the admin token can be deleted after setup. Both sets were checked on the real instance.
+174. **Setup checks groups but doesn't create them.** Groups carry access rules and email settings that are the admin's call.
+175. **New bot permission: Manage Webhooks** in #tickets. Without it the fallback message is used.
+176. **Migration `cloudsail_005`:** `zammad_user_id` on users; `zammad_ticket_id` (unique), `zammad_ticket_number`, `zammad_group`, `assigned_name`, `closed_by_name` on tickets; tables `zammad_outbox` and `zammad_message_map`. Tested forwards and backwards.
+177. **New copy keys** (`[zammad]`, plus a few in `[card]` and `[stats]`) cover the agent name, the fallback message, the skipped-attachment note, the card's Zammad field and the `/stats` line. Notes written *into Zammad* are for agents and aren't in copy.
+
+**Tests**
+
+178. **The same integration tests run against two backends:** an in-process fake of Zammad's API (always, so CI needs nothing extra) and a real Zammad when `ZAMMAD_TEST_URL` is set. The fake copies behaviour observed on the real one (response shapes, the `_id` name rule, masked tokens, trigger conditions, signing, five webhook attempts, the restart after a migration, the unresolvable-host error). Running both keeps the fake honest: all of them passed against Zammad 7.2.3. Tests that need to break Zammad on purpose use the fake only.

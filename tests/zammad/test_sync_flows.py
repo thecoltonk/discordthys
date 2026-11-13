@@ -72,7 +72,7 @@ async def reply(world: World, ticket: Any, body: str, **extra: Any) -> dict[str,
 
 
 async def test_leaf_category_creates_the_zammad_ticket(world: World):
-    ticket, thread, player = await world.open_ticket("store")
+    ticket, _thread, player = await world.open_ticket("store")
     ticket = await world.synced(ticket)
 
     z = await world.admin.get_ticket(ticket.zammad_ticket_id)
@@ -351,7 +351,7 @@ async def test_staff_messages_from_discord_do_not_echo_back(world: World):
 async def test_messages_posted_for_zammad_are_not_mirrored_back(world: World):
     """Webhook messages and the bot's own fallback messages in the thread are
     ignored by the cog, so they never become articles."""
-    ticket, thread, player = await world.open_ticket("store")
+    ticket, thread, _player = await world.open_ticket("store")
     ticket = await world.synced(ticket)
     cog = Tickets(cast(Any, world.bot))
     via_webhook = make_message(
@@ -476,7 +476,7 @@ async def test_reopen_in_zammad_reopens_the_discord_ticket(world: World):
 
 
 async def test_group_change_in_zammad_updates_the_staff_card(world: World):
-    ticket, thread, _ = await world.open_ticket("store")
+    ticket, _thread, _ = await world.open_ticket("store")
     ticket = await world.synced(ticket)
     await world.agent.update_ticket(ticket.zammad_ticket_id, {"group": "Reports"})
 
@@ -489,7 +489,7 @@ async def test_group_change_in_zammad_updates_the_staff_card(world: World):
 
 
 async def test_tickets_created_directly_in_zammad_are_left_alone(world: World):
-    ticket, thread, player = await world.open_ticket("store")
+    ticket, _thread, _player = await world.open_ticket("store")
     ticket = await world.synced(ticket)
     z = await world.admin.get_ticket(ticket.zammad_ticket_id)
     # Same Discord customer, but the ticket was made in Zammad, not by the bot
@@ -519,8 +519,9 @@ async def test_tickets_created_directly_in_zammad_are_left_alone(world: World):
 async def test_webhook_failure_falls_back_to_a_plain_bot_message(
     world: World, kind: str
 ):
-    import discord
     from unittest.mock import MagicMock
+
+    import discord
 
     ticket, thread, _ = await world.open_ticket("store")
     ticket = await world.synced(ticket)
@@ -555,3 +556,61 @@ async def test_webhook_failure_falls_back_to_a_plain_bot_message(
 
     await world.eventually(two, "the second fallback message")
     assert len([line for line in world.log() if "plain bot message" in line]) == 1
+
+
+async def test_oversized_attachments_are_named_not_copied(backend: Any, db: None):
+    """Both directions, with ZAMMAD_ATTACHMENT_MAX_MB below the file size. Also
+    runs with a copy in which every template uses every placeholder it may,
+    proving the code supplies them all."""
+    import base64
+
+    from nephthys.core.copytext import use_copy
+    from tests.flows.test_copy_flows import every_placeholder_copy
+
+    world = await World(backend, ZAMMAD_ATTACHMENT_MAX_MB="0.00001").start()
+    try:
+        use_copy(every_placeholder_copy())
+        world.channel.webhooks_forbidden = True  # exercise the fallback text too
+        ticket, thread, player = await world.open_ticket("store")
+        await world.say(thread, player, "see file", files={"big.png": PNG})
+        ticket = await world.synced(ticket)
+        last = (await world.articles(ticket))[-1]
+        assert last["attachments"] == []
+        assert last["body"].endswith(
+            "see file\n\n[Attachment not mirrored (too large): big.png]"
+        )
+        card = fields(world.card(ticket).embed)
+        assert card["field_zammad:"].startswith("zammad_value:")
+        assert "zammad_group:Store" in card["field_zammad:"]
+
+        await reply(
+            world,
+            ticket,
+            "here you go",
+            content_type="text/plain",
+            attachments=[
+                {
+                    "filename": "huge.png",
+                    "data": base64.b64encode(PNG).decode(),
+                    "mime-type": "image/png",
+                }
+            ],
+        )
+
+        async def posted() -> Any:
+            return [
+                m
+                for m in world.thread_posts(thread)
+                if (m.content or "").startswith("fallback_reply:")
+            ]
+
+        [message] = await world.eventually(posted, "the fallback reply")
+        assert message.content == (
+            f"fallback_reply:{AGENT_NAME}|here you go\n\nattachment_skipped:huge.png"
+        )
+        assert not getattr(message, "files", None)
+        status = fields(world.card(await world.fresh(ticket)).embed)["field_status:"]
+        assert status == f"status_claimed:zammad_agent:{AGENT_NAME}|"
+    finally:
+        use_copy(C)
+        await world.stop()

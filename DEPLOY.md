@@ -2,7 +2,7 @@
 
 This deploys the bot on an **Ubuntu ARM64** box (for example, an OCI Ampere instance running next to Zammad) with Docker Compose. The bot and its own Postgres run in a separate compose project from Zammad, so they share nothing with it.
 
-The bot only makes **outbound** connections (to the Discord gateway and API). You don't need to open any inbound ports in OCI security lists or `ufw`.
+The bot only makes **outbound** connections (to the Discord gateway and API). You don't need to open any inbound ports in OCI security lists or `ufw`. The optional Zammad sync (§7) adds one private link between the two compose projects over Zammad's Docker network; it still opens nothing on the host or to the internet.
 
 ---
 
@@ -30,8 +30,9 @@ The bot only makes **outbound** connections (to the Discord gateway and API). Yo
      | Send Messages in Threads | auto-reply, closing messages, AI answers |
      | Manage Threads | archive, unarchive, lock and unlock threads; add players to private threads; delete orphaned threads |
      | Manage Messages | remove reactions and delete the old sticky |
+     | Manage Webhooks | only for the Zammad sync (§7): one webhook on #tickets posts agent replies under the agent's name |
 
-   - Or use this URL with your application ID (permissions integer `395137084480`):
+   - Or use this URL with your application ID (permissions integer `395137084480`, or `395673955392` with Manage Webhooks):
 
      ```
      https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&scope=bot+applications.commands&permissions=395137084480
@@ -285,7 +286,143 @@ docker compose down
 
 **Metrics:** Prometheus can scrape `http://127.0.0.1:3000/metrics` on the host.
 
-## 7. Troubleshooting
+## 7. Zammad two-way sync for #tickets (optional)
+
+Admins work #tickets tickets in Zammad; players stay in their Discord thread. The sync is **off** unless `ZAMMAD_URL` and `ZAMMAD_TOKEN` are both set, and it needs #tickets (`TICKETS_CHANNEL_ID`). Zammad itself is never modified: everything goes through its REST API, one webhook, one trigger and one custom attribute.
+
+This was built and tested against **Zammad 7.2.3**.
+
+### 7.1 Zammad: groups, a bot user and two tokens
+
+1. **Groups.** Admin → Groups: make sure there is a group per #tickets category. By default they have the same names: `Server Issue`, `Store`, `Bans & Appeals`, `Reports`, `Other`. To use other groups, set `zammad_group` per category in `copy/ticket_categories.toml`.
+2. **A user for the bot.** Admin → Users → New user, e.g. "Discord Bot" with any address you own as its email.
+   - Role: **Agent** only.
+   - Group permissions: **Full** on every group from step 1. Without it Zammad answers 403 when the bot creates or reads tickets there.
+   - Agents then see mirrored Discord staff messages as written by "Discord Bot", with the real name on the first line.
+3. **The bot's everyday token** (`ZAMMAD_TOKEN`). Log in to Zammad **as the bot user**, then avatar → Profile → Token Access → Create:
+   - Name: `cloudsail-support-bot`
+   - Permissions: tick **`ticket.agent`** and nothing else.
+   - Copy the token. It's shown once.
+   - If Token Access is missing, turn it on under Admin → System → API → "Enable Token Access".
+4. **A setup token** (`ZAMMAD_SETUP_TOKEN`), used once by `zammad-setup`. Log in as **yourself (an admin)**, Profile → Token Access → Create, and tick exactly:
+   - `admin.object` (the Discord ID attribute)
+   - `admin.webhook`
+   - `admin.trigger`
+   - `admin.group` (to check the groups)
+   - `admin.channel_email` (to block trigger emails to Discord customers)
+
+   Delete this token again after §7.4. The bot never needs it at runtime.
+
+### 7.2 Network: join the bot to Zammad's Docker network
+
+Zammad's nginx only listens on the host's `127.0.0.1:8090`, which a container can't reach, so the bot joins Zammad's Docker network instead. That also lets Zammad call the bot back.
+
+1. Find the network name. With Zammad in `/opt/zammad-docker-compose` it's `zammad-docker-compose_default`:
+
+   ```bash
+   docker network ls | grep zammad
+   ```
+2. In the bot's `.env`:
+
+   ```ini
+   COMPOSE_FILE=docker-compose.yml:docker-compose.zammad.yml
+   ZAMMAD_DOCKER_NETWORK=zammad-docker-compose_default
+   ZAMMAD_URL=http://zammad-nginx:8080
+   ```
+
+   `docker-compose.zammad.yml` attaches the bot to that network under the name `cloudsail-support-bot`. Zammad's compose project isn't touched.
+3. Port 3000 of the bot (`/health`, `/metrics` and `/zammad/webhook`) becomes reachable from Zammad's containers, and from nowhere else. The webhook only accepts calls signed with `ZAMMAD_WEBHOOK_SECRET`.
+
+### 7.3 Environment variables
+
+| Variable | Value |
+|---|---|
+| `ZAMMAD_URL` | `http://zammad-nginx:8080` |
+| `ZAMMAD_TOKEN` | the bot user's token (§7.1 step 3) |
+| `ZAMMAD_SETUP_TOKEN` | the admin token (§7.1 step 4); remove after setup |
+| `ZAMMAD_WEBHOOK_SECRET` | a random secret: `openssl rand -hex 32` |
+| `ZAMMAD_PUBLIC_URL` | `https://support.cloudsail.uk` (ticket links on staff cards, agent avatars) |
+| `ZAMMAD_DEFAULT_AVATAR_URL` | a public image URL used when an agent has no picture or it can't be shown |
+| `ZAMMAD_WEBHOOK_URL` | leave at `http://cloudsail-support-bot:3000/zammad/webhook` |
+
+The rest (`ZAMMAD_ATTACHMENT_MAX_MB`, `ZAMMAD_TIMEOUT_SECONDS`, `ZAMMAD_OUTBOX_MAX_ATTEMPTS`, `ZAMMAD_RECONCILE_MINUTES`) have sensible defaults, described in `.env.example`.
+
+Also give the bot **Manage Webhooks** in #tickets (channel permissions → the bot's role). It creates one webhook there, named "Cloudsail Support (Zammad replies)", the first time an agent replies.
+
+### 7.4 Start the bot, then run the setup command
+
+```bash
+docker compose up -d --build          # the bot must be running on Zammad's network first
+docker compose exec bot nephthys zammad-setup
+```
+
+Run it with `exec` in the running container, not `run`: Zammad refuses a webhook whose address it can't resolve, and only the running bot answers to `cloudsail-support-bot`.
+
+The command is idempotent. Run it again after changing the secret, the webhook address, the categories or the bot's Zammad user. It:
+
+- checks every category's group exists and the bot user can work in it;
+- creates the User attribute **Discord ID** (internal name `discord_uid`);
+- creates or updates the webhook "Cloudsail Support bot (Discord #tickets)", signed with `ZAMMAD_WEBHOOK_SECRET`;
+- creates or updates the trigger "Cloudsail Support bot: notify Discord";
+- adds `@discord.invalid` to Zammad's "no auto response" address filter, so no trigger can email a Discord customer.
+
+**The first run restarts Zammad.** Applying a new attribute makes Zammad restart its processes; it's unavailable for a minute or two and the command waits for it. Later runs don't.
+
+It prints a ✓ or ✗ per step and exits non-zero if anything needs attention. Afterwards, delete the setup token in Zammad and remove `ZAMMAD_SETUP_TOKEN` from `.env`.
+
+### 7.5 Avatars: a narrow Cloudflare Access bypass
+
+Agent replies appear in Discord with the agent's Zammad name and picture. Discord's servers download the picture, so they need to reach it, and `support.cloudsail.uk` is behind Cloudflare Access.
+
+Zammad serves profile pictures at `/api/v1/users/image/<hash>` **without a login** (that's how its own login page shows them), and the address contains a hash of the image, not a user ID. So it's enough to let that one path through:
+
+1. Cloudflare Zero Trust → Access → Applications → **Add an application** → Self-hosted.
+2. Application domain: `support.cloudsail.uk`, path: `api/v1/users/image/*`. Name it e.g. "Zammad avatars (public)".
+3. Add one policy: Action **Bypass**, Include **Everyone**.
+4. Save. Cloudflare applies the most specific path first, so this takes precedence over the application protecting the rest of `support.cloudsail.uk`.
+
+Check it from anywhere outside your network:
+
+```bash
+curl -sI https://support.cloudsail.uk/api/v1/users/image/0 | head -1   # 200, a small grey placeholder
+curl -sI https://support.cloudsail.uk/api/v1/users/me | head -1        # still 302/403 from Access
+```
+
+What this exposes: profile pictures of Zammad users to anyone who knows a picture's hash. Nothing else on the path. If you'd rather expose nothing, skip the bypass and leave `ZAMMAD_PUBLIC_URL` set for links only: Discord then shows a broken or default avatar, so set `ZAMMAD_DEFAULT_AVATAR_URL` and consider leaving agents without pictures in Zammad. Options that were considered and rejected are in DECISIONS.md.
+
+### 7.6 How agents use it
+
+- A ticket appears in Zammad when the player picks a (sub)category, titled `T-<n> <category>`, in the category's group, with the player as customer (`discord:<id>`).
+- Every message in the Discord thread appears as an article starting with `<name> (Player via Discord)` or `<name> (Staff via Discord)`.
+- **To reply to the player, write a note and set its visibility to public.** Zammad makes new notes *internal* by default (the lock icon in the reply box). Internal notes never go to Discord. To make public the default for everyone: Admin → Settings → Ticket → "Note - default visibility".
+- Don't use the email reply type on these tickets: the customer's address is a placeholder (`<id>@discord.invalid`) that can't receive mail.
+- An agent's first public reply claims the ticket on the Discord side. Closing or re-opening in Zammad closes or re-opens the Discord ticket, and the other way round. Moving the ticket to another group updates the staff card.
+- Tickets created directly in Zammad (email, or by hand) are never touched by the bot.
+
+### 7.7 Smoke test
+
+1. In Discord, **Create Ticket** → pick **Store**. Within a few seconds the staff card gains a **Zammad** field linking to the new ticket.
+2. Type "test 1" in the thread and attach an image. In Zammad the ticket shows the article "… (Player via Discord)" with the image.
+3. In Zammad, add a **public** note "hello from Zammad" with an attachment. It appears in the thread under your Zammad name and picture, with the file. The staff card says "Claimed by <you> (Zammad)".
+4. Add an **internal** note. Nothing appears in Discord.
+5. Move the ticket to another group in Zammad. The staff card's Zammad field shows the new group.
+6. Close the ticket in Zammad. The thread gets the closing message and the 1–5 rating. Click a rating: Zammad gets an internal note "CSAT: … 4/5".
+7. In Discord run `/reopen` in the thread. The Zammad ticket goes back to open. Close it with **Close Ticket**: Zammad shows closed.
+8. `/stats` shows **Zammad sync: ✅ in sync** on the #tickets embed.
+9. Check the Zammad customer (Customers → search the Discord name): login `discord:<id>`, the Discord ID field filled, and no email-type articles on the ticket.
+
+### 7.8 Operating it
+
+- **Zammad down or restarting:** Discord keeps working. Messages queue in the bot's database and are delivered in order when Zammad is back (retries back off from 5 seconds to 15 minutes). After 10 minutes of backlog the log channel gets one warning (at most one per 30 minutes), and a "caught up" note afterwards.
+- **Bot down:** Zammad retries a webhook for about two minutes, then drops it. Every `ZAMMAD_RECONCILE_MINUTES` the bot checks its open and recently closed tickets in Zammad and picks up anything it missed.
+- **Failed items:** an item Zammad rejects outright (for example a deleted group) is given up on after 3 attempts, and anything else after `ZAMMAD_OUTBOX_MAX_ATTEMPTS`. The log channel says so once, with the error, and `/stats` shows the count. Fix the cause, then re-queue:
+
+  ```bash
+  docker compose exec bot nephthys zammad-retry
+  ```
+- **Turning it off:** blank `ZAMMAD_TOKEN` and restart. Queued items stay in the database and are sent if you turn it back on. To also stop Zammad calling the bot, disable the trigger "Cloudsail Support bot: notify Discord" in Zammad.
+
+## 8. Troubleshooting
 
 | Symptom | Fix |
 |---|---|
@@ -302,3 +439,11 @@ docker compose down
 | Staff can't open a #tickets thread from the alert | Give that role **Manage Threads** in #tickets: private threads are only visible to members and people with Manage Threads. |
 | Alert cards don't notify the role | Make the role mentionable, or give the bot **Mention All Roles** in the staff channel. |
 | `copy/ticket_categories.toml: invalid categories` at startup | Fix the reported key. Check the file with `python -m nephthys.core.ticket_categories --check`. |
+| `zammad-setup`: "could not be resolved to a safe IP address" | Zammad can't resolve `cloudsail-support-bot`. The bot must be running with `docker-compose.zammad.yml` (§7.2), and the command must be run with `docker compose exec bot …`. |
+| `zammad-setup`: `network … declared as external, but could not be found` on `docker compose up` | `ZAMMAD_DOCKER_NETWORK` is wrong. Check `docker network ls \| grep zammad`. |
+| `zammad-setup`: 403 "Token authorization failed" | The setup token is missing one of the admin permissions in §7.1 step 4. |
+| Log channel: "Zammad sync is behind … HTTP 403: Not authorized" | The bot's Zammad user has no Full access to that ticket's group (§7.1 step 2). |
+| Log channel: "No lookup value found for 'group'" | A category's group doesn't exist in Zammad. Create it or set `zammad_group`, then `nephthys zammad-retry`. |
+| Agent replies show as "**Name (Support):** …" from the bot | The webhook post failed; the log channel has the reason. Usually the bot lacks **Manage Webhooks** in #tickets. |
+| An agent's reply doesn't reach Discord | It was an internal note (the default in Zammad): set the note to public. Otherwise check Zammad → Admin → Webhooks → the webhook's recent logs, and the bot's log for "bad signature" (the secret changed: run `zammad-setup` again). |
+| Agent avatars are missing in Discord | The Cloudflare Access bypass (§7.5) isn't in place, or `ZAMMAD_PUBLIC_URL` is unset. |

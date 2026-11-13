@@ -555,11 +555,23 @@ class FakeZammad:
                     422, "Name can't be used because *_id and *_ids are not allowed"
                 )
             data = {**data, "to_create": True, "to_migrate": True}
+        if (problem := self.endpoint_problem(name, data)) is not None:
+            return problem
         if any(i.get("name") == data.get("name") for i in table.values()):
             return error(422, "Name has already been taken")
         item = {**data, "id": next(self.ids)}
         table[item["id"]] = item
         return web.json_response(self.shown(name, item), status=201)
+
+    def endpoint_problem(self, name: str, data: dict[str, Any]) -> web.Response | None:
+        """Zammad resolves a webhook's hostname when it is saved."""
+        if name == "webhooks" and ".invalid" in str(data.get("endpoint", "")):
+            return error(
+                422,
+                "Endpoint The provided endpoint is invalid, it could not be "
+                "resolved to a safe IP address.",
+            )
+        return None
 
     async def admin_update(self, request: web.Request) -> web.Response:
         name, table = self.table(request)
@@ -568,7 +580,10 @@ class FakeZammad:
         item = table.get(int(request.match_info["id"]))
         if item is None:
             return error(404, "Not found")
-        item.update(await request.json())
+        data = await request.json()
+        if (problem := self.endpoint_problem(name, data)) is not None:
+            return problem
+        item.update(data)
         return web.json_response(self.shown(name, item))
 
     async def migrate(self, request: web.Request) -> web.Response:
@@ -603,7 +618,7 @@ class FakeZammad:
         name, operator, value = (
             condition["name"],
             condition["operator"],
-            condition.get("value"),
+            condition.get("value") or [],
         )
         if name == "customer.login":
             login = self.users[ticket["customer_id"]]["login"]

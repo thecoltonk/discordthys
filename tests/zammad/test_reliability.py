@@ -76,7 +76,9 @@ async def test_discord_flows_never_wait_on_zammad(world: World):
     fake.fail_next = 0
     await world.make_due()
     ticket = await world.synced(ticket)
+    await world.quiet()  # Zammad's echo of the close comes back and is a no-op
     assert {s for _, s, _ in await statuses()} == {"done"}
+    assert (await world.fresh(ticket)).status == TicketStatus.CLOSED
     bodies = [a["body"] for a in await world.articles(ticket)]
     assert [b.split("\n\n")[-1] for b in bodies[1:]] == [
         "one",
@@ -233,7 +235,7 @@ async def test_discord_close_wins_over_a_stale_zammad_state(world: World):
     """Closed in Discord while Zammad is unreachable: when Zammad (still
     'open') is looked at before the close got through, Discord isn't re-opened."""
     fake = fake_of(world)
-    ticket, thread, player = await world.open_ticket("store")
+    ticket, _thread, player = await world.open_ticket("store")
     ticket = await world.synced(ticket)
     fake.fail_next = 1
     await CloseTicketButton(ticket.id).callback(make_interaction(world.bot, player))
@@ -294,7 +296,7 @@ async def test_backlog_is_reported_once_and_recovery_is_announced(
 ):
     fake = fake_of(world)
     fake.fail_next = 10_000
-    ticket, thread, player = await world.open_ticket("store")
+    _ticket, _thread, _player = await world.open_ticket("store")
     await world.sync.run_once()
     await world.sync.report_health()
     assert not [line for line in world.log() if "behind" in line]  # too fresh to matter
@@ -359,7 +361,7 @@ async def test_retries_give_up_after_the_configured_attempts(
     world = await World(backend, ZAMMAD_OUTBOX_MAX_ATTEMPTS="4").start()
     try:
         backend.fake.fail_next = 10_000
-        ticket, _, _ = await world.open_ticket("store")
+        _ticket, _, _ = await world.open_ticket("store")
         for expected in (1, 2, 3):
             await world.make_due()
             await world.sync.run_once()
@@ -379,14 +381,14 @@ async def test_retries_give_up_after_the_configured_attempts(
 
 async def test_sync_is_off_without_url_and_token(db: None):
     """Integration off: nothing is queued, nothing breaks."""
-    from tests.fakes import FakeBot
-    from tests.fakes import make_text_channel
-    from tests.helpers import make_settings
+    from nephthys.cogs.tickets import Tickets
     from nephthys.core import tickets
     from nephthys.ui.ticket_buttons import CategoryButton
     from nephthys.ui.ticket_buttons import CreateTicketButton
-    from nephthys.cogs.tickets import Tickets
+    from tests.fakes import FakeBot
     from tests.fakes import make_message
+    from tests.fakes import make_text_channel
+    from tests.helpers import make_settings
 
     for env in (
         {},

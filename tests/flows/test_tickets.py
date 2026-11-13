@@ -406,10 +406,17 @@ async def test_close_by_opener_then_csat():
     await CloseTicketButton(ticket.id).callback(make_interaction(bot, user))
     ticket = await fresh(ticket)
     assert ticket.status == TicketStatus.CLOSED
+    # The CSAT prompt is its own message, after the closing message: short
+    # text and one row of five grey emoji buttons
     closing, csat = bot.sends(ticket.thread_id)[-2:]
     assert closing.content == C.tickets.closed.format(user=user.mention)
-    assert csat.content == C.tickets.csat_prompt
+    assert csat.content == "how did we do?"
     assert ids(csat.view) == [f"cs:csat:{ticket.id}:{n}" for n in range(1, 6)]
+    buttons = [cast(Any, b).item for b in csat.view.children]
+    assert [str(b.emoji) for b in buttons] == ["😡", "🙁", "😐", "🙂", "🤩"]
+    assert all(b.label is None for b in buttons)
+    assert {b.style for b in buttons} == {discord.ButtonStyle.secondary}
+    assert {b.row for b in buttons} == {None} and len(buttons) == 5
     # Locked for the player, but left open so they can still rate
     assert thread.locked and not thread.archived
     assert ticket.archived_at is None
@@ -431,11 +438,12 @@ async def test_close_by_opener_then_csat():
     vote = make_interaction(bot, user)
     await CSATButton(ticket.id, 4).callback(vote)
     kwargs = vote.response.edit_message.call_args.kwargs
-    assert kwargs == {
-        "content": C.tickets.csat_thanks.format(rating=4),
-        "view": None,
-        "suppress_embeds": True,
-    }
+    assert kwargs["content"] == "thanks! you rated 4/5 🙂"
+    assert kwargs["suppress_embeds"] is True
+    # Same row, now disabled
+    disabled = [cast(Any, b).item for b in kwargs["view"].children]
+    assert [str(b.emoji) for b in disabled] == ["😡", "🙁", "😐", "🙂", "🤩"]
+    assert all(b.disabled for b in disabled)
     assert (await fresh(ticket)).csat_rating == 4
     assert fields(card.embed)["CSAT"] == "4/5"
     # Rating ends the wait: the thread is archived now

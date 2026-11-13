@@ -137,3 +137,49 @@ def test_cli_check(tmp_path: Path, capsys):
     bad = tmp_path / "bad.toml"
     bad.write_text("[x]\n")
     assert copytext._main(["x", "--check", str(bad)]) == 1
+
+
+def test_buttons_take_label_and_emoji_from_copy():
+    from nephthys.core.copytext import use_copy
+    from nephthys.ui.buttons import ResolveButton
+    from nephthys.ui.ticket_buttons import CloseTicketButton
+    from nephthys.ui.ticket_buttons import csat_view
+
+    # Defaults: Close Ticket has no emoji (no more 🔒)
+    close = CloseTicketButton(1).item
+    assert (close.label, close.emoji) == ("Close Ticket", None)
+
+    use_copy(
+        parse_copy(
+            "[community]\n"
+            'resolve_button = "Solved"\nresolve_button_emoji = ""\n'
+            "[tickets]\n"
+            'close_button_emoji = "<:lock:123456789012345678>"\n'
+            'csat_button_1 = "1"\ncsat_button_1_emoji = ""\n'
+            'csat_button_5_emoji = "⭐"\n'
+        )
+    )
+    resolve = ResolveButton(1).item
+    assert (resolve.label, resolve.emoji) == ("Solved", None)  # "" = no emoji
+    close = CloseTicketButton(1).item
+    assert close.emoji is not None and close.emoji.id == 123456789012345678
+    first, *_, last = [b.item for b in csat_view(1).children]  # type: ignore[attr-defined]
+    assert (first.label, first.emoji) == ("1", None)
+    assert str(last.emoji) == "⭐"
+
+
+@pytest.mark.parametrize(
+    ("toml", "problem"),
+    [
+        ('[tickets]\nclose_button_emoji = "lock"\n', "isn't an emoji"),
+        ('[community]\nreopen_button_emoji = ":lock:"\n', "isn't an emoji"),
+        (
+            '[tickets]\nclose_button = ""\nclose_button_emoji = ""\n',
+            "both empty",
+        ),
+        ('[tickets]\ncsat_button_3_emoji = ""\n', "both empty"),
+    ],
+)
+def test_bad_button_faces_are_rejected(toml: str, problem: str):
+    with pytest.raises(CopyError, match=problem):
+        parse_copy(toml)

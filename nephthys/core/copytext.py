@@ -48,6 +48,17 @@ def placeholders_in(template: str) -> set[str]:
     return names
 
 
+# A button emoji: empty (none), a custom emoji like <:name:123> / <a:name:123>,
+# or a Unicode emoji (no ASCII letters or spaces, kept short).
+CUSTOM_EMOJI = re.compile(r"^<a?:[A-Za-z0-9_]{2,32}:[0-9]{15,22}>$")
+
+
+def is_button_emoji(value: str) -> bool:
+    if not value or CUSTOM_EMOJI.match(value):
+        return True
+    return len(value) <= 16 and not re.search(r"[A-Za-z\s<>:]", value)
+
+
 class Section(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -56,9 +67,23 @@ class Section(BaseModel):
 
     @model_validator(mode="after")
     def check_placeholders(self) -> "Section":
-        for name in type(self).model_fields:
+        fields = type(self).model_fields
+        for name in fields:
             value = getattr(self, name)
             if not isinstance(value, str):
+                continue
+            if name.endswith("_emoji"):
+                if not is_button_emoji(value):
+                    raise ValueError(
+                        f"{name}: {value!r} isn't an emoji. Use a Unicode emoji, a "
+                        'custom one like <:name:123456789012345678>, or "" for none'
+                    )
+                label = name.removesuffix("_emoji")
+                if label in fields and not value and not getattr(self, label):
+                    raise ValueError(
+                        f"{label} and {name} are both empty: a button needs a "
+                        "label, an emoji, or both"
+                    )
                 continue
             allowed = self.PLACEHOLDERS.get(name, set())
             try:
@@ -98,7 +123,9 @@ class CommunityCopy(Section):
         description="Posted in each new ticket thread when FAQ_URL is unset.",
     )
     resolve_button: str = Field(default="Mark as resolved", description="Button label.")
+    resolve_button_emoji: str = "✅"
     reopen_button: str = Field(default="Re-open", description="Button label.")
+    reopen_button_emoji: str = "🔄"
     resolved: str = Field(
         default="marked as resolved by {user} — got another question? make a new post!",
         description="Closing message ({user} is a mention that doesn't ping).",
@@ -230,6 +257,7 @@ class CardCopy(Section):
         default="Open in Discord",
         description="Card link button to the ticket's Discord thread.",
     )
+    open_thread_button_emoji: str = "🧵"
     open_zammad_button: str = Field(
         default="Open in Zammad",
         description=(
@@ -237,6 +265,7 @@ class CardCopy(Section):
             "is mirrored, when ZAMMAD_PUBLIC_URL is set)."
         ),
     )
+    open_zammad_button_emoji: str = "🎫"
     category_pending: str = "category not picked yet"
     awaiting_first_message: str = "*(waiting for the player's first message)*"
     field_priority: str = "Priority"
@@ -355,7 +384,9 @@ class AICopy(Section):
     }
 
     fixed_button: str = "This fixed it"
+    fixed_button_emoji: str = "✅"
     need_human_button: str = "I still need a human"
+    need_human_button_emoji: str = "🙋"
     need_human_reply: str = (
         "no worries — a human will be along to help soon! feel free to add any extra "
         "details while you wait."
@@ -364,7 +395,9 @@ class AICopy(Section):
     shadow_field_sources: str = "Sources"
     no_sources: str = "none"
     helpful_button: str = "Helpful"
+    helpful_button_emoji: str = "👍"
     not_helpful_button: str = "Not helpful"
+    not_helpful_button_emoji: str = "👎"
     field_outcome: str = "Outcome"
     rated_helpful: str = "👍 helpful — rated by {user}"
     rated_not_helpful: str = "👎 not helpful — rated by {user}"
@@ -384,7 +417,7 @@ class TicketsCopy(Section):
         "created": {"link"},
         "too_many_open": {"count", "links"},
         "closed": {"user"},
-        "csat_thanks": {"rating"},
+        "csat_thanks": {"rating", "emoji"},
         "reopened": {"user"},
         "alert_ping": {"roles", "priority"},
         "escalated_public": {"user", "link"},
@@ -394,6 +427,7 @@ class TicketsCopy(Section):
     }
 
     create_button: str = "Create Ticket"
+    create_button_emoji: str = "🎫"
     thread_name: str = Field(
         default="{name} (T-{number})",
         description="Private thread name (max 100 characters; longer is cut).",
@@ -415,6 +449,7 @@ class TicketsCopy(Section):
         description="One line per pick; the lines stack up.",
     )
     close_button: str = "Close Ticket"
+    close_button_emoji: str = ""
     created: str = Field(
         default="your ticket is ready: {link}",
         description="Private reply to Create Ticket.",
@@ -439,8 +474,30 @@ class TicketsCopy(Section):
         default="this ticket has been closed by {user}. thanks for reaching out!",
         description="Posted when a ticket is closed (button or /resolve).",
     )
-    csat_prompt: str = "how did we do? rate your support from 1 (bad) to 5 (great):"
-    csat_thanks: str = "thanks for the feedback — you rated us {rating}/5 ⭐"
+    csat_prompt: str = Field(
+        default="how did we do?",
+        description="Posted as its own message after the closing message, above the rating buttons.",
+    )
+    csat_button_1: str = Field(
+        default="",
+        description="CSAT buttons 1 (worst) to 5 (best): label (often empty) and emoji.",
+    )
+    csat_button_1_emoji: str = "😡"
+    csat_button_2: str = ""
+    csat_button_2_emoji: str = "🙁"
+    csat_button_3: str = ""
+    csat_button_3_emoji: str = "😐"
+    csat_button_4: str = ""
+    csat_button_4_emoji: str = "🙂"
+    csat_button_5: str = ""
+    csat_button_5_emoji: str = "🤩"
+    csat_thanks: str = Field(
+        default="thanks! you rated {rating}/5 {emoji}",
+        description=(
+            "Replaces the prompt after a rating (the buttons stay, disabled). "
+            "{emoji} is that rating's button emoji."
+        ),
+    )
     csat_not_opener: str = "only the person who opened this ticket can rate it."
     csat_already: str = "you've already rated this ticket — thanks!"
     reopened: str = "this ticket has been re-opened by {user}."
@@ -1046,6 +1103,10 @@ def dump_toml(copy: Copy = DEFAULT_COPY, *, commented: bool = False) -> str:
                 comment.append("true = send as an embed; false = plain text.")
             elif name == "thumbnail_url":
                 comment.append("Optional image URL (https://...).")
+            elif name.endswith("_emoji"):
+                comment.append(
+                    'Button emoji: Unicode, or <:name:id> for a custom one ("" = none).'
+                )
             allowed = section_cls.PLACEHOLDERS.get(name)
             if allowed:
                 comment.append(

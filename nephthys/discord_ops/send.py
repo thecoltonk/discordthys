@@ -106,11 +106,15 @@ async def send_embed(
 
 
 async def edit_text_response(
-    interaction: discord.Interaction[Any], content: str
+    interaction: discord.Interaction[Any],
+    content: str,
+    *,
+    view: discord.ui.View | None = None,
 ) -> None:
-    """Replace a message's text from a component interaction, removing its buttons."""
+    """Replace a message's text from a component interaction. Its buttons are
+    removed, or replaced by `view` (e.g. the same buttons, disabled)."""
     await interaction.response.edit_message(
-        content=content, view=None, suppress_embeds=True
+        content=content, view=view, suppress_embeds=True
     )
 
 

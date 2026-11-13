@@ -51,6 +51,7 @@ def _every_placeholder(section: Any, embeds_enabled: bool) -> Any:
             not isinstance(value, str)
             or name.startswith("color")
             or name == "thumbnail_url"
+            or name.endswith("_emoji")
         ):
             values[name] = value  # not a text template
         else:

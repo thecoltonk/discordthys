@@ -93,7 +93,7 @@ Keeps Mava's flow, which players already know, with no seat limit. Players stay 
   It pings the role that owns the category. High priority also pings the Staff role.
 - **Staff reply in the thread as themselves.** The first staff reply claims the ticket.
 - **Closing:** staff or the player can close.
-  - The bot posts a closing message and asks for a **CSAT** rating (1–5 buttons).
+  - The bot posts a closing message, then a separate **CSAT** message: "how did we do?" with one row of five grey emoji buttons (😡 🙁 😐 🙂 🤩 for 1–5, configurable). After a rating the row is disabled and the message reads e.g. "thanks! you rated 4/5 🙂".
   - Then it locks and archives the thread.
 - **Zammad:** every ticket is mirrored to Zammad both ways. See §2b.
 

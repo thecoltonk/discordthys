@@ -104,9 +104,7 @@ async def test_rating_after_timeout_archive_is_tolerated():
     )
     await CSATButton(ticket.id, 3).callback(vote)
     assert (await tickets.require_ticket(ticket.id)).csat_rating == 3
-    assert vote.response.send_message.call_args.args[0] == C.tickets.csat_thanks.format(
-        rating=3
-    )
+    assert vote.response.send_message.call_args.args[0] == "thanks! you rated 3/5 😐"
     assert vote.response.send_message.call_args.kwargs["ephemeral"] is True
     assert thread.edit.await_count == edits  # no second archive attempt
 

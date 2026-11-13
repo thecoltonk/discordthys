@@ -29,7 +29,7 @@ A private, Mava-style ticket system, enabled by setting `TICKETS_CHANNEL_ID`:
 - The player picks a category, then a subcategory. Each pick reposts the opener so the buttons stay at the bottom.
 - At a leaf category, the staff channel gets an alert card that pings the owning role (plus Staff for High priority).
 - The first staff reply claims the ticket.
-- **Close Ticket** (by the player or staff) locks the thread and asks the player for a 1–5 CSAT rating. The thread archives when they rate, or after `CSAT_TIMEOUT_HOURS` (default 24). Staff can `/reopen` at any time.
+- **Close Ticket** (by the player or staff) locks the thread and asks the player for a 1–5 CSAT rating (one row of emoji buttons). The thread archives when they rate, or after `CSAT_TIMEOUT_HOURS` (default 24). Staff can `/reopen` at any time.
 - `/escalate` moves a sensitive #community-help post into a private ticket.
 - Categories live in [`copy/ticket_categories.toml`](copy/ticket_categories.toml). Setup is in DEPLOY.md.
 

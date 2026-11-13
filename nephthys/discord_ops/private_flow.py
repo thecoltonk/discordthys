@@ -38,6 +38,7 @@ from nephthys.errors.errors import PermissionDenied
 from nephthys.errors.errors import TicketAlreadyClosedError
 from nephthys.errors.errors import TicketNotClosedError
 from nephthys.errors.errors import TicketNotFoundError
+from nephthys.ui.ticket_buttons import csat_face
 from nephthys.ui.ticket_buttons import csat_view
 from nephthys.ui.ticket_buttons import opener_view
 from nephthys.utils.metrics import TICKETS_OPENED
@@ -551,9 +552,14 @@ async def csat_from_interaction(
     except TicketNotFoundError:
         await respond_text(interaction, copy.errors.ticket_missing, ephemeral=True)
         return
-    thanks = copy.tickets.csat_thanks.format(rating=rating)
+    thanks = copy.tickets.csat_thanks.format(
+        rating=rating, emoji=csat_face(rating)[1]
+    ).strip()
     try:
-        await edit_text_response(interaction, thanks)
+        # Keep the row, disabled, so it's clear the rating is done
+        await edit_text_response(
+            interaction, thanks, view=csat_view(ticket_id, disabled=True)
+        )
     except discord.HTTPException as e:
         # e.g. the thread was archived by the CSAT timeout: the rating is saved,
         # so just thank them privately

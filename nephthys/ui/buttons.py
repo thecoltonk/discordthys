@@ -8,12 +8,23 @@ message keep working after restarts without storing per-message view state.
 import logging
 import re
 from typing import Any
+from typing import TypedDict
 
 import discord
 
 from nephthys.core.copytext import get_copy
 
 log = logging.getLogger(__name__)
+
+
+class ButtonFace(TypedDict):
+    label: str | None
+    emoji: str | None
+
+
+def face(label: str, emoji: str) -> ButtonFace:
+    """A button's label and emoji from copy; empty strings mean "none"."""
+    return {"label": label or None, "emoji": emoji or None}
 
 
 class ResolveButton(
@@ -24,9 +35,11 @@ class ResolveButton(
         self.ticket_id = ticket_id
         super().__init__(
             discord.ui.Button(
-                label=get_copy().community.resolve_button,
+                **face(
+                    get_copy().community.resolve_button,
+                    get_copy().community.resolve_button_emoji,
+                ),
                 style=discord.ButtonStyle.success,
-                emoji="✅",
                 custom_id=f"cs:resolve:{ticket_id}",
             )
         )
@@ -55,9 +68,11 @@ class ReopenButton(
         self.ticket_id = ticket_id
         super().__init__(
             discord.ui.Button(
-                label=get_copy().community.reopen_button,
+                **face(
+                    get_copy().community.reopen_button,
+                    get_copy().community.reopen_button_emoji,
+                ),
                 style=discord.ButtonStyle.secondary,
-                emoji="🔄",
                 custom_id=f"cs:reopen:{ticket_id}",
             )
         )
@@ -108,8 +123,13 @@ class AIFeedbackButton(
         ai_copy = get_copy().ai
         super().__init__(
             discord.ui.Button(
-                label=ai_copy.helpful_button if up else ai_copy.not_helpful_button,
-                emoji="👍" if up else "👎",
+                **(
+                    face(ai_copy.helpful_button, ai_copy.helpful_button_emoji)
+                    if up
+                    else face(
+                        ai_copy.not_helpful_button, ai_copy.not_helpful_button_emoji
+                    )
+                ),
                 style=discord.ButtonStyle.success if up else discord.ButtonStyle.danger,
                 custom_id=f"cs:aifb:{suggestion_id}:{verdict}",
             )
@@ -143,8 +163,7 @@ class AIFixedButton(
         self.suggestion_id = suggestion_id
         super().__init__(
             discord.ui.Button(
-                label=get_copy().ai.fixed_button,
-                emoji="✅",
+                **face(get_copy().ai.fixed_button, get_copy().ai.fixed_button_emoji),
                 style=discord.ButtonStyle.success,
                 custom_id=f"cs:aifix:{suggestion_id}",
             )
@@ -178,8 +197,10 @@ class AINeedHumanButton(
         self.suggestion_id = suggestion_id
         super().__init__(
             discord.ui.Button(
-                label=get_copy().ai.need_human_button,
-                emoji="🙋",
+                **face(
+                    get_copy().ai.need_human_button,
+                    get_copy().ai.need_human_button_emoji,
+                ),
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"cs:aihuman:{suggestion_id}",
             )
@@ -212,10 +233,16 @@ def card_links_view(
     view = discord.ui.View(timeout=None)
     if zammad_url:
         view.add_item(
-            discord.ui.Button(label=card.open_zammad_button, url=zammad_url, emoji="🎫")
+            discord.ui.Button(
+                **face(card.open_zammad_button, card.open_zammad_button_emoji),
+                url=zammad_url,
+            )
         )
     view.add_item(
-        discord.ui.Button(label=card.open_thread_button, url=thread_url, emoji="🧵")
+        discord.ui.Button(
+            **face(card.open_thread_button, card.open_thread_button_emoji),
+            url=thread_url,
+        )
     )
     return view
 

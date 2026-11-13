@@ -186,7 +186,7 @@ This should return `{"healthy": true, ...}`. `docker compose ps` shows the bot a
 13. Reply as staff: the card shows 🔵 Claimed.
 14. Click **Close Ticket** as the player.
     - You should see the closing message and 1–5 rating buttons. The thread locks, so the player can't post, but it stays open so they can rate.
-    - Rate it: the buttons are replaced by a thank-you, the card shows CSAT, and the thread archives.
+    - Rate it: the buttons are disabled and the message thanks the player ("thanks! you rated 4/5 🙂"), the card shows CSAT, and the thread archives.
     - Unrated tickets archive on their own after `CSAT_TIMEOUT_HOURS` (default 24). Staff can `/reopen` at any point before or after that.
 15. As staff, open the thread from the card and run `/reopen`. The thread unlocks and the player is back in it.
 16. In a #community-help thread, run `/escalate` as staff.

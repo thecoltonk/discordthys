@@ -8,6 +8,7 @@ import discord
 from nephthys.core.copytext import get_copy
 from nephthys.core.ticket_categories import Category
 from nephthys.core.ticket_categories import SubCategory
+from nephthys.ui.buttons import face
 
 CLOSE_ROW = 4  # Close Ticket always sits on the last row
 
@@ -18,8 +19,10 @@ class CreateTicketButton(
     def __init__(self) -> None:
         super().__init__(
             discord.ui.Button(
-                label=get_copy().tickets.create_button,
-                emoji="🎫",
+                **face(
+                    get_copy().tickets.create_button,
+                    get_copy().tickets.create_button_emoji,
+                ),
                 style=discord.ButtonStyle.primary,
                 custom_id="cs:tcreate",
             )
@@ -127,8 +130,10 @@ class CloseTicketButton(
         self.ticket_id = ticket_id
         super().__init__(
             discord.ui.Button(
-                label=get_copy().tickets.close_button,
-                emoji="🔒",
+                **face(
+                    get_copy().tickets.close_button,
+                    get_copy().tickets.close_button_emoji,
+                ),
                 style=discord.ButtonStyle.danger,
                 custom_id=f"cs:tclose:{ticket_id}",
                 row=CLOSE_ROW,
@@ -155,15 +160,17 @@ class CSATButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"cs:csat:(?P<ticket_id>[0-9]+):(?P<rating>[1-5])",
 ):
-    def __init__(self, ticket_id: int, rating: int) -> None:
+    def __init__(self, ticket_id: int, rating: int, *, disabled: bool = False) -> None:
         self.ticket_id = ticket_id
         self.rating = rating
+        label, emoji = csat_face(rating)
         super().__init__(
             discord.ui.Button(
-                label=str(rating),
-                emoji="⭐" if rating == 5 else None,
-                style=discord.ButtonStyle.primary,
+                # A button needs a label or an emoji; copy validation ensures one
+                **face(label, emoji),
+                style=discord.ButtonStyle.secondary,
                 custom_id=f"cs:csat:{ticket_id}:{rating}",
+                disabled=disabled,
             )
         )
 
@@ -209,10 +216,21 @@ def opener_view(
     return view
 
 
-def csat_view(ticket_id: int) -> discord.ui.View:
+def csat_face(rating: int) -> tuple[str, str]:
+    """(label, emoji) of a CSAT button, from [tickets] csat_button_<n>[_emoji]."""
+    copy = get_copy().tickets
+    return (
+        getattr(copy, f"csat_button_{rating}"),
+        getattr(copy, f"csat_button_{rating}_emoji"),
+    )
+
+
+def csat_view(ticket_id: int, *, disabled: bool = False) -> discord.ui.View:
+    """One row of five grey buttons, 1 (worst) to 5 (best). After a rating the
+    same row is shown disabled."""
     view = discord.ui.View(timeout=None)
     for rating in range(1, 6):
-        view.add_item(CSATButton(ticket_id, rating))
+        view.add_item(CSATButton(ticket_id, rating, disabled=disabled))
     return view
 
 

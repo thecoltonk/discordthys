@@ -195,7 +195,7 @@ async def test_reply_missed_while_the_bot_was_down_is_recovered(world: World):
     await world.sync.drain()
     [message] = world.replies(thread)
     assert message.content == "sent while the bot was down"
-    assert message.username == AGENT_NAME
+    assert message.username == f"{AGENT_NAME} (Support)"
     ticket = await world.fresh(ticket)
     assert ticket.status == TicketStatus.CLOSED and ticket.assigned_name == AGENT_NAME
     assert await world.sync.reconcile() == 0  # nothing left, nothing repeated
@@ -283,6 +283,9 @@ async def test_permanent_failures_are_given_up_and_reported(world: World):
     await world.sync.report_health()
     alerts = [line for line in world.log() if "gave up" in line]
     assert len(alerts) == 1 and "zammad-retry" in alerts[0]  # reported once
+    # A real error: it notifies (not @silent) and pings the maintainer
+    [gave_up] = [m for m in world.log_messages() if "gave up" in m.content]
+    assert not getattr(gave_up, "silent", False)
 
     fake.add_article = to_zammad_article
     assert await outbox.retry_failed() == 1
@@ -308,6 +311,8 @@ async def test_backlog_is_reported_once_and_recovery_is_announced(
         await world.sync.report_health()
     [alert] = [line for line in world.log() if "behind" in line]
     assert "1 item(s) queued" in alert and "20 min" in alert and "500" in alert
+    # A handled problem, not an error: posted @silent
+    assert all(m.silent for m in world.log_messages() if "behind" in m.content)
 
     # /stats shows the backlog on the #tickets embed
     stats_text = sync_stats_field(await run_stats(world))
@@ -318,6 +323,7 @@ async def test_backlog_is_reported_once_and_recovery_is_announced(
     await world.drain()
     await world.sync.report_health()
     assert world.log()[-1] == "✅ Zammad sync has caught up."
+    assert world.log_messages()[-1].silent is True
     assert sync_stats_field(await run_stats(world)) == C.stats.zammad_ok
 
     # A later backlog is reported again (the rate limit was reset on recovery)

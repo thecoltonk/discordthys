@@ -21,10 +21,10 @@ from nephthys.utils.metrics import TICKETS_CLAIMED
 from nephthys.zammad import outbox
 from nephthys.zammad.client import ZammadError
 from nephthys.zammad.outbox import Row
+from nephthys.zammad.text import agent_username
 from nephthys.zammad.text import article_text
 from nephthys.zammad.text import DISCORD_MESSAGE_MAX
 from nephthys.zammad.text import split_message
-from nephthys.zammad.text import webhook_username
 from nephthys.zammad.to_zammad import is_closed_state
 
 if TYPE_CHECKING:
@@ -100,7 +100,8 @@ async def post_reply(
     #tickets webhook. If that fails for any reason, fall back to a plain bot
     message ("**Name (Support):** text") and say so in the log channel."""
     copy = get_copy().zammad
-    username = webhook_username(copy.agent_name.format(name=name), copy.unknown_agent)
+    username = agent_username(copy.agent_name, name, copy.unknown_agent)
+    name = name or copy.unknown_agent  # for the fallback message
     reason: str
     webhook = await sync.get_webhook()
     if webhook is None:
@@ -142,9 +143,7 @@ async def post_article(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
     if thread is None:
         raise GiveUp(f"the Discord thread of T-{ticket.number} is gone")
 
-    name = (
-        str(payload.get("author_name") or "").strip() or get_copy().zammad.unknown_agent
-    )
+    name = str(payload.get("author_name") or "").strip()
     text = article_text(payload.get("body"), payload.get("content_type"))
     files, notes = await fetch_files(sync, ticket, payload)
     if notes:
@@ -186,7 +185,7 @@ async def post_article(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
 
     # An agent's first public reply is the staff claim, as in Discord
     await tickets.record_external_staff_message(ticket.id)
-    if await tickets.claim_by_name(ticket.id, name):
+    if await tickets.claim_by_name(ticket.id, name or get_copy().zammad.unknown_agent):
         TICKETS_CLAIMED.inc()
         await staff_card.refresh_staff_card(bot, ticket.id)
     if ticket.archived_at is not None and ticket.status == TicketStatus.CLOSED:

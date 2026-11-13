@@ -42,14 +42,19 @@ def colour(embed: discord.Embed) -> int | None:
 
 
 async def community_card(bot: FakeBot):
+    """A card for a community ticket, as posted before cards became
+    #tickets-only (they still render and refresh)."""
+    from nephthys.discord_ops import staff_card
+
     cog = CommunityHelp(cast(Any, bot))
     q = make_message(bot, make_user(name="op"), "how do i claim?")
     await cog.on_message(q)
     ticket = await tickets.get_ticket_by_message(q.id)
     assert ticket
-    card = bot.message(
-        bot.settings.staff_channel_id or 0, ticket.staff_card_message_id or 0
-    )
+    channel = bot.get_partial_messageable(bot.settings.staff_channel_id or 0)
+    embed, view = await staff_card.render(cast(Any, bot), ticket)
+    card = await channel.send(embed=embed, view=view)
+    await tickets.set_staff_card(ticket.id, channel.id, card.id)
     return cog, ticket, card
 
 

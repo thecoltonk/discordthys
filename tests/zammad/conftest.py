@@ -13,6 +13,7 @@ agent), customers and tickets, and run `zammad-setup`. Use a throwaway instance.
 """
 
 import asyncio
+import mimetypes
 import os
 import random
 from collections.abc import AsyncIterator
@@ -189,10 +190,12 @@ class World:
         app = build_app(cast(Any, self.bot))
 
         async def cdn(request: web.Request) -> web.Response:
-            data = self.files.get(request.match_info["name"])
+            name = request.match_info["name"]
+            data = self.files.get(name)
             if data is None:
                 return web.Response(status=404)
-            return web.Response(body=data)
+            kind = mimetypes.guess_type(name)[0] or "application/octet-stream"
+            return web.Response(body=data, content_type=kind)
 
         app.router.add_get("/cdn/{name}", cdn)  # stands in for Discord's CDN
         self.runner = web.AppRunner(app, access_log=None)
@@ -345,6 +348,9 @@ class World:
 
     def log(self) -> list[str]:
         return [m.content for m in self.bot.sends(self.settings.log_channel_id)]
+
+    def log_messages(self) -> list[Any]:
+        return list(self.bot.sends(self.settings.log_channel_id))
 
     def card(self, ticket: Any) -> Any:
         return self.bot.message(

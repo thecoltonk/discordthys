@@ -72,9 +72,8 @@ async def test_new_question_opens_thread_ticket_and_auto_reply(bot, cog):
 
     assert bot.reactions_on(msg.id) == {"🤔"}
 
-    [card] = bot.sends(bot.settings.staff_channel_id or 0)
-    assert card.content is None and card.embed.title.startswith(f"#{ticket.id}")
-    assert card.allowed_mentions.users is False  # no pings from the card
+    # No staff card: the staff channel is for #tickets
+    assert bot.sends(bot.settings.staff_channel_id or 0) == []
 
     [bot_msg] = await tickets.get_bot_messages(ticket.id)
     assert bot_msg.kind == BotMessageKind.AUTO_REPLY
@@ -233,3 +232,69 @@ async def test_open_reaction_disabled():
     cog = CommunityHelp(cast(Any, bot))
     msg, _ticket, _ = await post_question(bot, cog)
     assert bot.reactions_on(msg.id) == set()
+
+
+async def test_staff_can_resolve_again_after_the_poster_reopens(bot, cog):
+    """Reported live: staff resolved a post, the poster's reply auto-reopened
+    it, then staff clicked the original "Mark as resolved" and were told
+    "only the person who asked or a staff member can do that" (twice).
+
+    Uses real `discord.Member` objects. The second click arrives with the
+    Staff role in the payload but not in the bot's guild role cache (as while
+    the guild is unavailable after a reconnect); `Member.roles` then drops it.
+    Staff detection must use the payload's role IDs."""
+    from tests.fakes import make_member
+
+    settings = bot.settings
+    staff_role = settings.staff_role_id
+    _msg, ticket, op = await post_question(bot, cog)
+    staff_id = 4242
+    staff = make_member(settings, user_id=staff_id, role_ids=(staff_role,))
+    await reply(bot, cog, ticket, staff, "try /claim")
+
+    # 1. Staff resolve it from the original auto-reply
+    [auto_reply] = [
+        m for m in bot.sends(ticket.thread_id) if "someone should be along" in m.content
+    ]
+    resolve_id = button_ids(auto_reply.view)[0]
+    first = make_interaction(bot, staff)
+    await ResolveButton(ticket.id).callback(first)
+    first.followup.send.assert_not_awaited()
+    assert (await tickets.require_ticket(ticket.id)).status == TicketStatus.CLOSED
+
+    # 2. The poster replies: auto-reopen
+    await reply(bot, cog, ticket, op, "actually it's still broken")
+    reopened = await tickets.require_ticket(ticket.id)
+    assert reopened.status == TicketStatus.IN_PROGRESS
+    assert bot.sends(ticket.thread_id)[-1].content == C.community.reopened.format(
+        user=op.mention
+    )
+
+    # 3. Staff click the same original button again (twice, as reported)
+    same_staff = make_member(
+        settings, user_id=staff_id, role_ids=(staff_role,), cached_role_ids=()
+    )
+    assert [r.id for r in same_staff.roles] == []  # what discord.py reports
+    for attempt in range(2):
+        click = make_interaction(bot, same_staff)
+        await ResolveButton(int(resolve_id.rsplit(":", 1)[1])).callback(click)
+        sent = [c.args[0] for c in click.followup.send.call_args_list]
+        assert C.errors.not_allowed not in sent
+        expected = [] if attempt == 0 else [C.errors.already_resolved]
+        assert sent == expected
+    final = await tickets.require_ticket(ticket.id)
+    assert final.status == TicketStatus.CLOSED
+    closed_by = await tickets.get_user(tickets.fk_id(final.closed_by))
+    assert closed_by is not None and closed_by.discord_id == staff_id
+
+
+def test_staff_detection_ignores_the_role_cache():
+    from nephthys.discord_ops.threads import actor_from_user
+    from tests.fakes import make_member
+
+    settings = make_settings()
+    staff_role = settings.staff_role_id
+    uncached = make_member(settings, role_ids=(staff_role,), cached_role_ids=())
+    assert actor_from_user(uncached, staff_role).is_staff
+    player = make_member(settings, role_ids=(1234,))
+    assert not actor_from_user(player, staff_role).is_staff

@@ -49,13 +49,33 @@ def customer_email(discord_id: int) -> str:
 def webhook_username(name: str, fallback: str) -> str:
     """A username Discord's webhook API accepts (1-80 characters, no reserved
     words). Falls back when nothing usable is left."""
-    cleaned = " ".join((name or "").split())
-    for part in FORBIDDEN_NAME_PARTS:
-        cleaned = re.sub(re.escape(part), "", cleaned, flags=re.IGNORECASE)
-    cleaned = " ".join(cleaned.split())[:WEBHOOK_NAME_MAX].strip()
+    cleaned = _strip_forbidden(name)[:WEBHOOK_NAME_MAX].strip()
     if not cleaned or cleaned.lower() in FORBIDDEN_NAMES:
         return fallback
     return cleaned
+
+
+def _strip_forbidden(name: str) -> str:
+    cleaned = " ".join((name or "").split())
+    for part in FORBIDDEN_NAME_PARTS:
+        cleaned = re.sub(re.escape(part), "", cleaned, flags=re.IGNORECASE)
+    return " ".join(cleaned.split())
+
+
+def agent_username(template: str, name: str, fallback: str) -> str:
+    """The webhook username for an agent's reply: `template` (copy
+    `[zammad] agent_name`, e.g. "{name} (Support)") filled with the agent's
+    Zammad name. Discord allows at most 80 characters, so a long name is
+    shortened (ending in "…") to keep the rest of the template, e.g. the
+    "(Support)" suffix. No usable name -> `fallback`."""
+    clean = _strip_forbidden(name)
+    if not clean or clean.lower() in FORBIDDEN_NAMES:
+        return webhook_username(fallback, "Support")
+    full = template.format(name=clean)
+    room = WEBHOOK_NAME_MAX - len(template.format(name=""))
+    if len(full) > WEBHOOK_NAME_MAX and room > 1:
+        full = template.format(name=clean[: room - 1].rstrip() + "…")
+    return webhook_username(full, fallback)
 
 
 def display_name(user: object, fallback: str = "") -> str:

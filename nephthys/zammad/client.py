@@ -90,11 +90,12 @@ class ZammadClient:
         json: Any = None,
         params: dict[str, Any] | None = None,
         raw: bool = False,
+        headers: dict[str, str] | None = None,
     ) -> Any:
         url = f"{self.base_url}/api/v1{path}"
         try:
             async with self._get_session().request(
-                method, url, json=json, params=params
+                method, url, json=json, params=params, headers=headers
             ) as response:
                 if response.status >= 400:
                     raise ZammadError(
@@ -128,6 +129,25 @@ class ZammadClient:
 
     async def get_user(self, user_id: int) -> dict[str, Any]:
         return await self.request("GET", f"/users/{user_id}")
+
+    async def set_avatar_of(
+        self, user_id: int, image: bytes, mime_type: str = "image/png"
+    ) -> dict[str, Any]:
+        """Make `image` the avatar of user `user_id`.
+
+        Zammad 7.2 has no endpoint that sets *another* user's avatar:
+        POST /users/avatar always works on the current user. The supported way
+        is to make that call as the customer with the "From" header, which
+        Zammad only allows when the token's user has `admin.user` (its
+        `SessionsPolicy#impersonate?`). A token without it gets 403 "no
+        permission to use 'From'"."""
+        data = f"data:{mime_type};base64,{base64.b64encode(image).decode()}"
+        return await self.request(
+            "POST",
+            "/users/avatar",
+            json={"avatar_full": data, "avatar_resize": data},
+            headers={"From": str(user_id)},
+        )
 
     async def find_user(self, *, login: str, email: str) -> dict[str, Any] | None:
         """Exact-login lookup. Searches by email because the search backend

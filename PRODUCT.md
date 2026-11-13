@@ -93,7 +93,7 @@ Keeps Mava's flow, which players already know, with no seat limit. Players stay 
   It pings the role that owns the category. High priority also pings the Staff role.
 - **Staff reply in the thread as themselves.** The first staff reply claims the ticket.
 - **Closing:** staff or the player can close.
-  - The bot posts a closing message and asks for a **CSAT** rating (1–5 buttons).
+  - The bot posts a closing message, then a separate **CSAT** message: "how did we do?" with one row of five grey emoji buttons (😡 🙁 😐 🙂 🤩 for 1–5, configurable). After a rating the row is disabled and the message reads e.g. "thanks! you rated 4/5 🙂".
   - Then it locks and archives the thread.
 - **Zammad:** every ticket is mirrored to Zammad both ways. See §2b.
 
@@ -107,17 +107,17 @@ Zammad is the core support platform. **Admins work tickets in Zammad; the Discor
   - title `T-<n> <category>`, e.g. `T-26 Store` or `T-27 Server Issue (Urgent)`;
   - group from the category (`zammad_group` in `ticket_categories.toml`; by default the same-named groups Server Issue, Store, Bans & Appeals, Reports, Other);
   - priority mapped: Low → `1 low`, Medium → `2 normal`, High → `3 high`.
-- **Customer.** One Zammad customer per Discord player, found or created: login `discord:<user_id>`, name = display name, email `<user_id>@discord.invalid`, plus a custom **Discord ID** attribute.
+- **Customer.** One Zammad customer per Discord player, found or created: login `discord:<user_id>`, name = display name, email `<user_id>@discord.invalid`, plus a custom **Discord ID** attribute. The name follows the player's Discord display name. With the optional avatar token (`admin.user`, on a separate Zammad user), the customer also shows their Discord profile picture, refreshed when it changes, at most once a day.
 - **Messages.** Every message in the thread becomes an article: type *note*, public, starting with `<name> (Player via Discord)` or `<name> (Staff via Discord)`. Attachments are uploaded when they fit; otherwise they're named in the article.
 - **Escalated tickets** (`/escalate`) include the original public question and a link to the public thread.
-- **Staff card** links to the Zammad ticket and shows its group.
+- **Staff card** has an **Open in Zammad** button (first) next to **Open in Discord**. Until the ticket is mirrored (or with the sync off) only the Discord button shows; the Zammad one is added when the mirror lands. The footer shows the T-number.
 - **No email, ever.** The bot only writes notes (never email-type articles), the customer's address can't receive mail, and Zammad is told to skip `@discord.invalid` for trigger emails.
 
 ### Zammad → Discord
 
 - A Zammad **trigger + signed webhook** calls the bot when an agent adds a **public** article to a Discord ticket. The bot checks the signature (HMAC) before doing anything.
 - **Internal notes never go to Discord.** The trigger doesn't fire for them, and the bot drops any article that isn't explicitly public and written by an agent.
-- The reply is posted in the player's thread through a Discord webhook on #tickets, under the **agent's Zammad display name and avatar**. Plain text, no embeds. Attachments are forwarded as files.
+- The reply is posted in the player's thread through a Discord webhook on #tickets, under the **agent's Zammad display name and avatar**, shown as `<name> (Support)` by default (`[zammad] agent_name` in copy, at most 80 characters). Plain text, no embeds. Attachments are forwarded as files.
 - If the webhook can't post (missing permission, Discord refusing it for that thread), the bot posts `**<name> (Support):** <text>` itself and notes it in the log channel.
 - An agent's **first public reply claims** the ticket on the Discord side. The claimer is shown as the agent's Zammad name.
 - Messages the bot posts on behalf of Zammad are never mirrored back.
@@ -131,7 +131,7 @@ Zammad is the core support platform. **Admins work tickets in Zammad; the Discor
 | Re-opened in Zammad | Discord thread unlocked and unarchived, player re-added |
 | Re-opened in Discord (`/reopen`) | Zammad ticket set back to open |
 | CSAT rating in Discord | Internal note on the Zammad ticket |
-| Group changed in Zammad | Staff card updated |
+| Group changed in Zammad | Recorded on the ticket (the card no longer shows the group) |
 
 Tickets created directly in Zammad are out of scope and left alone.
 

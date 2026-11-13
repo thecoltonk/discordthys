@@ -54,6 +54,18 @@ class ZammadSync:
             settings.zammad_token,
             timeout=settings.zammad_timeout_seconds,
         )
+        # Sets customers' avatars (needs admin.user); None = avatars are off
+        self.avatar_client: ZammadClient | None = (
+            ZammadClient(
+                settings.zammad_url,
+                settings.zammad_avatar_token,
+                timeout=settings.zammad_timeout_seconds,
+            )
+            if settings.zammad_avatar_token
+            else None
+        )
+        # Why avatars stopped for this run (e.g. the token lacks admin.user)
+        self.avatars_off_reason: str | None = None
         self._http: aiohttp.ClientSession | None = None
         self._wake = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -75,6 +87,8 @@ class ZammadSync:
             await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
         await self.client.close()
+        if self.avatar_client is not None:
+            await self.avatar_client.close()
         if self._http is not None and not self._http.closed:
             await self._http.close()
 
@@ -163,7 +177,11 @@ class ZammadSync:
 
     # -- log-channel reporting (rate-limited) ----------------------------------------
 
-    async def alert(self, topic: str, text: str, *, ping: bool = False) -> bool:
+    async def alert(
+        self, topic: str, text: str, *, error: bool = False, ping: bool = False
+    ) -> bool:
+        """One log-channel message per topic per ALERT_INTERVAL_SECONDS.
+        Only `error` (or `ping`) messages notify; the rest are @silent."""
         now = time.monotonic()
         last = self._alerted.get(topic)
         if last is not None and now - last < ALERT_INTERVAL_SECONDS:
@@ -171,7 +189,7 @@ class ZammadSync:
         self._alerted[topic] = now
         from nephthys.discord_ops.heartbeat import send_heartbeat
 
-        await send_heartbeat(self.bot, text, ping=ping)
+        await send_heartbeat(self.bot, text, error=error, ping=ping)
         return True
 
     async def report_health(self) -> None:

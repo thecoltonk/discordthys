@@ -56,6 +56,8 @@ class Settings:
     ticket_categories_file_explicit: bool
     log_channel_id: int | None
     maintainer_id: int | None
+    # Post "online" to the log channel at startup (@silent)
+    log_startup_notice: bool
 
     # Database
     database_url: str
@@ -103,6 +105,10 @@ class Settings:
     # Admin-capable token used only by `nephthys zammad-setup` (falls back to
     # zammad_token)
     zammad_setup_token: str | None
+    # Optional: a token of a separate Zammad user whose role grants admin.user,
+    # used only to set customers' avatars (POST /users/avatar with "From").
+    # Unset = names are still kept in sync, avatars aren't.
+    zammad_avatar_token: str | None
     # Zammad as browsers (and Discord's image proxy) reach it: ticket links on
     # staff cards, agent avatars
     zammad_public_url: str | None
@@ -382,6 +388,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         csat_timeout_hours=csat_timeout,
         log_channel_id=snowflake("LOG_CHANNEL_ID", optional=True),
         maintainer_id=snowflake("MAINTAINER_ID", optional=True),
+        log_startup_notice=boolean("LOG_STARTUP_NOTICE", False),
         database_url=required("DATABASE_URL"),
         faq_url=get("FAQ_URL", "") or "",
         server_address=get("SERVER_ADDRESS", "") or "",
@@ -416,6 +423,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         zammad_url=zammad_url,
         zammad_token=zammad_token,
         zammad_setup_token=get("ZAMMAD_SETUP_TOKEN"),
+        zammad_avatar_token=get("ZAMMAD_AVATAR_TOKEN"),
         zammad_public_url=http_url("ZAMMAD_PUBLIC_URL"),
         zammad_webhook_secret=zammad_secret,
         zammad_webhook_url=http_url("ZAMMAD_WEBHOOK_URL") or DEFAULT_ZAMMAD_WEBHOOK_URL,

@@ -35,6 +35,7 @@ These supersede the matching rows above and the macro / staff-feed sections belo
 | Daily summary | Posted to `STAFF_CHANNEL_ID` at `DAILY_SUMMARY_TIME` / `DAILY_SUMMARY_TIMEZONE` (default 09:00 America/Phoenix). |
 | #tickets (Phase 2) | Built. See README "#tickets" and DECISIONS entries 85–112. Staff alerts reuse the staff card (private surface); private tickets use T-<n> numbers from `TICKET_NUMBER_START`; categories live in `copy/ticket_categories.toml`. |
 | Zammad (Phase 3) | Built as a **two-way** sync for #tickets, not the one-way mirror first planned. See PRODUCT.md §2b, DEPLOY.md §7 and DECISIONS entries 133 onwards. Code lives in `nephthys/zammad/`; schema in migration `cloudsail_005`. |
+| Staff channel | **#tickets only** (follow-up after Phase 3). #community-help tickets get no staff card and no category select; they still count in `/stats` (now with a Claimed count), `/waiting` and the daily summary. See DECISIONS 179 onwards. |
 | AI (optional) | An OpenAI-compatible client (Hack Club AI by default). It auto-categorises new tickets, and its answers are grounded only in `kb/*.md`. Shadow mode is the default; public mode is opt-in. |
 
 ---

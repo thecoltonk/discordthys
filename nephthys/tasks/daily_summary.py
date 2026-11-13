@@ -123,6 +123,7 @@ def build_summary_embed(
         ),
     )
     embed.add_field(name=copy.stats.field_opened, value=str(stats.opened))
+    embed.add_field(name=copy.stats.field_claimed, value=str(stats.claimed))
     embed.add_field(
         name=copy.stats.field_resolved,
         value=copy.stats.resolved_value.format(

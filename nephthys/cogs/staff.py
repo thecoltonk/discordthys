@@ -79,6 +79,7 @@ def stats_embed(
         description=style.description.format(surface=name, days=days),
     )
     embed.add_field(name=stats.field_opened, value=str(summary.opened))
+    embed.add_field(name=stats.field_claimed, value=str(summary.claimed))
     embed.add_field(
         name=stats.field_resolved,
         value=stats.resolved_value.format(

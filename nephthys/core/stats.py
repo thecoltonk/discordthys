@@ -31,6 +31,8 @@ class StatsSummary:
     since: datetime
     until: datetime
     opened: int = 0
+    # Claimed in the window (first staff reply, from Discord or Zammad)
+    claimed: int = 0
     resolved: int = 0
     # Resolved in the window with no staff claim (no credit given)
     resolved_without_staff: int = 0
@@ -93,6 +95,13 @@ async def calculate_stats(
     response_times = first_response_minutes(opened)
     summary.median_first_response_minutes = (
         median(response_times) if response_times else None
+    )
+
+    summary.claimed = await Ticket.count().where(
+        (Ticket.surface == surface)
+        & Ticket.assigned_at.is_not_null()
+        & (Ticket.assigned_at >= since)
+        & (Ticket.assigned_at < until)
     )
 
     resolved = await Ticket.objects().where(

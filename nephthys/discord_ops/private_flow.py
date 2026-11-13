@@ -38,6 +38,7 @@ from nephthys.errors.errors import PermissionDenied
 from nephthys.errors.errors import TicketAlreadyClosedError
 from nephthys.errors.errors import TicketNotClosedError
 from nephthys.errors.errors import TicketNotFoundError
+from nephthys.ui.ticket_buttons import csat_face
 from nephthys.ui.ticket_buttons import csat_view
 from nephthys.ui.ticket_buttons import opener_view
 from nephthys.utils.metrics import TICKETS_OPENED
@@ -64,11 +65,17 @@ class Player:
 
     discord_id: int
     display_name: str
+    avatar_key: str | None = None
+    avatar_url: str | None = None
 
 
 def player_from(user: discord.abc.User) -> Player:
+    avatar_key, avatar_url = threads.avatar_of(user)
     return Player(
-        discord_id=user.id, display_name=getattr(user, "display_name", user.name)
+        discord_id=user.id,
+        display_name=getattr(user, "display_name", user.name),
+        avatar_key=avatar_key,
+        avatar_url=avatar_url,
     )
 
 
@@ -237,19 +244,27 @@ async def open_private_ticket(
         )
     except discord.HTTPException as e:
         await send_heartbeat(
-            bot, f"⚠️ Couldn't create a private thread for T-{number}: `{e}`"
+            bot,
+            f"❌ Couldn't create a private thread for T-{number}: `{e}`",
+            error=True,
         )
         raise TicketCreateError(str(e)) from e
     try:
         await thread.add_user(discord.Object(player.discord_id))
     except discord.HTTPException as e:
-        await send_heartbeat(bot, f"⚠️ Couldn't add the player to T-{number}: `{e}`")
+        await send_heartbeat(
+            bot, f"❌ Couldn't add the player to T-{number}: `{e}`", error=True
+        )
         async with threads.best_effort("delete_failed_ticket_thread"):
             await thread.delete()
         raise TicketCreateError(str(e)) from e
 
     actor = Actor(
-        discord_id=player.discord_id, username=player.display_name, is_staff=False
+        discord_id=player.discord_id,
+        username=player.display_name,
+        is_staff=False,
+        avatar_key=player.avatar_key,
+        avatar_url=player.avatar_url,
     )
     ticket = await pt.create_private_ticket(
         author=actor,
@@ -551,9 +566,14 @@ async def csat_from_interaction(
     except TicketNotFoundError:
         await respond_text(interaction, copy.errors.ticket_missing, ephemeral=True)
         return
-    thanks = copy.tickets.csat_thanks.format(rating=rating)
+    thanks = copy.tickets.csat_thanks.format(
+        rating=rating, emoji=csat_face(rating)[1]
+    ).strip()
     try:
-        await edit_text_response(interaction, thanks)
+        # Keep the row, disabled, so it's clear the rating is done
+        await edit_text_response(
+            interaction, thanks, view=csat_view(ticket_id, disabled=True)
+        )
     except discord.HTTPException as e:
         # e.g. the thread was archived by the CSAT timeout: the rating is saved,
         # so just thank them privately

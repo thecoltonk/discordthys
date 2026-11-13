@@ -417,3 +417,78 @@ PRODUCT.md's one-way "Zammad mirror" and its non-goal "replying from Zammad back
 **Tests**
 
 178. **The same integration tests run against two backends:** an in-process fake of Zammad's API (always, so CI needs nothing extra) and a real Zammad when `ZAMMAD_TEST_URL` is set. The fake copies behaviour observed on the real one (response shapes, the `_id` name rule, masked tokens, trigger conditions, signing, five webhook attempts, the restart after a migration, the unresolvable-host error). Running both keeps the fake honest: all of them passed against Zammad 7.2.3. Tests that need to break Zammad on purpose use the fake only.
+
+## Follow-up: staff channel, #tickets card and ticket UI polish, Zammad profiles
+
+One commit per numbered request, all in one PR. Entries 48–53 (community staff cards and the category select) are superseded by 179–184.
+
+**1. Staff channel = #tickets only**
+
+179. **#community-help tickets no longer get a staff card**, and the card's category select is gone (the `cs:cat:` component isn't registered any more). `STAFF_CHANNEL_ID` now carries #tickets alert cards, the daily summary and, only when AI is on in shadow mode, AI suggestions.
+180. **AI shadow suggestions still go to the staff channel.** They used to be replies to the community card; now they're standalone messages whose title links to the thread. They only exist when `AI_API_KEY` is set and `AI_ANSWER_MODE=shadow`, there's nowhere else to rate them, and dropping them would silently break shadow mode. Easy to move to a separate channel later if they turn out to be noise.
+181. **Community categories now come only from the AI** (when it's on). Staff can no longer pick one, since the select lived on the card. `TICKET_CATEGORIES` and "Opened by category" in `/stats` and the summary are unchanged.
+182. **Cards already posted for community tickets are left alone and keep working**: they're still re-rendered on claim/resolve/re-open (now with just the thread link, no select) and deleted with their ticket. Old cards on tickets that never change again keep their dead select; clicking it does nothing ("interaction failed"). Not worth a migration.
+183. **New "Claimed" count** in `/stats` and the daily summary, for both channels: tickets whose first staff claim (Discord reply or Zammad agent reply) happened in the window. With no cards, this is how staff see claims at a glance. Copy key `[stats] field_claimed`.
+184. **Removed copy keys are ignored with a warning, not rejected.** `[card] category_placeholder` no longer exists; a `copy.local.toml` that still sets it would otherwise stop the bot at startup (unknown keys are fatal). `REMOVED_KEYS` in `copytext.py` lists such keys.
+
+**2. #tickets staff card**
+
+185. **The Zammad text field is replaced by link buttons:** **Open in Zammad** first, then **Open in Discord** (the old "Open thread" button, relabelled; the key is still `[card] open_thread_button`). Discord draws every link button in the same grey: a link button can't be blurple, so "primary" here means first in the row.
+186. **When the Zammad button shows:** the sync is on, the ticket has a Zammad ID, and `ZAMMAD_PUBLIC_URL` is set (the bot's own `ZAMMAD_URL` is a Docker-network address browsers can't open). Otherwise only Open in Discord. The card is re-rendered when the mirror lands (it already was, for the old field), so the button appears then.
+187. **The card no longer shows the Zammad group or ticket number.** The button replaces both; the group is still stored (`ticket.zammad_group`) and a group change still refreshes the card. `[card] field_zammad`, `zammad_value`, `zammad_value_no_link` and `zammad_group` are removed (ignored with a warning if set, per 184).
+188. **Footer default is `Ticket {ref}`**: `Ticket T-29` on #tickets cards (`#<id>` only on old community cards). `{id}` stays allowed, so a customised footer keeps working.
+
+**3. Discord ticket UI polish**
+
+189. **Every button's label and emoji come from copy.** Each button key `<x>` has a sibling `<x>_emoji` (e.g. `[community] resolve_button_emoji`, `[tickets] close_button_emoji`, `[card] open_zammad_button_emoji`, `[ai] helpful_button_emoji`). `""` means no emoji; a label can be `""` too if the button has an emoji. Supersedes the "emojis inside buttons" exclusion in entry 73. #tickets category and subcategory buttons keep their emoji in `ticket_categories.toml`, where they already were.
+190. **Emoji values are checked when copy loads**: a Unicode emoji, a custom one written `<:name:id>` / `<a:name:id>`, or empty. Anything with letters, spaces or colons (`lock`, `:lock:`) is rejected with the key named, as is a button with both label and emoji empty, because Discord would reject the whole message at send time otherwise. Shortcodes like `:lock:` aren't translated: Discord's API doesn't accept them.
+191. **Close Ticket has no emoji by default** (was 🔒).
+192. **CSAT is one row of five grey (secondary) buttons**, emoji only by default: 😡 🙁 😐 🙂 🤩 = 1–5 (`[tickets] csat_button_<n>` and `csat_button_<n>_emoji`). The prompt is shortened to "how did we do?". It was already its own message after the closing message; that's now tested explicitly.
+193. **After a rating the same row stays, disabled**, and the text becomes `csat_thanks` = "thanks! you rated {rating}/5 {emoji}" (`{emoji}` is that rating's button emoji, trimmed if empty). Keeping the row shows what was offered; all buttons stay grey rather than highlighting the pick, as asked ("no blurple"). If Discord refuses the edit (thread already archived), the thanks is sent privately as before.
+
+**4. Staff refused "Mark as resolved" after an auto-reopen**
+
+194. **What the test found.** The ticket state machine handles resolve → poster reply (auto-reopen) → staff resolve correctly; that sequence already worked with the test stand-ins. The refusal ("only the person who asked or a staff member can do that") can only come from the clicker not being recognised as staff. Staff detection read `Member.roles`, which discord.py rebuilds from the bot's guild role cache and which **silently drops any role the cache doesn't hold** (checked in discord.py 2.7.1's source and with real `Member` objects). The role IDs Discord sends with every interaction and message (`Member._roles`) don't depend on that cache.
+195. **Fix: staff detection uses the payload's role IDs** (plus any cached roles). The new test drives the reported sequence with real `discord.Member` objects, with the second click arriving while the Staff role is missing from the cache; it failed with exactly the reported message before the fix. `_roles` is a private discord.py attribute, so it's read defensively and `roles` is still used too.
+196. **Why the cache was missing the role on the live bot is not proven.** The likeliest cause is a gateway reconnect: discord.py clears its guild cache on a fresh session, and interactions arriving before the guild's data comes back are given an empty placeholder guild with no roles. Both clicks in the report came soon after each other, which fits. Every refused resolve/re-open now logs the clicker's role IDs, the object type and the configured Staff role, so if it ever happens again the log says why.
+
+**5. Webhook display name**
+
+197. **`[zammad] agent_name` now defaults to `{name} (Support)`** (was `{name}`), `{name}` being the agent's Zammad display name. It's the webhook username on relayed replies. The key already existed; only its default and its handling of long names changed. The plain-message fallback (`fallback_reply`) already said "(Support)" and is unchanged.
+198. **The 80-character limit keeps the template's own text.** If the filled-in template is too long, `{name}` alone is shortened (ending in "…") so a suffix like "(Support)" survives; only if the template itself is longer than 80 characters is the whole thing cut. Words Discord refuses in usernames ("discord", "clyde", `@ # : `` ` ``) are still removed (entry 150).
+199. **An agent with no usable name is shown as just `unknown_agent`** ("Support"), not "Support (Support)". The claim still records "Support" as the claimer, as before.
+
+**6. Log channel**
+
+200. **`LOG_STARTUP_NOTICE` (default `false`)** controls the "🟢 Cloudsail Support is online" message. When on, it's sent once per process (not on reconnects), @silent.
+201. **Only real errors notify.** `send_heartbeat` takes `error=True` for failures that need a person; everything else goes out with Discord's @silent flag (in the channel, no push/desktop notification). `ping=True` (mentions `MAINTAINER_ID`) implies an error.
+     - **Errors:** unhandled event errors, failed background tasks, a failing button, a stale auto-close that failed, the Zammad sync giving up on items, and a ticket thread that couldn't be created (either channel) or a player who couldn't be added to theirs. Those last three were ⚠️ before; they're now ❌ because a player is left without a ticket.
+     - **Silent:** the startup notice, the Zammad backlog warning, the webhook-fallback note (the reply was still delivered), and "caught up".
+202. **Rate limiting is unchanged**: `ZammadSync.alert` still allows one message per topic per 30 minutes, and it now passes `error` through.
+
+**7. Copy directory mount and reload logging**
+
+203. **The compose file already mounted `./copy` as a directory** (entry 74); no single-file mount of any copy file existed in the repo. It stays that way, with a comment saying why, and a test fails if `docker-compose.yml` ever mounts something under `/app/copy` other than the whole directory. If a deployment on the host uses its own compose override with single-file mounts, that override is the problem; the repo can't see it. Checked in a real container: with an editor-style save (write a temp file, rename it over the original), the directory mount picked up the change and logged it, and the bad edit before it was logged as rejected with the exact key and reason. A single-file mount of the same file kept serving the old text.
+204. **Change detection compares (mtime in ns, size, inode)** instead of the mtime alone. An editor that writes a new file and renames it over the old one changes the inode even when the timestamp and size don't, which the old check could miss.
+205. **The bot checks `copy/` every 5 seconds in the background** (`copy-watcher` task), instead of only when some text is next needed. So an edit is applied, and logged, within seconds even when the bot is idle. Every reload logs `Copy reloaded (<files> changed); now using <files>` at info; every rejected edit logs `Copy edit rejected (<files> changed); keeping the previous text: <errors>` at error, once per edit. They go to the container log (`docker compose logs bot`), not the log channel.
+206. **`ticket_categories.toml` is still read at startup only** (entry 95): its keys are baked into live buttons.
+
+**8. Discord avatars and names on Zammad customers**
+
+207. **What Zammad 7.2 offers, checked against a real Zammad 7.2.3 in Docker** (the `zammad/zammad-docker-compose:7.2.3-0000` image) and in its source:
+     - `POST /api/v1/users/avatar` always sets the **current** user's avatar (`Service::Avatar::Add.with_current_user`). There's no endpoint for someone else's.
+     - `image_source` on a user is stored but never fetched in 7.2; only importers use it. Setting it shows nothing.
+     - The supported way is that same call made **as the customer**, with Zammad's `From` header (`X-On-Behalf-Of` is its deprecated name). Zammad allows `From` only when the token's user has **`admin.user`** (`SessionsPolicy#impersonate?`).
+     - Results, live: the everyday `ticket.agent` token → 403 "Current user has no permission to use 'From'/'X-On-Behalf-Of'!". A token of a separate user whose **only** role grants `admin.user` (no Agent role, no groups) → 200; the customer's `image` points at the new picture and `/api/v1/users/image/<hash>` serves it.
+     - **Zammad checks the user's roles, not the token's ticked permissions**: once the bot user had a role with `admin.user`, even its `ticket.agent`-only token could act `From` anyone. That's why the extra permission goes on a separate user (next entry).
+     - Renaming a customer (`PUT /users/:id`) works with `ticket.agent`. Zammad splits "First Last" given as the first name into first and last name; the full name is unchanged.
+208. **Minimum extra permission: `admin.user`, on a separate "Discord Avatars" user, via the optional `ZAMMAD_AVATAR_TOKEN`.** It's used for nothing but the avatar upload. Unset = names synced, avatars skipped. Not full `admin`, and not added to the bot user (which would hand impersonation to the everyday token). DEPLOY.md §7.1 step 5 lists the steps and warns that `admin.user` can act as any user.
+209. **Rejected: a `ticket.agent`-only workaround.** Upload the picture as the bot's own avatar, point the customer's `image` at its hash (Zammad only checks that the hash exists), then restore the bot's picture. It works live, but it isn't a supported use, it briefly changes the bot's own avatar, the pictures pile up in the bot's avatar list, and deleting them there would break customers.
+210. **Where the picture comes from:** Discord's `display_avatar` (the server avatar if set, else the user's, else Discord's default), as a 256 px PNG (animated ones give their first frame). It's captured from every message and button click the bot already sees, and stored as `app_user.avatar_key`/`avatar_url`; no new Discord intent or API call. CDN avatar links are content-addressed and don't expire. For `/escalate` the poster's last-seen avatar is used. An action without avatar info never erases it.
+211. **When it's pushed:** on the outbox worker, never in a Discord flow. That happens when the customer is created (with the Zammad ticket) and whenever the player's own message is mirrored.
+     - Name: whenever it differs from what the bot last set (`app_user.zammad_name`). A cheap PUT, no limit.
+     - Avatar: only when Discord's avatar key differs from the one last uploaded, and at most once per 24 hours per player. The attempt time is recorded before trying, so a failing download or upload also waits a day.
+     - The bot downloads the image (≤ 5 MB, `image/*` only) and uploads the bytes, so Zammad needs no internet access.
+212. **Profile updates are best effort.** Any failure is logged and never fails or delays the ticket/article row it rode along with. A 401/403 from the avatar call turns avatars off until the next restart and posts one @silent log-channel note naming `admin.user` (rate-limited per entry 202).
+213. **Migration `cloudsail_006`** adds `avatar_key`, `avatar_url`, `zammad_name`, `zammad_avatar_key`, `zammad_avatar_at` to `app_user`. Tested forwards and backwards. Existing customers get their name re-sent once (their `zammad_name` starts empty) and their avatar on their next message.
+214. **Tests**: the new flow tests run against the fake and the real Zammad: avatar on creation, name change applied at once, avatar change held for a day then applied, no re-upload when unchanged, and names-only without the token. The "token without `admin.user`" test is fake-only, because the suite would need a second real Zammad user and token; that case was checked live by hand (entry 207). The fake now implements `From` with Zammad's exact refusal and `POST /users/avatar`.

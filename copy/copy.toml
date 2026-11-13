@@ -24,8 +24,12 @@ auto_reply = "someone should be along to help you soon! in the meantime check ou
 auto_reply_no_faq = "someone should be along to help you soon! once your question is answered, hit the button below to mark it as resolved :D"
 # Button label.
 resolve_button = "Mark as resolved"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+resolve_button_emoji = "✅"
 # Button label.
 reopen_button = "Re-open"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+reopen_button_emoji = "🔄"
 # Closing message ({user} is a mention that doesn't ping).
 # Placeholders: {user}
 resolved = "marked as resolved by {user} — got another question? make a new post!"
@@ -107,7 +111,6 @@ category_none = "—"
 # An AI-set category.
 # Placeholders: {category}
 category_ai = "{category} (AI)"
-category_placeholder = "Set a category…"
 field_ai = "🤖 AI"
 # Placeholders: {confidence}, {mode}, {outcome}
 ai_line = "{mode} answer ({confidence}) — {outcome}"
@@ -116,7 +119,14 @@ ai_helpful = "👍 rated helpful"
 ai_not_helpful = "👎 rated not helpful"
 ai_fixed = "✅ player said it fixed it"
 ai_needs_human = "🙋 player still needs a human"
-open_thread_button = "Open thread"
+# Card link button to the ticket's Discord thread.
+open_thread_button = "Open in Discord"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+open_thread_button_emoji = "🧵"
+# #tickets card link button to the Zammad ticket (shown once the ticket is mirrored, when ZAMMAD_PUBLIC_URL is set).
+open_zammad_button = "Open in Zammad"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+open_zammad_button_emoji = "🎫"
 category_pending = "category not picked yet"
 awaiting_first_message = "*(waiting for the player's first message)*"
 field_priority = "Priority"
@@ -129,16 +139,6 @@ escalated_value = "[#{id}]({link})"
 field_escalated_to = "Escalated to"
 # Placeholders: {link}, {number}
 escalated_to_value = "[T-{number}]({link})"
-field_zammad = "Zammad"
-# Link to the Zammad ticket (needs ZAMMAD_PUBLIC_URL).
-# Placeholders: {link}, {number}
-zammad_value = "[#{number}]({link})"
-# The Zammad ticket number when ZAMMAD_PUBLIC_URL is unset.
-# Placeholders: {number}
-zammad_value_no_link = "#{number}"
-# Added after the Zammad ticket: the group it is in now.
-# Placeholders: {group}
-zammad_group = " · {group}"
 # A Zammad agent, where the card would mention a Discord user.
 # Placeholders: {name}
 zammad_agent = "{name} (Zammad)"
@@ -148,6 +148,8 @@ zammad_agent = "{name} (Zammad)"
 surface_community = "#community-help"
 surface_tickets = "#tickets"
 field_opened = "Opened"
+# Tickets claimed by staff in the period (first staff reply).
+field_claimed = "Claimed"
 field_resolved = "Resolved"
 # Placeholders: {resolved}, {without_staff}
 resolved_value = "{resolved} ({without_staff} without staff)"
@@ -207,13 +209,21 @@ ai_attempts_reasons = "Attempts 24h: {attempts} ({skipped} not posted: {reasons}
 [ai]
 # AI answers (shadow suggestions for staff, public answers for players).
 fixed_button = "This fixed it"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+fixed_button_emoji = "✅"
 need_human_button = "I still need a human"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+need_human_button_emoji = "🙋"
 need_human_reply = "no worries — a human will be along to help soon! feel free to add any extra details while you wait."
 shadow_field_confidence = "Confidence"
 shadow_field_sources = "Sources"
 no_sources = "none"
 helpful_button = "Helpful"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+helpful_button_emoji = "👍"
 not_helpful_button = "Not helpful"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+not_helpful_button_emoji = "👎"
 field_outcome = "Outcome"
 # Placeholders: {user}
 rated_helpful = "👍 helpful — rated by {user}"
@@ -227,6 +237,8 @@ outcome_needs_human = "🙋 {user} still needs a human"
 [tickets]
 # #tickets: the panel, private ticket threads, closing, CSAT and escalation.
 create_button = "Create Ticket"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+create_button_emoji = "🎫"
 # Private thread name (max 100 characters; longer is cut).
 # Placeholders: {name}, {number}
 thread_name = "{name} (T-{number})"
@@ -242,6 +254,8 @@ escalated_note = "This ticket was moved here from {link} so we can help you priv
 # Placeholders: {choice}
 selected = "You have selected: **{choice}**"
 close_button = "Close Ticket"
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+close_button_emoji = ""
 # Private reply to Create Ticket.
 # Placeholders: {link}
 created = "your ticket is ready: {link}"
@@ -255,9 +269,27 @@ option_gone = "that option isn't available anymore — please ask staff."
 # Posted when a ticket is closed (button or /resolve).
 # Placeholders: {user}
 closed = "this ticket has been closed by {user}. thanks for reaching out!"
-csat_prompt = "how did we do? rate your support from 1 (bad) to 5 (great):"
-# Placeholders: {rating}
-csat_thanks = "thanks for the feedback — you rated us {rating}/5 ⭐"
+# Posted as its own message after the closing message, above the rating buttons.
+csat_prompt = "how did we do?"
+# CSAT buttons 1 (worst) to 5 (best): label (often empty) and emoji.
+csat_button_1 = ""
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+csat_button_1_emoji = "😡"
+csat_button_2 = ""
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+csat_button_2_emoji = "🙁"
+csat_button_3 = ""
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+csat_button_3_emoji = "😐"
+csat_button_4 = ""
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+csat_button_4_emoji = "🙂"
+csat_button_5 = ""
+# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
+csat_button_5_emoji = "🤩"
+# Replaces the prompt after a rating (the buttons stay, disabled). {emoji} is that rating's button emoji.
+# Placeholders: {emoji}, {rating}
+csat_thanks = "thanks! you rated {rating}/5 {emoji}"
 csat_not_opener = "only the person who opened this ticket can rate it."
 csat_already = "you've already rated this ticket — thanks!"
 # Placeholders: {user}
@@ -285,10 +317,10 @@ tickets_disabled = "#tickets isn't set up (TICKETS_CHANNEL_ID)."
 
 [zammad]
 # Zammad replies posted into #tickets threads.
-# The name shown on an agent's reply (max 80 characters; Discord does not allow "discord" in it).
+# The webhook display name on an agent's reply; {name} is their Zammad display name. Discord allows 80 characters: a long {name} is shortened so the rest still fits. "discord", "clyde", @ # : and ``` are removed (Discord refuses them).
 # Placeholders: {name}
-agent_name = "{name}"
-# Used when an agent has no usable name.
+agent_name = "{name} (Support)"
+# The whole display name when an agent has no usable name.
 unknown_agent = "Support"
 # Plain bot message used when the reply can't be posted under the agent's name.
 # Placeholders: {name}, {text}
@@ -373,8 +405,9 @@ title = "#{id} · {title}"
 description = "{question}"
 # Hex colour like #5865F2 (empty = none).
 color = ""
+# {ref} is T-<number> for #tickets (#<id> on old #community-help cards).
 # Placeholders: {id}, {ref}
-footer = "Ticket #{id}"
+footer = "Ticket {ref}"
 # Optional image URL (https://...).
 thumbnail_url = ""
 # #tickets cards.

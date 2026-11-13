@@ -10,6 +10,7 @@ from datetime import datetime
 from datetime import UTC
 from types import SimpleNamespace
 from typing import Any
+from typing import cast
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -319,7 +320,7 @@ def make_message(
 
 def make_interaction(
     bot: FakeBot,
-    user: MagicMock,
+    user: Any,
     *,
     channel: Any = None,
     message: Any = None,
@@ -398,3 +399,46 @@ def make_text_channel(bot: "FakeBot", channel_id: int) -> MagicMock:
     channel.history = history
     world.text_channels[channel_id] = channel
     return channel
+
+
+def make_member(
+    settings: Settings,
+    *,
+    user_id: int | None = None,
+    name: str = "mod",
+    role_ids: tuple[int, ...] = (),
+    cached_role_ids: tuple[int, ...] | None = None,
+) -> discord.Member:
+    """A real `discord.Member`, built the way discord.py builds one from an
+    interaction or message payload. `role_ids` are the roles in the payload;
+    `cached_role_ids` are the roles in the bot's guild cache (default: the
+    same). discord.py's `Member.roles` silently drops roles missing from the
+    cache, e.g. while the guild is unavailable after a gateway reconnect."""
+    state = MagicMock()
+    state.store_user = lambda data, **_: discord.User(state=state, data=data)
+    state.member_cache_flags = discord.MemberCacheFlags.none()
+    guild = discord.Guild._create_unavailable(
+        state=state, guild_id=settings.guild_id, data=None
+    )
+    for role_id in role_ids if cached_role_ids is None else cached_role_ids:
+        guild._add_role(
+            discord.Role(
+                guild=guild,
+                state=state,
+                data=cast(Any, {"id": role_id, "name": f"role-{role_id}"}),
+            )
+        )
+    uid = user_id if user_id is not None else next_id()
+    data: Any = {
+        "user": {
+            "id": str(uid),
+            "username": name,
+            "discriminator": "0",
+            "avatar": None,
+            "global_name": name,
+        },
+        "roles": [str(r) for r in role_ids],
+        "flags": 0,
+        "joined_at": None,
+    }
+    return discord.Member(data=data, guild=guild, state=state)

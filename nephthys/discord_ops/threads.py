@@ -40,13 +40,54 @@ async def best_effort(action: str):
         log.warning(f"Discord side effect failed action={action}: {e}")
 
 
+def role_ids_of(user: object) -> set[int]:
+    """The member's role IDs as Discord sent them.
+
+    `Member.roles` is rebuilt from the bot's guild role cache and silently
+    drops any role the cache doesn't hold (e.g. while the guild is unavailable
+    after a gateway reconnect), which made staff look like players. The IDs in
+    the payload (`Member._roles`) don't depend on the cache, so use both."""
+    ids: set[int] = set()
+    raw = getattr(user, "_roles", None)
+    if raw is not None:
+        try:
+            ids.update(int(r) for r in raw)
+        except (TypeError, ValueError):
+            pass
+    for role in getattr(user, "roles", None) or []:
+        role_id = getattr(role, "id", None)
+        if isinstance(role_id, int):
+            ids.add(role_id)
+    return ids
+
+
+AVATAR_SIZE = 256
+
+
+def avatar_of(user: object) -> tuple[str | None, str | None]:
+    """(key, PNG url) of the avatar people see for this user in the server
+    (the server avatar if they set one, else their own, else Discord's
+    default). Animated avatars give their first frame."""
+    asset = getattr(user, "display_avatar", None)
+    key = getattr(asset, "key", None)
+    if not isinstance(asset, discord.Asset) or not isinstance(key, str):
+        return None, None
+    try:
+        url = asset.replace(format="png", size=AVATAR_SIZE).url
+    except (ValueError, TypeError):
+        url = asset.url
+    return key, url
+
+
 def actor_from_user(user: discord.User | discord.Member, staff_role_id: int) -> Actor:
     """Map a Discord user to an `Actor`. Only guild members can be staff."""
-    roles = getattr(user, "roles", None) or []
+    avatar_key, avatar_url = avatar_of(user)
     return Actor(
         discord_id=user.id,
         username=getattr(user, "display_name", None) or user.name,
-        is_staff=is_staff((r.id for r in roles), staff_role_id),
+        is_staff=is_staff(role_ids_of(user), staff_role_id),
+        avatar_key=avatar_key,
+        avatar_url=avatar_url,
     )
 
 

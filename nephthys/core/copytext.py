@@ -48,6 +48,17 @@ def placeholders_in(template: str) -> set[str]:
     return names
 
 
+# A button emoji: empty (none), a custom emoji like <:name:123> / <a:name:123>,
+# or a Unicode emoji (no ASCII letters or spaces, kept short).
+CUSTOM_EMOJI = re.compile(r"^<a?:[A-Za-z0-9_]{2,32}:[0-9]{15,22}>$")
+
+
+def is_button_emoji(value: str) -> bool:
+    if not value or CUSTOM_EMOJI.match(value):
+        return True
+    return len(value) <= 16 and not re.search(r"[A-Za-z\s<>:]", value)
+
+
 class Section(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -56,9 +67,23 @@ class Section(BaseModel):
 
     @model_validator(mode="after")
     def check_placeholders(self) -> "Section":
-        for name in type(self).model_fields:
+        fields = type(self).model_fields
+        for name in fields:
             value = getattr(self, name)
             if not isinstance(value, str):
+                continue
+            if name.endswith("_emoji"):
+                if not is_button_emoji(value):
+                    raise ValueError(
+                        f"{name}: {value!r} isn't an emoji. Use a Unicode emoji, a "
+                        'custom one like <:name:123456789012345678>, or "" for none'
+                    )
+                label = name.removesuffix("_emoji")
+                if label in fields and not value and not getattr(self, label):
+                    raise ValueError(
+                        f"{label} and {name} are both empty: a button needs a "
+                        "label, an emoji, or both"
+                    )
                 continue
             allowed = self.PLACEHOLDERS.get(name, set())
             try:
@@ -98,7 +123,9 @@ class CommunityCopy(Section):
         description="Posted in each new ticket thread when FAQ_URL is unset.",
     )
     resolve_button: str = Field(default="Mark as resolved", description="Button label.")
+    resolve_button_emoji: str = "✅"
     reopen_button: str = Field(default="Re-open", description="Button label.")
+    reopen_button_emoji: str = "🔄"
     resolved: str = Field(
         default="marked as resolved by {user} — got another question? make a new post!",
         description="Closing message ({user} is a mention that doesn't ping).",
@@ -192,9 +219,6 @@ class CardCopy(Section):
         "csat_value": {"rating"},
         "escalated_value": {"id", "link"},
         "escalated_to_value": {"number", "link"},
-        "zammad_value": {"number", "link"},
-        "zammad_value_no_link": {"number"},
-        "zammad_group": {"group"},
         "zammad_agent": {"name"},
     }
 
@@ -222,7 +246,6 @@ class CardCopy(Section):
     category_ai: str = Field(
         default="{category} (AI)", description="An AI-set category."
     )
-    category_placeholder: str = "Set a category…"
     field_ai: str = "🤖 AI"
     ai_line: str = "{mode} answer ({confidence}) — {outcome}"
     ai_pending: str = "awaiting feedback"
@@ -230,7 +253,19 @@ class CardCopy(Section):
     ai_not_helpful: str = "👎 rated not helpful"
     ai_fixed: str = "✅ player said it fixed it"
     ai_needs_human: str = "🙋 player still needs a human"
-    open_thread_button: str = "Open thread"
+    open_thread_button: str = Field(
+        default="Open in Discord",
+        description="Card link button to the ticket's Discord thread.",
+    )
+    open_thread_button_emoji: str = "🧵"
+    open_zammad_button: str = Field(
+        default="Open in Zammad",
+        description=(
+            "#tickets card link button to the Zammad ticket (shown once the ticket "
+            "is mirrored, when ZAMMAD_PUBLIC_URL is set)."
+        ),
+    )
+    open_zammad_button_emoji: str = "🎫"
     category_pending: str = "category not picked yet"
     awaiting_first_message: str = "*(waiting for the player's first message)*"
     field_priority: str = "Priority"
@@ -240,19 +275,6 @@ class CardCopy(Section):
     escalated_value: str = "[#{id}]({link})"
     field_escalated_to: str = "Escalated to"
     escalated_to_value: str = "[T-{number}]({link})"
-    field_zammad: str = "Zammad"
-    zammad_value: str = Field(
-        default="[#{number}]({link})",
-        description="Link to the Zammad ticket (needs ZAMMAD_PUBLIC_URL).",
-    )
-    zammad_value_no_link: str = Field(
-        default="#{number}",
-        description="The Zammad ticket number when ZAMMAD_PUBLIC_URL is unset.",
-    )
-    zammad_group: str = Field(
-        default=" · {group}",
-        description="Added after the Zammad ticket: the group it is in now.",
-    )
     zammad_agent: str = Field(
         default="{name} (Zammad)",
         description="A Zammad agent, where the card would mention a Discord user.",
@@ -276,6 +298,10 @@ class StatsCopy(Section):
     surface_community: str = "#community-help"
     surface_tickets: str = "#tickets"
     field_opened: str = "Opened"
+    field_claimed: str = Field(
+        default="Claimed",
+        description="Tickets claimed by staff in the period (first staff reply).",
+    )
     field_resolved: str = "Resolved"
     resolved_value: str = "{resolved} ({without_staff} without staff)"
     field_median: str = "Median first staff response"
@@ -358,7 +384,9 @@ class AICopy(Section):
     }
 
     fixed_button: str = "This fixed it"
+    fixed_button_emoji: str = "✅"
     need_human_button: str = "I still need a human"
+    need_human_button_emoji: str = "🙋"
     need_human_reply: str = (
         "no worries — a human will be along to help soon! feel free to add any extra "
         "details while you wait."
@@ -367,7 +395,9 @@ class AICopy(Section):
     shadow_field_sources: str = "Sources"
     no_sources: str = "none"
     helpful_button: str = "Helpful"
+    helpful_button_emoji: str = "👍"
     not_helpful_button: str = "Not helpful"
+    not_helpful_button_emoji: str = "👎"
     field_outcome: str = "Outcome"
     rated_helpful: str = "👍 helpful — rated by {user}"
     rated_not_helpful: str = "👎 not helpful — rated by {user}"
@@ -387,7 +417,7 @@ class TicketsCopy(Section):
         "created": {"link"},
         "too_many_open": {"count", "links"},
         "closed": {"user"},
-        "csat_thanks": {"rating"},
+        "csat_thanks": {"rating", "emoji"},
         "reopened": {"user"},
         "alert_ping": {"roles", "priority"},
         "escalated_public": {"user", "link"},
@@ -397,6 +427,7 @@ class TicketsCopy(Section):
     }
 
     create_button: str = "Create Ticket"
+    create_button_emoji: str = "🎫"
     thread_name: str = Field(
         default="{name} (T-{number})",
         description="Private thread name (max 100 characters; longer is cut).",
@@ -418,6 +449,7 @@ class TicketsCopy(Section):
         description="One line per pick; the lines stack up.",
     )
     close_button: str = "Close Ticket"
+    close_button_emoji: str = ""
     created: str = Field(
         default="your ticket is ready: {link}",
         description="Private reply to Create Ticket.",
@@ -442,8 +474,30 @@ class TicketsCopy(Section):
         default="this ticket has been closed by {user}. thanks for reaching out!",
         description="Posted when a ticket is closed (button or /resolve).",
     )
-    csat_prompt: str = "how did we do? rate your support from 1 (bad) to 5 (great):"
-    csat_thanks: str = "thanks for the feedback — you rated us {rating}/5 ⭐"
+    csat_prompt: str = Field(
+        default="how did we do?",
+        description="Posted as its own message after the closing message, above the rating buttons.",
+    )
+    csat_button_1: str = Field(
+        default="",
+        description="CSAT buttons 1 (worst) to 5 (best): label (often empty) and emoji.",
+    )
+    csat_button_1_emoji: str = "😡"
+    csat_button_2: str = ""
+    csat_button_2_emoji: str = "🙁"
+    csat_button_3: str = ""
+    csat_button_3_emoji: str = "😐"
+    csat_button_4: str = ""
+    csat_button_4_emoji: str = "🙂"
+    csat_button_5: str = ""
+    csat_button_5_emoji: str = "🤩"
+    csat_thanks: str = Field(
+        default="thanks! you rated {rating}/5 {emoji}",
+        description=(
+            "Replaces the prompt after a rating (the buttons stay, disabled). "
+            "{emoji} is that rating's button emoji."
+        ),
+    )
     csat_not_opener: str = "only the person who opened this ticket can rate it."
     csat_already: str = "you've already rated this ticket — thanks!"
     reopened: str = "this ticket has been re-opened by {user}."
@@ -481,14 +535,17 @@ class ZammadCopy(Section):
     }
 
     agent_name: str = Field(
-        default="{name}",
+        default="{name} (Support)",
         description=(
-            "The name shown on an agent's reply (max 80 characters; Discord "
-            'does not allow "discord" in it).'
+            "The webhook display name on an agent's reply; {name} is their Zammad "
+            "display name. Discord allows 80 characters: a long {name} is "
+            'shortened so the rest still fits. "discord", "clyde", @ # : and ``` '
+            "are removed (Discord refuses them)."
         ),
     )
     unknown_agent: str = Field(
-        default="Support", description="Used when an agent has no usable name."
+        default="Support",
+        description="The whole display name when an agent has no usable name.",
     )
     fallback_reply: str = Field(
         default="**{name} (Support):** {text}",
@@ -638,7 +695,10 @@ class StaffCardEmbed(EmbedStyle):
     color_waiting: str = GOLD
     color_claimed: str = BLURPLE
     color_resolved: str = GREEN
-    footer: str = "Ticket #{id}"
+    footer: str = Field(
+        default="Ticket {ref}",
+        description="{ref} is T-<number> for #tickets (#<id> on old #community-help cards).",
+    )
 
 
 class DailySummaryEmbed(EmbedStyle):
@@ -771,11 +831,26 @@ MOVED_KEYS: dict[tuple[str, str], str] = {
 }
 
 
+# Keys that no longer exist because what they labelled is gone. They're ignored
+# with a warning (not rejected), so an old copy.local.toml doesn't stop startup.
+REMOVED_KEYS: dict[tuple[str, str], str] = {
+    ("card", "category_placeholder"): "#community-help staff cards were removed",
+    ("card", "field_zammad"): "the card links to Zammad with a button now",
+    ("card", "zammad_value"): "the card links to Zammad with a button now",
+    ("card", "zammad_value_no_link"): "the card links to Zammad with a button now",
+    ("card", "zammad_group"): "the card links to Zammad with a button now",
+}
+
+
 def _load_toml(text: str, source: str) -> dict[str, Any]:
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
         raise CopyError(f"{source}: invalid TOML: {e}") from e
+    for (section, key), why in REMOVED_KEYS.items():
+        if isinstance(data.get(section), dict) and key in data[section]:
+            data[section].pop(key)
+            log.warning(f"{source}: ignoring [{section}] {key} ({why})")
     moved = []
     for (section, key), new in MOVED_KEYS.items():
         if isinstance(data.get(section), dict) and key in data[section]:
@@ -841,17 +916,22 @@ class CopyStore:
         self.override = override
         self.paths = [p for p in (path, override) if p is not None]
         self._copy = DEFAULT_COPY
-        self._mtimes: tuple[float | None, ...] = ()
+        # Per file: (mtime_ns, size, inode), or None while it's missing. The
+        # inode catches editors that save by writing a new file and renaming
+        # it over the old one, even when the timestamp doesn't move.
+        self._mtimes: tuple[tuple[int, int, int] | None, ...] = ()
         self._checked_at = 0.0
         self._lock = threading.Lock()
 
-    def _current_mtimes(self) -> tuple[float | None, ...]:
-        out: list[float | None] = []
+    def _current_mtimes(self) -> tuple[tuple[int, int, int] | None, ...]:
+        out: list[tuple[int, int, int] | None] = []
         for p in self.paths:
             try:
-                out.append(p.stat().st_mtime)
+                st = p.stat()
             except OSError:
                 out.append(None)
+            else:
+                out.append((st.st_mtime_ns, st.st_size, st.st_ino))
         return tuple(out)
 
     def load(self, *, required: bool, override_required: bool = False) -> Copy:
@@ -879,26 +959,47 @@ class CopyStore:
         if self.paths:
             now = time.monotonic()
             if now - self._checked_at >= RELOAD_CHECK_SECONDS:
-                with self._lock:
-                    self._checked_at = now
-                    self._maybe_reload()
+                self.poll()
         return self._copy
 
-    def _maybe_reload(self) -> None:
+    def poll(self) -> str | None:
+        """Check the files now and reload if they changed. Returns "reloaded",
+        "rejected" or None (nothing to do). The bot calls this every few
+        seconds, so edits are picked up (and logged) even while it's idle."""
+        if not self.paths:
+            return None
+        with self._lock:
+            self._checked_at = time.monotonic()
+            return self._maybe_reload()
+
+    def _maybe_reload(self) -> str | None:
         mtimes = self._current_mtimes()
         if mtimes == self._mtimes:
-            return
+            return None
         # The base file vanishing is usually a mid-save: wait for it to come back
         base_was_there = bool(self._mtimes) and self._mtimes[0] is not None
         if self.path is not None and mtimes[0] is None and base_was_there:
-            return
+            return None
+        changed = [
+            str(p)
+            for i, p in enumerate(self.paths)
+            if i >= len(self._mtimes) or self._mtimes[i] != mtimes[i]
+        ]
         self._mtimes = mtimes
         try:
             self._copy = load_layers(self.paths)
         except (CopyError, OSError) as e:
-            log.error(f"Ignoring invalid copy edit (keeping the previous text): {e}")
-            return
-        log.info(f"Reloaded copy from {' + '.join(str(p) for p in self.paths)}")
+            log.error(
+                f"Copy edit rejected ({', '.join(changed)} changed); keeping the "
+                f"previous text: {e}"
+            )
+            return "rejected"
+        loaded = [str(p) for p in self.paths if p.is_file()]
+        log.info(
+            f"Copy reloaded ({', '.join(changed)} changed); now using "
+            f"{' + '.join(loaded) or 'the built-in defaults'}"
+        )
+        return "reloaded"
 
 
 _store = CopyStore()
@@ -919,6 +1020,11 @@ def configure_copy(
 
 def get_copy() -> Copy:
     return _store.get()
+
+
+def poll_copy() -> str | None:
+    """Check the copy files for edits now (see `CopyStore.poll`)."""
+    return _store.poll()
 
 
 def use_copy(copy: Copy) -> None:
@@ -1031,6 +1137,10 @@ def dump_toml(copy: Copy = DEFAULT_COPY, *, commented: bool = False) -> str:
                 comment.append("true = send as an embed; false = plain text.")
             elif name == "thumbnail_url":
                 comment.append("Optional image URL (https://...).")
+            elif name.endswith("_emoji"):
+                comment.append(
+                    'Button emoji: Unicode, or <:name:id> for a custom one ("" = none).'
+                )
             allowed = section_cls.PLACEHOLDERS.get(name)
             if allowed:
                 comment.append(
@@ -1077,5 +1187,6 @@ __all__ = [
     "configure_copy",
     "get_copy",
     "parse_copy",
+    "poll_copy",
     "use_copy",
 ]

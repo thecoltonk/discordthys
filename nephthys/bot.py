@@ -121,6 +121,7 @@ class SupportBot(commands.Bot):
 
         self.configure_jobs()
         self.scheduler.start()
+        self.spawn(self.watch_copy(), name="copy-watcher")
         log.info(
             f"AI: {'on' if self.ai_client else 'off'}"
             + (
@@ -186,11 +187,27 @@ class SupportBot(commands.Bot):
                 log.exception(f"Background task {name} failed")
                 from nephthys.discord_ops.heartbeat import send_heartbeat
 
-                await send_heartbeat(self, f"❌ Background task `{name}` failed: `{e}`")
+                await send_heartbeat(
+                    self, f"❌ Background task `{name}` failed: `{e}`", error=True
+                )
 
         task = asyncio.create_task(guarded(), name=name)
         self.background_tasks.add(task)
         task.add_done_callback(self.background_tasks.discard)
+
+    async def watch_copy(self) -> None:
+        """Check copy/ for edits every few seconds, so a reload (or a rejected
+        edit) is applied and logged straight away, not only when some text is
+        next needed."""
+        from nephthys.core.copytext import poll_copy
+        from nephthys.core.copytext import RELOAD_CHECK_SECONDS
+
+        while True:
+            await asyncio.sleep(RELOAD_CHECK_SECONDS)
+            try:
+                poll_copy()
+            except Exception:
+                log.exception("Copy watcher failed")
 
     async def run_daily_summary(self) -> None:
         from nephthys.tasks.daily_summary import send_daily_summary
@@ -219,9 +236,11 @@ class SupportBot(commands.Bot):
         log.info(f"Logged in as {self.user} (id={self.user.id if self.user else '?'})")
         if not self.announced_online:
             self.announced_online = True
-            from nephthys.discord_ops.heartbeat import send_heartbeat
+            if self.settings.log_startup_notice:
+                from nephthys.discord_ops.heartbeat import send_heartbeat
 
-            await send_heartbeat(self, "🟢 Cloudsail Support is online")
+                # A notice, not an error: sent @silent
+                await send_heartbeat(self, "🟢 Cloudsail Support is online")
 
     async def on_error(self, event_method: str, /, *args: Any, **kwargs: Any) -> None:
         log.exception(f"Unhandled error in {event_method}")

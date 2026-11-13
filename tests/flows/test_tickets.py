@@ -267,8 +267,45 @@ async def test_category_flow_with_subcategory_and_high_priority_alert():
     assert f["Priority"] == "🔴 High"
     assert f["Status"].startswith("🟡 Waiting")
     assert alert.embed.description == C.card.awaiting_first_message
-    assert ids(alert.view) == [None]  # link button only (no category select)
+    # Zammad is off: only "Open in Discord"; the footer is the T-number
+    assert [(b.label, b.url) for b in alert.view.children] == [
+        ("Open in Discord", f"https://discord.com/channels/100/{ticket.thread_id}")
+    ]
+    assert alert.embed.footer.text == "Ticket T-26"
     assert ticket.staff_card_message_id == alert.id
+
+
+def test_card_zammad_button_needs_a_mirrored_ticket_and_zammad_on():
+    from nephthys.database.enums import TicketSurface
+    from nephthys.database.tables import Ticket
+    from nephthys.discord_ops.staff_card import build_card_view
+
+    zammad_env = {
+        "TICKETS_CHANNEL_ID": "600",
+        "ZAMMAD_URL": "http://zammad:8080",
+        "ZAMMAD_TOKEN": "t",
+        "ZAMMAD_WEBHOOK_SECRET": "s" * 20,
+    }
+    on = make_settings(**zammad_env, ZAMMAD_PUBLIC_URL="https://support.example")
+    no_public_url = make_settings(**zammad_env)
+    off = make_settings(TICKETS_CHANNEL_ID="600")
+    pending = Ticket(id=5, thread_id=77, surface=TicketSurface.PRIVATE, number=29)
+    mirrored = Ticket(
+        id=5, thread_id=77, surface=TicketSurface.PRIVATE, number=29, zammad_ticket_id=8
+    )
+
+    def labels(ticket, settings):
+        view = build_card_view(ticket, settings)
+        return [(b.label, b.url) for b in cast(list[Any], view.children)]
+
+    discord_link = ("Open in Discord", "https://discord.com/channels/100/77")
+    assert labels(pending, on) == [discord_link]  # not mirrored yet
+    assert labels(mirrored, on) == [
+        ("Open in Zammad", "https://support.example/#ticket/zoom/8"),
+        discord_link,
+    ]
+    assert labels(mirrored, off) == [discord_link]  # Zammad switched off
+    assert labels(mirrored, no_public_url) == [discord_link]  # nowhere to link
 
 
 async def test_leaf_category_pings_owning_role():
@@ -369,10 +406,17 @@ async def test_close_by_opener_then_csat():
     await CloseTicketButton(ticket.id).callback(make_interaction(bot, user))
     ticket = await fresh(ticket)
     assert ticket.status == TicketStatus.CLOSED
+    # The CSAT prompt is its own message, after the closing message: short
+    # text and one row of five grey emoji buttons
     closing, csat = bot.sends(ticket.thread_id)[-2:]
     assert closing.content == C.tickets.closed.format(user=user.mention)
-    assert csat.content == C.tickets.csat_prompt
+    assert csat.content == "how did we do?"
     assert ids(csat.view) == [f"cs:csat:{ticket.id}:{n}" for n in range(1, 6)]
+    buttons = [cast(Any, b).item for b in csat.view.children]
+    assert [str(b.emoji) for b in buttons] == ["😡", "🙁", "😐", "🙂", "🤩"]
+    assert all(b.label is None for b in buttons)
+    assert {b.style for b in buttons} == {discord.ButtonStyle.secondary}
+    assert {b.row for b in buttons} == {None} and len(buttons) == 5
     # Locked for the player, but left open so they can still rate
     assert thread.locked and not thread.archived
     assert ticket.archived_at is None
@@ -394,11 +438,12 @@ async def test_close_by_opener_then_csat():
     vote = make_interaction(bot, user)
     await CSATButton(ticket.id, 4).callback(vote)
     kwargs = vote.response.edit_message.call_args.kwargs
-    assert kwargs == {
-        "content": C.tickets.csat_thanks.format(rating=4),
-        "view": None,
-        "suppress_embeds": True,
-    }
+    assert kwargs["content"] == "thanks! you rated 4/5 🙂"
+    assert kwargs["suppress_embeds"] is True
+    # Same row, now disabled
+    disabled = [cast(Any, b).item for b in kwargs["view"].children]
+    assert [str(b.emoji) for b in disabled] == ["😡", "🙁", "😐", "🙂", "🤩"]
+    assert all(b.disabled for b in disabled)
     assert (await fresh(ticket)).csat_rating == 4
     assert fields(card.embed)["CSAT"] == "4/5"
     # Rating ends the wait: the thread is archived now
@@ -526,10 +571,8 @@ async def test_escalate_moves_to_private_and_links_both_ways():
     assert community.status == TicketStatus.CLOSED
     assert public_thread.locked and public_thread.archived
     assert bot.reactions_on(q.id) == {"✅"}
-    card = bot.message(
-        bot.settings.staff_channel_id or 0, community.staff_card_message_id or 0
-    )
-    assert fields(card.embed)["Escalated to"] == f"[T-26]({private_link})"
+    # No community card any more (staff channel is #tickets only)
+    assert community.staff_card_message_id is None
 
     again = await escalate(bot, cog, mod, public_thread)
     assert again.response.send_message.call_args.args[

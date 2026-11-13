@@ -20,7 +20,11 @@ services:
     volumes:
       # Knowledge base for the AI assistant: edit files on the host, no rebuild needed
       - ./kb:/app/kb:ro
-      # All message text (copy/copy.toml): edit on the host, applies within seconds
+      # All message text: copy/copy.toml, copy/copy.local.toml (and
+      # ticket_categories.toml, read at startup). Edit on the host; copy edits
+      # apply within seconds and every reload (or rejected edit) is logged.
+      # Keep this a DIRECTORY mount: a single-file mount keeps pointing at the
+      # old file once an editor saves by replacing it, so edits never arrive.
       - ./copy:/app/copy:ro
     networks: [internal]
     logging:

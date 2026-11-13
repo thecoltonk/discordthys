@@ -38,6 +38,14 @@ class User(Table, tablename="app_user"):
     admin = Boolean(default=False)
     # The Zammad customer mirroring this player ("discord:<id>")
     zammad_user_id = Integer(null=True, default=None)
+    # Discord avatar as last seen (key = Discord's avatar hash, url = PNG)
+    avatar_key = Text(null=True, default=None)
+    avatar_url = Text(null=True, default=None)
+    # What the Zammad customer shows: name and avatar the bot last set there,
+    # and when it last tried to upload an avatar (at most once a day)
+    zammad_name = Text(null=True, default=None)
+    zammad_avatar_key = Text(null=True, default=None)
+    zammad_avatar_at = Timestamptz(null=True, default=None)
     created_at = Timestamptz(default=TimestamptzNow())
 
 

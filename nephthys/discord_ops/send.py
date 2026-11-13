@@ -33,15 +33,20 @@ async def send_text(
     delete_after: float | None = None,
     reference: Any = None,
     files: list[discord.File] | None = None,
+    silent: bool = False,
 ) -> Any:
-    """Send a plain-text message to a channel, thread or partial messageable."""
+    """Send a plain-text message to a channel, thread or partial messageable.
+    `silent` is Discord's @silent flag (no push or desktop notification)."""
+    extras = _extras(
+        view, delete_after=delete_after, reference=reference, files=files or None
+    )
+    if silent:
+        extras["silent"] = True
     return await target.send(
         content,
         suppress_embeds=True,
         allowed_mentions=allowed_mentions,
-        **_extras(
-            view, delete_after=delete_after, reference=reference, files=files or None
-        ),
+        **extras,
     )
 
 
@@ -106,11 +111,15 @@ async def send_embed(
 
 
 async def edit_text_response(
-    interaction: discord.Interaction[Any], content: str
+    interaction: discord.Interaction[Any],
+    content: str,
+    *,
+    view: discord.ui.View | None = None,
 ) -> None:
-    """Replace a message's text from a component interaction, removing its buttons."""
+    """Replace a message's text from a component interaction. Its buttons are
+    removed, or replaced by `view` (e.g. the same buttons, disabled)."""
     await interaction.response.edit_message(
-        content=content, view=None, suppress_embeds=True
+        content=content, view=view, suppress_embeds=True
     )
 
 

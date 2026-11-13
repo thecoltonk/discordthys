@@ -293,6 +293,8 @@ Admins work #tickets tickets in Zammad; players stay in their Discord thread. Th
 
 This was built and tested against **Zammad 7.2.3**.
 
+The chat-style skin for Zammad's agent ticket view (a Cloudflare Worker on `support.cloudsail.uk`, with its kill switch and rollback) is documented in [zammad-skin/README.md](zammad-skin/README.md) and [zammad-skin/DECISIONS.md](zammad-skin/DECISIONS.md).
+
 ### 7.1 Zammad: groups, a bot user and its tokens
 
 1. **Groups.** Admin → Groups: make sure there is a group per #tickets category. By default they have the same names: `Server Issue`, `Store`, `Bans & Appeals`, `Reports`, `Other`. To use other groups, set `zammad_group` per category in `copy/ticket_categories.toml`.

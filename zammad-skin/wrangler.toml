@@ -1,0 +1,21 @@
+# Cloudsail skin for Zammad (support.cloudsail.uk). See README.md.
+name = "cloudsail-support-skin"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+
+# The Worker sits in front of Zammad on the whole host. Only one Worker can own
+# this route: remove it from the old login Worker first (README, "Deploy").
+routes = [
+  { pattern = "support.cloudsail.uk/*", zone_name = "cloudsail.uk" },
+]
+
+# skin.css, skin.js, login.css and the logo are bundled as text and served by
+# the Worker from /__cloudsail/* (same origin, so Zammad's CSP allows them).
+rules = [
+  { type = "Text", globs = ["**/assets/*"], fallthrough = false },
+]
+
+[vars]
+# Global kill switch. "false" stops injecting the chat skin for everyone; the
+# login-page styling and the logout rewrite keep working. README, "Kill switch".
+SKIN_ENABLED = "true"

@@ -1,0 +1,58 @@
+ok    stock Zammad has no skin classes
+ok    login page: the Worker's login styling is applied  [{"css":true,"footerHidden":true}]
+ok    skin is on: bubbles and chat composer
+ok    composer defaults to a public note  [type=note internal=false]
+ok    article-type picker is hidden
+ok    opens scrolled to the newest message
+ok    composer is pinned in view
+ok    player bubbles left, agent bubbles right
+ok    messages are grouped by sender  [10 messages in 5 groups]
+ok    each group ends with a timestamp  ["02:58 PM"]
+ok    "(Player via Discord)" line shown as the sender name instead
+ok    per-message action rows are folded away
+ok    clicking a bubble shows Zammad's details and actions
+ok    Enter creates an article
+ok    ... of type note (never email/phone)  [type=note]
+ok    ... that is public  [internal=false]
+ok    ... on the current ticket, from the agent
+ok    composer is empty again and still a public note
+ok    stays scrolled to the newest message after sending
+ok    Shift+Enter does not send  [0 extra articles]
+ok    Shift+Enter adds a line break in the composer
+ok    both lines arrive in one public note  [["first line shift-enter-1794598481838","second line"]]
+ok    the toggle switches the composer to internal
+ok    internal composer is yellow  [rgb(255, 241, 184)]
+ok    with the toggle on, Enter creates an internal note  [type=note internal=true]
+ok    the internal bubble is yellow  [rgb(255, 241, 184)]
+ok    the toggle stays on until switched off
+ok    switched off again, the next reply is public
+ok    typing "::" opens Zammad's text-module popup
+ok    Enter picks the text module instead of sending  [Your rank has been re-applied. Please relog to see it.]
+ok    ... and the next Enter sends it as a public note
+ok    a new message from the player appears without a reload
+ok    ... and the view follows it  [{"top":71,"h":910,"ch":839,"lastTop":667,"lastBottom":751,"formTop":771,"mainTop":0}]
+ok    ... grouped and labelled like the rest
+ok    scrolled up: a "jump to newest" button appears
+ok    ... and returns to the newest message
+ok    a new message while scrolled up scrolls to it (as stock Zammad does)
+ok    attach with the paperclip button
+ok    paste a screenshot: it becomes an attachment, not inline
+ok    drop a file anywhere on the conversation
+ok    all three arrive as attachments on a public note  [button.png,dropped.png,pasted.png]
+ok    a file without text sends, named in the message  [📎 only-a-file.png]
+ok    Enter on an empty composer sends nothing
+ok    sidebar fields and Update still save (priority -> 3 high)
+ok    ... without creating an article
+ok    a ticket that isn't from Discord warns that notes aren't emailed  [Not a Discord ticket: your reply is saved as a note and is not emailed to the customer.Classic composer]
+ok    "Classic composer" gives that ticket Zammad's own form back, type picker included
+ok    ... and back
+ok    expected element missing: the chat composer steps aside
+ok    ... and Enter is Zammad's again (a new line, nothing sent)
+ok    ... and it comes back when the element does
+ok    "Classic view" turns the skin off for this browser  [{"html":false,"left":0,"stored":"off","button":"Chat view"}]
+ok    ... and it stays off after a reload
+ok    "Chat view" turns it back on
+ok    kill switch: an open tab drops the skin without a reload  [0 skin elements left]
+ok    Zammad's "visibility confirmation dialog" setting on: bubbles only, classic composer  [{"chat":true,"composer":false}]
+ok    dark theme: the skin follows Zammad's theme
+ok    no errors from the skin in the browser console

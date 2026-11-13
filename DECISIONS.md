@@ -417,3 +417,16 @@ PRODUCT.md's one-way "Zammad mirror" and its non-goal "replying from Zammad back
 **Tests**
 
 178. **The same integration tests run against two backends:** an in-process fake of Zammad's API (always, so CI needs nothing extra) and a real Zammad when `ZAMMAD_TEST_URL` is set. The fake copies behaviour observed on the real one (response shapes, the `_id` name rule, masked tokens, trigger conditions, signing, five webhook attempts, the restart after a migration, the unresolvable-host error). Running both keeps the fake honest: all of them passed against Zammad 7.2.3. Tests that need to break Zammad on purpose use the fake only.
+
+## Follow-up: staff channel, #tickets card and ticket UI polish, Zammad profiles
+
+One commit per numbered request, all in one PR. Entries 48–53 (community staff cards and the category select) are superseded by 179–184.
+
+**1. Staff channel = #tickets only**
+
+179. **#community-help tickets no longer get a staff card**, and the card's category select is gone (the `cs:cat:` component isn't registered any more). `STAFF_CHANNEL_ID` now carries #tickets alert cards, the daily summary and, only when AI is on in shadow mode, AI suggestions.
+180. **AI shadow suggestions still go to the staff channel.** They used to be replies to the community card; now they're standalone messages whose title links to the thread. They only exist when `AI_API_KEY` is set and `AI_ANSWER_MODE=shadow`, there's nowhere else to rate them, and dropping them would silently break shadow mode. Easy to move to a separate channel later if they turn out to be noise.
+181. **Community categories now come only from the AI** (when it's on). Staff can no longer pick one, since the select lived on the card. `TICKET_CATEGORIES` and "Opened by category" in `/stats` and the summary are unchanged.
+182. **Cards already posted for community tickets are left alone and keep working**: they're still re-rendered on claim/resolve/re-open (now with just the thread link, no select) and deleted with their ticket. Old cards on tickets that never change again keep their dead select; clicking it does nothing ("interaction failed"). Not worth a migration.
+183. **New "Claimed" count** in `/stats` and the daily summary, for both channels: tickets whose first staff claim (Discord reply or Zammad agent reply) happened in the window. With no cards, this is how staff see claims at a glance. Copy key `[stats] field_claimed`.
+184. **Removed copy keys are ignored with a warning, not rejected.** `[card] category_placeholder` no longer exists; a `copy.local.toml` that still sets it would otherwise stop the bot at startup (unknown keys are fatal). `REMOVED_KEYS` in `copytext.py` lists such keys.

@@ -15,7 +15,7 @@ A Discord support bot for **The Cloudsail Project**'s `#community-help` channel.
 - Staff slash commands:
   - inside ticket threads: `/faq`, `/ip`, `/resolve`, `/reopen`, and `/escalate` (#community-help threads only);
   - anywhere: `/waiting`, `/stats`.
-- Staff ticket cards in the staff channel (status, claimer, category picker), plus a daily summary.
+- No staff cards for #community-help: the staff channel is for #tickets. Community tickets still count in `/stats`, `/waiting` and the daily summary.
 - Optional AI, off unless `AI_API_KEY` is set:
   - auto-categorises new tickets;
   - suggests answers grounded only in [`kb/`](kb/). It runs in shadow mode by default: suggestions go to staff only, with 👍/👎 buttons.

@@ -48,9 +48,9 @@ The bot only makes **outbound** connections (to the Discord gateway and API). Yo
    - **Create Public Threads: ❌** and **Create Private Threads: ❌**. The bot creates the threads. If players make their own, the bot can't open the ticket thread.
    - Optional: a slowmode of a few seconds cuts down on accidental multi-message questions.
 3. Make sure the bot's role has the permissions above in #community-help. Either check that channel overrides don't remove them, or add an override for the bot role.
-4. **Staff role:** anyone with this role can claim tickets (by replying), resolve, re-open, set categories, rate AI suggestions, and use `/faq`, `/ip`, `/resolve`, `/reopen`, `/waiting` and `/stats`. Discord shows the slash commands to everyone; the bot refuses non-staff, privately. To hide them as well, use Server Settings → Integrations → Cloudsail Support → limit commands to the Staff role.
+4. **Staff role:** anyone with this role can claim tickets (by replying), resolve, re-open, rate AI suggestions, and use `/faq`, `/ip`, `/resolve`, `/reopen`, `/waiting` and `/stats`. Discord shows the slash commands to everyone; the bot refuses non-staff, privately. To hide them as well, use Server Settings → Integrations → Cloudsail Support → limit commands to the Staff role.
 5. Optional channels (staff-only):
-   - **Staff channel** (`STAFF_CHANNEL_ID`): a ticket card per new ticket, AI shadow suggestions, and the daily summary.
+   - **Staff channel** (`STAFF_CHANNEL_ID`): #tickets alert cards, AI shadow suggestions (if AI is on), and the daily summary. #community-help tickets don't get cards here; they show up in `/stats`, `/waiting` and the summary.
    - **Log channel:** errors and "online" notices (`LOG_CHANNEL_ID`).
    - The bot needs View Channel, Send Messages and Embed Links in both.
 6. Copy these IDs: the server (`GUILD_ID`), #community-help (`COMMUNITY_CHANNEL_ID`), the Staff role (`STAFF_ROLE_ID`), and optionally the staff channel, the log channel and your own user ID (`MAINTAINER_ID`).
@@ -164,12 +164,12 @@ This should return `{"healthy": true, ...}`. `docker compose ps` shows the bot a
 ### Smoke test in Discord
 
 1. The sticky "How #community-help works" message appears at the bottom of #community-help.
-2. As a non-staff account, post a question. The bot opens a thread, posts the auto-reply with **Mark as resolved**, reacts 🤔, posts one line in the staff feed, and moves the sticky back to the bottom after about 5 seconds.
+2. As a non-staff account, post a question. The bot opens a thread, posts the auto-reply with **Mark as resolved**, reacts 🤔, and moves the sticky back to the bottom after about 5 seconds.
 3. Reply in the thread as staff. `/waiting` no longer lists the ticket, and `/stats` shows it as in progress.
 4. Click **Mark as resolved** as the poster. You should see the closing message with **Re-open**, ✅ on the question, and the thread archived.
 5. Reply in the archived thread as the poster. The ticket re-opens automatically (🤔 is back, along with a "re-opened by" message).
 6. As staff, run `/faq`, `/ip`, `/resolve` and `/reopen` inside a ticket thread. `/faq` and `/ip` post publicly. Afterwards, `/waiting` still lists the ticket, because these commands don't count as a reply. Running them outside a ticket thread gives a private error.
-7. Check the **staff card** in the staff channel. It flips from 🟡 Waiting to 🔵 Claimed to ✅ Resolved as you go. Pick a category from its menu.
+7. Check that nothing was posted to the staff channel for these questions, and that `/stats` counts them (opened, claimed, resolved, top helpers).
 8. Optional: temporarily set `DAILY_SUMMARY_TIME` a couple of minutes ahead and restart the bot to see the summary.
 
 **#tickets** (if enabled):
@@ -203,9 +203,9 @@ Everything AI is off while `AI_API_KEY` is blank. To turn it on:
 
 What happens next:
 
-- **Categories:** new tickets get an AI category on their staff card, shown as "Bug (AI)". When staff pick a category from the menu, that choice wins, and the AI never overwrites it.
+- **Categories:** new #community-help tickets get an AI category, counted in `/stats` and the daily summary ("Opened by category").
 - **Shadow mode:**
-  - When the model is confident (`AI_ANSWER_MIN_CONFIDENCE`, default 0.8) and cites real `kb/` files, it posts a suggestion as a reply to the staff card, with 👍/👎 buttons. Players never see these.
+  - When the model is confident (`AI_ANSWER_MIN_CONFIDENCE`, default 0.8) and cites real `kb/` files, it posts the suggestion to the staff channel (linking to the thread), with 👍/👎 buttons. Players never see these.
   - Rate as many as you can. The daily summary reports shadow accuracy for the last 24h and 7 days.
 - **Going public:** once accuracy has been consistently high, set `AI_ANSWER_MODE=public`. A reasonable bar is 90% or better over at least 30 ratings.
   - Answers then appear in the thread, labelled as automated, with **This fixed it** (resolves the ticket) and **I still need a human** buttons.
@@ -431,7 +431,7 @@ What this exposes: profile pictures of Zammad users to anyone who knows a pictur
 | `Invalid configuration: …` | A required variable is missing or isn't a numeric ID. The message lists every problem. |
 | No thread appears for a question; the log channel says "Couldn't open a thread" | The bot is missing **Create Public Threads** in #community-help, or a player created a thread on the message first (turn off thread creation for `@everyone`). |
 | `/waiting` or `/stats` don't show up | The bot was invited without the `applications.commands` scope. Re-invite it with the URL from step 1.3. `GUILD_ID` must also be correct. |
-| No staff cards or daily summary | `STAFF_CHANNEL_ID` is unset, or the bot can't Send Messages / Embed Links there. |
+| No #tickets alert cards or daily summary | `STAFF_CHANNEL_ID` is unset, or the bot can't Send Messages / Embed Links there. |
 | `AI_MODEL is required when AI_API_KEY is set` | Set `AI_MODEL` to a model your provider serves. |
 | AI suggestions never appear | Check the logs for `AI answer … not posted: <reason>`. The common reasons are `low_confidence` and `no_answer` (the knowledge base doesn't cover the question). Add the missing facts to `kb/`. |
 | Threads don't archive | Give the bot **Manage Threads**. |

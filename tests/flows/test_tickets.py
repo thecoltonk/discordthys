@@ -526,10 +526,8 @@ async def test_escalate_moves_to_private_and_links_both_ways():
     assert community.status == TicketStatus.CLOSED
     assert public_thread.locked and public_thread.archived
     assert bot.reactions_on(q.id) == {"✅"}
-    card = bot.message(
-        bot.settings.staff_channel_id or 0, community.staff_card_message_id or 0
-    )
-    assert fields(card.embed)["Escalated to"] == f"[T-26]({private_link})"
+    # No community card any more (staff channel is #tickets only)
+    assert community.staff_card_message_id is None
 
     again = await escalate(bot, cog, mod, public_thread)
     assert again.response.send_message.call_args.args[

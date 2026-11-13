@@ -1,9 +1,13 @@
-"""Nephthys-style staff ticket cards in STAFF_CHANNEL_ID.
+"""Staff ticket cards in STAFF_CHANNEL_ID, for #tickets only.
 
-One card per ticket: the question, who asked (and how many tickets they've
-opened before), status and claimer, category (with a select menu), the latest
-AI suggestion, and a link to the thread. The card is edited whenever any of
-that changes.
+One card per private ticket: the question, who asked (and how many tickets
+they've opened before), status and claimer, priority, CSAT, and links to the
+thread. The card is edited whenever any of that changes.
+
+#community-help tickets no longer get cards (they're counted in /stats,
+/waiting and the daily summary instead). Cards posted for them before that
+change still exist, so rendering, refreshing and deleting a community card
+keeps working for those.
 """
 
 import logging
@@ -29,7 +33,6 @@ from nephthys.discord_ops.send import send_embed
 from nephthys.discord_ops.threads import best_effort
 from nephthys.discord_ops.threads import thread_link
 from nephthys.ui.buttons import link_only_view
-from nephthys.ui.buttons import staff_card_view
 
 if TYPE_CHECKING:
     from nephthys.bot import SupportBot
@@ -272,20 +275,14 @@ def build_card_embed(
     return embed
 
 
-def build_card_view(ticket: Ticket, categories: tuple[str, ...], guild_id: int):
-    url = thread_link(guild_id, ticket.thread_id)
-    if ticket.surface == TicketSurface.PRIVATE:
-        # The player picks the category themselves; staff just get the link
-        return link_only_view(url)
-    return staff_card_view(ticket.id, categories, ticket.category, url)
+def build_card_view(ticket: Ticket, guild_id: int):
+    return link_only_view(thread_link(guild_id, ticket.thread_id))
 
 
 async def render(bot: "SupportBot", ticket: Ticket):
     ctx = await load_card_context(ticket)
     embed = build_card_embed(ctx, bot.settings.guild_id, bot.settings.zammad_public_url)
-    view = build_card_view(
-        ticket, bot.settings.ticket_categories, bot.settings.guild_id
-    )
+    view = build_card_view(ticket, bot.settings.guild_id)
     return embed, view
 
 
@@ -297,7 +294,7 @@ async def post_staff_card(
     ping_roles: list[int] | None = None,
 ) -> None:
     channel_id = bot.settings.staff_channel_id
-    if not channel_id:
+    if not channel_id or ticket.surface != TicketSurface.PRIVATE:
         return
     embed, view = await render(bot, ticket)
     async with best_effort("staff_card_post"):

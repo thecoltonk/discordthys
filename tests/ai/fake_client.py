@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Any
 
@@ -26,6 +27,8 @@ class FakeChatClient:
         self.answer = answer if answer is not None else answer_json()
         self.fail = fail
         self.calls: list[list[dict[str, Any]]] = []
+        # When set, answers wait for it ("the model is still thinking")
+        self.answer_gate: asyncio.Event | None = None
 
     async def complete(self, messages: list[dict[str, str]]) -> str:
         self.calls.append(messages)
@@ -33,4 +36,6 @@ class FakeChatClient:
             raise RuntimeError("provider down")
         if "sort support questions" in messages[0]["content"]:
             return self.category
+        if self.answer_gate is not None:
+            await self.answer_gate.wait()
         return self.answer

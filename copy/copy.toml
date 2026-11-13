@@ -107,7 +107,6 @@ category_none = "—"
 # An AI-set category.
 # Placeholders: {category}
 category_ai = "{category} (AI)"
-category_placeholder = "Set a category…"
 field_ai = "🤖 AI"
 # Placeholders: {confidence}, {mode}, {outcome}
 ai_line = "{mode} answer ({confidence}) — {outcome}"
@@ -148,6 +147,8 @@ zammad_agent = "{name} (Zammad)"
 surface_community = "#community-help"
 surface_tickets = "#tickets"
 field_opened = "Opened"
+# Tickets claimed by staff in the period (first staff reply).
+field_claimed = "Claimed"
 field_resolved = "Resolved"
 # Placeholders: {resolved}, {without_staff}
 resolved_value = "{resolved} ({without_staff} without staff)"

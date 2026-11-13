@@ -91,57 +91,6 @@ def reopen_view(ticket_id: int) -> discord.ui.View:
 
 
 # ---------------------------------------------------------------------------
-# Staff ticket card: category select
-# ---------------------------------------------------------------------------
-
-
-class CategorySelect(
-    discord.ui.DynamicItem[discord.ui.Select],
-    template=r"cs:cat:(?P<ticket_id>[0-9]+)",
-):
-    def __init__(
-        self,
-        ticket_id: int,
-        categories: tuple[str, ...] = ("Other",),
-        current: str | None = None,
-    ) -> None:
-        self.ticket_id = ticket_id
-        super().__init__(
-            discord.ui.Select(
-                custom_id=f"cs:cat:{ticket_id}",
-                placeholder=get_copy().card.category_placeholder,
-                min_values=1,
-                max_values=1,
-                options=[
-                    discord.SelectOption(label=c, value=c, default=(c == current))
-                    for c in categories
-                ],
-            )
-        )
-
-    @classmethod
-    async def from_custom_id(
-        cls,
-        interaction: discord.Interaction[Any],
-        item: discord.ui.Item[Any],
-        match: re.Match[str],
-        /,
-    ) -> "CategorySelect":
-        categories = getattr(
-            getattr(interaction.client, "settings", None), "ticket_categories", ()
-        )
-        return cls(int(match["ticket_id"]), tuple(categories) or ("Other",))
-
-    async def callback(self, interaction: discord.Interaction[Any]) -> None:
-        from nephthys.discord_ops.flows import set_category_from_interaction
-
-        values = (interaction.data or {}).get("values") or self.item.values
-        await set_category_from_interaction(
-            interaction, self.ticket_id, values[0] if values else None
-        )
-
-
-# ---------------------------------------------------------------------------
 # AI answers
 # ---------------------------------------------------------------------------
 
@@ -254,19 +203,6 @@ class AINeedHumanButton(
         )
 
 
-def staff_card_view(
-    ticket_id: int, categories: tuple[str, ...], current: str | None, thread_url: str
-) -> discord.ui.View:
-    view = discord.ui.View(timeout=None)
-    view.add_item(CategorySelect(ticket_id, categories, current))
-    view.add_item(
-        discord.ui.Button(
-            label=get_copy().card.open_thread_button, url=thread_url, emoji="🧵", row=1
-        )
-    )
-    return view
-
-
 def link_only_view(thread_url: str) -> discord.ui.View:
     view = discord.ui.View(timeout=None)
     view.add_item(
@@ -294,7 +230,6 @@ def public_answer_view(suggestion_id: int) -> discord.ui.View:
 DYNAMIC_ITEMS = (
     ResolveButton,
     ReopenButton,
-    CategorySelect,
     AIFeedbackButton,
     AIFixedButton,
     AINeedHumanButton,

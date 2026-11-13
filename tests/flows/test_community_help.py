@@ -72,9 +72,8 @@ async def test_new_question_opens_thread_ticket_and_auto_reply(bot, cog):
 
     assert bot.reactions_on(msg.id) == {"🤔"}
 
-    [card] = bot.sends(bot.settings.staff_channel_id or 0)
-    assert card.content is None and card.embed.title.startswith(f"#{ticket.id}")
-    assert card.allowed_mentions.users is False  # no pings from the card
+    # No staff card: the staff channel is for #tickets
+    assert bot.sends(bot.settings.staff_channel_id or 0) == []
 
     [bot_msg] = await tickets.get_bot_messages(ticket.id)
     assert bot_msg.kind == BotMessageKind.AUTO_REPLY

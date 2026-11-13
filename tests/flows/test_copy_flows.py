@@ -21,13 +21,13 @@ from nephthys.core.copytext import EmbedsCopy
 from nephthys.core.copytext import parse_copy
 from nephthys.core.copytext import use_copy
 from nephthys.database.tables import Ticket
+from nephthys.discord_ops import staff_card
 from nephthys.discord_ops.sticky import build_sticky_embed
 from nephthys.discord_ops.threads import auto_reply_text
 from nephthys.tasks.close_stale import close_stale_tickets
 from nephthys.tasks.daily_summary import build_daily_summary
 from nephthys.ui.buttons import AIFeedbackButton
 from nephthys.ui.buttons import AINeedHumanButton
-from nephthys.ui.buttons import CategorySelect
 from nephthys.ui.buttons import ReopenButton
 from nephthys.ui.buttons import ResolveButton
 from tests.ai.fake_client import FakeChatClient
@@ -95,7 +95,7 @@ async def run_everything(bot: FakeBot, kb_dir: Path) -> list[Any]:
         make_user(),
     )
 
-    # New question (with and without text), staff reply (claim), card category
+    # New question (with and without text), staff reply (claim)
     q = make_message(bot, op, "how do i claim land?")
     await help_cog.on_message(q)
     await help_cog.on_message(make_message(bot, op, ""))
@@ -104,10 +104,6 @@ async def run_everything(bot: FakeBot, kb_dir: Path) -> list[Any]:
     assert ticket
     thread = bot.world.threads[ticket.thread_id]
     await help_cog.on_message(make_message(bot, mod, "use /claim", channel=thread))
-    select = interaction(mod)
-    select.data = {"values": ["Bug"]}
-    await CategorySelect(ticket.id).callback(select)
-    await CategorySelect(ticket.id).callback(interaction(rando))
 
     # Staff commands, including refusals and the unconfigured paths
     for command in (TicketCommands.faq, TicketCommands.ip):
@@ -144,6 +140,9 @@ async def run_everything(bot: FakeBot, kb_dir: Path) -> list[Any]:
     )
     await AIFeedbackButton(shadow.id, "down").callback(interaction(mod))
     await AIFeedbackButton(shadow.id, "down").callback(interaction(rando))
+    # Cards posted for community tickets before they were #tickets-only still
+    # render (with the AI line and category)
+    await staff_card.render(cast(Any, bot), await tickets.require_ticket(ticket.id))
     from nephthys.discord_ops.ai_flow import answer_ticket
 
     object.__setattr__(
@@ -274,6 +273,10 @@ async def run_tickets_everything(bot: FakeBot, interactions: list[Any]) -> None:
         )
         private = await pt.escalation_of(community.id)
         assert private
+        # A legacy community card shows "Escalated to"
+        await staff_card.render(
+            cast(Any, bot), await tickets.require_ticket(community.id)
+        )
         await CategoryButton(private.id, "other").callback(interaction(asker))
 
 
@@ -384,10 +387,8 @@ async def test_custom_copy_is_used(kb_dir: Path):
         make_message(bot, mod, "hi", channel=bot.world.threads[ticket.thread_id])
     )
     ticket = await tickets.require_ticket(ticket.id)
-    card = bot.message(
-        bot.settings.staff_channel_id or 0, ticket.staff_card_message_id or 0
-    )
-    assert {f.name: f.value for f in card.embed.fields}[
+    embed, _ = await staff_card.render(cast(Any, bot), ticket)
+    assert {f.name: f.value for f in embed.fields}[
         "Status"
     ] == f"👀 <@{mod.id}> is on it"
 

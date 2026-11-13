@@ -75,14 +75,11 @@ async def test_shadow_mode_categorises_and_posts_to_staff_only(kb_dir: Path):
     ticket = await tickets.require_ticket(ticket.id)
 
     assert (ticket.category, ticket.category_source) == ("Claims", "ai")
-    card, suggestion_msg = staff_sends(bot)
-    # The card was edited to show the AI category and the suggestion
-    f = fields(card.embed)
-    assert f["Category"] == "Claims (AI)"
-    assert f["🤖 AI"] == "shadow answer (90%) — awaiting feedback"
-
-    # Suggestion is a reply to the card, with 👍/👎, and never in the thread
-    assert suggestion_msg.reference.message_id == ticket.staff_card_message_id
+    # #community-help tickets have no staff card: the suggestion is a message
+    # of its own (linking to the thread), with 👍/👎, and never in the thread
+    [suggestion_msg] = staff_sends(bot)
+    assert getattr(suggestion_msg, "reference", None) is None
+    assert suggestion_msg.embed.url.endswith(f"/{ticket.thread_id}")
     assert suggestion_msg.embed.description == "use /claim"
     assert [c.custom_id for c in suggestion_msg.view.children] == [
         "cs:aifb:1:up",
@@ -100,7 +97,7 @@ async def test_shadow_mode_categorises_and_posts_to_staff_only(kb_dir: Path):
 
 async def test_shadow_feedback(kb_dir: Path):
     bot = ai_bot(kb_dir)
-    _, ticket, _ = await ask(bot)
+    await ask(bot)
     msg = staff_sends(bot)[-1]
     message = SimpleNamespace(embeds=[msg.embed])
 
@@ -120,12 +117,6 @@ async def test_shadow_feedback(kb_dir: Path):
     await AIFeedbackButton(1, "down").callback(again)
     assert "already rated" in again.response.send_message.call_args.args[0]
 
-    card = bot.message(
-        bot.settings.staff_channel_id or 0,
-        (await tickets.require_ticket(ticket.id)).staff_card_message_id or 0,
-    )
-    assert fields(card.embed)["🤖 AI"].endswith("👍 rated helpful")
-
 
 @pytest.mark.parametrize(
     ("answer", "reason"),
@@ -142,10 +133,9 @@ async def test_gated_answers_are_logged_not_posted(
 ):
     bot = ai_bot(kb_dir, FakeChatClient(answer=answer))
     _, _ticket, _ = await ask(bot)
-    assert len(staff_sends(bot)) == 1  # just the card
+    assert staff_sends(bot) == []  # nothing posted (and no community card)
     [s] = await AISuggestion.objects()
     assert not s.posted and s.skip_reason == reason
-    assert "🤖 AI" not in fields(staff_sends(bot)[0].embed)
 
 
 async def test_ai_error_still_creates_ticket(kb_dir: Path):
@@ -173,7 +163,7 @@ async def test_public_mode_fixed_resolves(kb_dir: Path):
         "cs:aifix:1",
         "cs:aihuman:1",
     ]
-    assert len(staff_sends(bot)) == 1  # public mode doesn't post a shadow copy
+    assert staff_sends(bot) == []  # public mode doesn't post a shadow copy
 
     message = SimpleNamespace(embeds=[answer_msg.embed])
     rando = make_interaction(bot, make_user(), message=message)
@@ -208,14 +198,19 @@ async def test_public_mode_needs_human_keeps_waiting(kb_dir: Path):
 
 
 async def test_public_mode_skips_if_resolved_meanwhile(kb_dir: Path):
-    bot = ai_bot(kb_dir, AI_ANSWER_MODE="public")
+    import asyncio
+
+    client = FakeChatClient()
+    client.answer_gate = asyncio.Event()  # the model is "thinking" until set
+    bot = ai_bot(kb_dir, client, AI_ANSWER_MODE="public")
     cog = CommunityHelp(cast(Any, bot))
     op = make_user(name="op")
     msg = make_message(bot, op)
     await cog.on_message(msg)
     ticket = await tickets.get_ticket_by_message(msg.id)
     assert ticket
-    await tickets.resolve(ticket.id, None)  # resolved before the AI task runs
+    await tickets.resolve(ticket.id, None)  # resolved while the AI is thinking
+    client.answer_gate.set()
     await bot.drain()
     [s] = await AISuggestion.objects()
     assert not s.posted and s.skip_reason == "ticket_closed"

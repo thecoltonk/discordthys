@@ -1,21 +1,31 @@
-from types import SimpleNamespace
+"""STAFF_CHANNEL_ID is for #tickets only: #community-help tickets get no staff
+card, but still count in /stats, /waiting and the daily summary. Cards posted
+for community tickets before that change keep refreshing."""
+
+from datetime import datetime
+from datetime import timedelta
+from datetime import UTC
 from typing import Any
 from typing import cast
 
 import pytest
 
 from nephthys.cogs.community_help import CommunityHelp
+from nephthys.cogs.staff import Staff
 from nephthys.core import tickets
 from nephthys.core.copytext import DEFAULT_COPY as C
+from nephthys.core.copytext import parse_copy
 from nephthys.discord_ops import flows
-from nephthys.ui.buttons import CategorySelect
+from nephthys.discord_ops import staff_card
+from nephthys.tasks.daily_summary import build_daily_summary
+from nephthys.tasks.daily_summary import send_daily_summary
+from nephthys.ui.buttons import DYNAMIC_ITEMS
 from nephthys.ui.buttons import ReopenButton
 from nephthys.ui.buttons import ResolveButton
 from tests.fakes import FakeBot
 from tests.fakes import make_interaction
 from tests.fakes import make_message
 from tests.fakes import make_user
-from tests.helpers import make_settings
 
 pytestmark = pytest.mark.usefixtures("db")
 
@@ -25,128 +35,147 @@ def fields(embed: Any) -> dict[str, str]:
 
 
 async def ask(
-    bot: FakeBot, cog: CommunityHelp, author=None, content="How do I claim land?"
+    bot: FakeBot,
+    cog: CommunityHelp,
+    author=None,
+    content="How do I claim land?",
+    *,
+    at: datetime | None = None,
 ):
     author = author or make_user(name="op")
     msg = make_message(bot, author, content)
+    if at is not None:
+        msg.created_at = at
     await cog.on_message(msg)
     ticket = await tickets.get_ticket_by_message(msg.id)
     assert ticket
     return msg, ticket, author
 
 
-def card_of(bot: FakeBot, ticket) -> Any:
-    assert ticket.staff_card_message_id, "card should be recorded on the ticket"
-    return bot.message(bot.settings.staff_channel_id or 0, ticket.staff_card_message_id)
-
-
 async def fresh(ticket):
     return await tickets.require_ticket(ticket.id)
 
 
-async def test_card_contents_and_past_tickets():
-    bot = FakeBot()
-    cog = CommunityHelp(cast(Any, bot))
-    op = make_user(name="op")
-    await ask(bot, cog, op, "first question")
-    _, ticket, _ = await ask(bot, cog, op, "second question\nwith details")
-
-    card = card_of(bot, await fresh(ticket))
-    embed = card.embed
-    assert embed.title == f"#{ticket.id} · second question"
-    assert "with details" in embed.description
-    assert embed.url.endswith(f"/{ticket.thread_id}")
-    f = fields(embed)
-    assert f["Asked by"] == f"{op.mention} · 1 past ticket"
-    assert f["Status"].startswith("🟡 Waiting for staff")
-    assert f["Category"] == "—"
-    # Category select + link button
-    select = card.view.children[0]
-    assert select.custom_id == f"cs:cat:{ticket.id}"
-    assert [o.label for o in select.item.options] == list(
-        make_settings().ticket_categories
-    )
-    assert card.view.children[1].url.endswith(f"/{ticket.thread_id}")
-
-
-async def test_card_tracks_claim_resolve_reopen():
+async def test_community_tickets_post_no_staff_card():
     bot = FakeBot()
     cog = CommunityHelp(cast(Any, bot))
     _, ticket, op = await ask(bot, cog)
+    mod = make_user(staff=True, name="mod")
     thread = bot.world.threads[ticket.thread_id]
+    await cog.on_message(make_message(bot, mod, "try /claim", channel=thread))
+    await ResolveButton(ticket.id).callback(make_interaction(bot, op))
+    await ReopenButton(ticket.id).callback(make_interaction(bot, op))
+
+    assert bot.sends(bot.settings.staff_channel_id or 0) == []
+    assert (await fresh(ticket)).staff_card_message_id is None
+    # The category select is gone for good
+    assert not any(
+        "cat" in str(c.__discord_ui_compiled_template__) for c in DYNAMIC_ITEMS
+    )  # type: ignore[attr-defined]
+
+
+async def test_community_activity_counts_everywhere_without_cards():
+    """Opened, claimed, resolved, top helpers and waiting all include
+    #community-help tickets, and nothing is posted to the staff channel."""
+    bot = FakeBot()
+    cog = CommunityHelp(cast(Any, bot))
+    mod = make_user(staff=True, name="mod")
+
+    # Answered by staff and resolved by the poster
+    _, answered, op = await ask(bot, cog, content="how do i claim?")
+    thread = bot.world.threads[answered.thread_id]
+    await cog.on_message(make_message(bot, mod, "try /claim", channel=thread))
+    await ResolveButton(answered.id).callback(make_interaction(bot, op))
+    # Claimed, still open
+    _, claimed, _ = await ask(bot, cog, content="lag spikes")
+    thread = bot.world.threads[claimed.thread_id]
+    await cog.on_message(make_message(bot, mod, "looking into it", channel=thread))
+    # Nobody answered for 4 days
+    _, waiting, _ = await ask(
+        bot,
+        cog,
+        content="where is spawn?",
+        at=datetime.now(UTC) - timedelta(days=4),
+    )
+    assert bot.sends(bot.settings.staff_channel_id or 0) == []
+
+    # /stats
+    i = make_interaction(bot, mod)
+    await cast(Any, Staff.stats).callback(Staff(cast(Any, bot)), i, 7)
+    [stats] = i.followup.send.call_args.kwargs["embeds"]
+    f = fields(stats)
+    assert f["Opened"] == "3"
+    assert f["Claimed"] == "2"
+    assert f["Resolved"] == "1 (0 without staff)"
+    assert f["Waiting > 3 days"] == "1"
+    assert f["Top helpers (resolved, by claimer)"] == f"1. <@{mod.id}> — 1"
+
+    # /waiting
+    i = make_interaction(bot, mod)
+    await cast(Any, Staff.waiting).callback(Staff(cast(Any, bot)), i)
+    listed = i.followup.send.call_args.kwargs["embed"].description
+    assert f"[#{waiting.id} where is spawn?]" in listed
+    assert f"#{answered.id} " not in listed and f"#{claimed.id} " not in listed
+
+    # Daily summary (the 4-day-old question is outside the 24h window but waiting)
+    [summary] = await build_daily_summary(
+        now=datetime.now(UTC) + timedelta(minutes=1),
+        guild_id=bot.settings.guild_id,
+        ai_enabled=False,
+        ai_mode="shadow",
+    )
+    f = fields(summary)
+    assert f["Opened"] == "2"
+    assert f["Claimed"] == "2"
+    assert f["Resolved"] == "1 (0 without staff)"
+    assert f"[#{waiting.id} where is spawn?]" in f["Waiting > 3 days (1)"]
+    assert f["Top helpers (resolved, by claimer)"] == f"1. <@{mod.id}> — 1"
+
+    # The summary is the only thing posted to the staff channel
+    await send_daily_summary(cast(Any, bot))
+    [only] = bot.sends(bot.settings.staff_channel_id or 0)
+    assert [e.title for e in only.embeds] == ["📊 #community-help daily summary"]
+
+
+async def legacy_card(bot: FakeBot, ticket) -> Any:
+    """A card posted for a community ticket before cards were #tickets-only."""
+    channel = bot.get_partial_messageable(bot.settings.staff_channel_id or 0)
+    embed, view = await staff_card.render(cast(Any, bot), await fresh(ticket))
+    msg = await channel.send(embed=embed, view=view)
+    await tickets.set_staff_card(ticket.id, channel.id, msg.id)
+    return msg
+
+
+async def test_legacy_community_card_still_tracks_status():
+    bot = FakeBot()
+    cog = CommunityHelp(cast(Any, bot))
+    _, ticket, op = await ask(bot, cog)
+    card = await legacy_card(bot, ticket)
+    # Link only: no category select
+    [link] = card.view.children
+    assert link.url.endswith(f"/{ticket.thread_id}")
 
     mod = make_user(staff=True, name="mod")
+    thread = bot.world.threads[ticket.thread_id]
     await cog.on_message(make_message(bot, mod, "try /claim", channel=thread))
+    assert fields(card.embed)["Status"] == f"🔵 Claimed by <@{mod.id}>"
+
+    await ResolveButton(ticket.id).callback(make_interaction(bot, op))
     assert (
-        fields(card_of(bot, await fresh(ticket)).embed)["Status"]
-        == f"🔵 Claimed by <@{mod.id}>"
+        fields(card.embed)["Status"]
+        == f"✅ Resolved by <@{op.id}> · credit <@{mod.id}>"
     )
 
-    await ResolveButton(ticket.id).callback(make_interaction(bot, op))
-    status = fields(card_of(bot, await fresh(ticket)).embed)["Status"]
-    assert status == f"✅ Resolved by <@{op.id}> · credit <@{mod.id}>"
 
-    await ReopenButton(ticket.id).callback(make_interaction(bot, op))
-    status = fields(card_of(bot, await fresh(ticket)).embed)["Status"]
-    assert status == f"🔵 Claimed by <@{mod.id}> (re-opened)"
-
-
-async def test_card_shows_no_credit_for_self_resolve():
-    bot = FakeBot()
-    cog = CommunityHelp(cast(Any, bot))
-    _, ticket, op = await ask(bot, cog)
-    await ResolveButton(ticket.id).callback(make_interaction(bot, op))
-    status = fields(card_of(bot, await fresh(ticket)).embed)["Status"]
-    assert status.endswith("· no staff credit")
-
-
-async def test_category_select_staff_only():
-    bot = FakeBot()
-    cog = CommunityHelp(cast(Any, bot))
-    _, ticket, _ = await ask(bot, cog)
-
-    player = make_interaction(bot, make_user())
-    player.data = {"values": ["Bug"]}
-    await CategorySelect(ticket.id).callback(player)
-    assert player.response.send_message.call_args.args[0] == C.errors.staff_only
-    assert (await fresh(ticket)).category is None
-
-    mod = make_interaction(bot, make_user(staff=True))
-    mod.data = {"values": ["Bug"]}
-    await CategorySelect(ticket.id).callback(mod)
-    t = await fresh(ticket)
-    assert (t.category, t.category_source) == ("Bug", "staff")
-    edited = mod.response.edit_message.call_args.kwargs
-    assert fields(edited["embed"])["Category"] == "Bug"
-    defaults = [o.label for o in edited["view"].children[0].item.options if o.default]
-    assert defaults == ["Bug"]
-
-
-async def test_category_select_from_custom_id_uses_configured_categories():
-    bot = FakeBot(make_settings(TICKET_CATEGORIES="A,B"))
-    item = await CategorySelect.from_custom_id(
-        cast(Any, SimpleNamespace(client=bot)),
-        cast(Any, None),
-        CategorySelect.__discord_ui_compiled_template__.fullmatch("cs:cat:7"),  # type: ignore[arg-type]
-    )
-    assert item.ticket_id == 7
-    assert [o.label for o in item.item.options] == ["A", "B"]
-
-
-async def test_card_deleted_with_ticket():
+async def test_legacy_community_card_deleted_with_ticket():
     bot = FakeBot()
     cog = CommunityHelp(cast(Any, bot))
     msg, ticket, _ = await ask(bot, cog)
-    ticket = await fresh(ticket)
+    card = await legacy_card(bot, ticket)
     await flows.handle_question_deleted(cast(Any, bot), msg.id)
-    assert (
-        bot.settings.staff_channel_id,
-        ticket.staff_card_message_id,
-    ) in bot.world.deleted_messages
+    assert (bot.settings.staff_channel_id, card.id) in bot.world.deleted_messages
 
 
-async def test_no_staff_channel_no_card():
-    bot = FakeBot(make_settings(STAFF_CHANNEL_ID=""))
-    cog = CommunityHelp(cast(Any, bot))
-    _, ticket, _ = await ask(bot, cog)
-    assert (await fresh(ticket)).staff_card_message_id is None
+def test_removed_copy_key_is_ignored_not_fatal():
+    copy = parse_copy('[card]\ncategory_placeholder = "Pick one"\n')
+    assert copy.card == C.card

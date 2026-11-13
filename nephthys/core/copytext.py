@@ -222,7 +222,6 @@ class CardCopy(Section):
     category_ai: str = Field(
         default="{category} (AI)", description="An AI-set category."
     )
-    category_placeholder: str = "Set a category…"
     field_ai: str = "🤖 AI"
     ai_line: str = "{mode} answer ({confidence}) — {outcome}"
     ai_pending: str = "awaiting feedback"
@@ -276,6 +275,10 @@ class StatsCopy(Section):
     surface_community: str = "#community-help"
     surface_tickets: str = "#tickets"
     field_opened: str = "Opened"
+    field_claimed: str = Field(
+        default="Claimed",
+        description="Tickets claimed by staff in the period (first staff reply).",
+    )
     field_resolved: str = "Resolved"
     resolved_value: str = "{resolved} ({without_staff} without staff)"
     field_median: str = "Median first staff response"
@@ -771,11 +774,22 @@ MOVED_KEYS: dict[tuple[str, str], str] = {
 }
 
 
+# Keys that no longer exist because what they labelled is gone. They're ignored
+# with a warning (not rejected), so an old copy.local.toml doesn't stop startup.
+REMOVED_KEYS: dict[tuple[str, str], str] = {
+    ("card", "category_placeholder"): "#community-help staff cards were removed",
+}
+
+
 def _load_toml(text: str, source: str) -> dict[str, Any]:
     try:
         data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
         raise CopyError(f"{source}: invalid TOML: {e}") from e
+    for (section, key), why in REMOVED_KEYS.items():
+        if isinstance(data.get(section), dict) and key in data[section]:
+            data[section].pop(key)
+            log.warning(f"{source}: ignoring [{section}] {key} ({why})")
     moved = []
     for (section, key), new in MOVED_KEYS.items():
         if isinstance(data.get(section), dict) and key in data[section]:

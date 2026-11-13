@@ -21,7 +21,6 @@ from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
 from nephthys.discord_ops.heartbeat import send_heartbeat
 from nephthys.discord_ops.send import followup_text
-from nephthys.discord_ops.send import respond_text
 from nephthys.errors.errors import PermissionDenied
 from nephthys.errors.errors import TicketAlreadyClosedError
 from nephthys.errors.errors import TicketNotClosedError
@@ -83,7 +82,8 @@ async def open_ticket(bot: "SupportBot", message: discord.Message) -> Ticket | N
     async with threads.best_effort("send_auto_reply"):
         await threads.send_auto_reply(bot, thread, ticket)
     await threads.add_reaction(bot, ticket, settings.open_reaction)
-    await staff_card.post_staff_card(bot, ticket)
+    # No staff card: STAFF_CHANNEL_ID is for #tickets. Community tickets still
+    # count in /stats, /waiting and the daily summary (they're read from the DB).
     if bot.ai_client is not None:
         from nephthys.discord_ops.ai_flow import process_new_ticket
 
@@ -259,36 +259,3 @@ async def handle_thread_deleted(bot: "SupportBot", thread_id: int) -> None:
     if ticket:
         await staff_card.delete_staff_card(bot, ticket)
         await tickets.delete_ticket(ticket.id)
-
-
-# ---------------------------------------------------------------------------
-# Categories (staff card select menu)
-# ---------------------------------------------------------------------------
-
-
-async def set_category_from_interaction(
-    interaction: discord.Interaction[Any], ticket_id: int, category: str | None
-) -> None:
-    bot = cast("SupportBot", interaction.client)
-    actor = threads.actor_from_user(interaction.user, bot.settings.staff_role_id)
-    if not actor.is_staff:
-        await respond_text(interaction, get_copy().errors.staff_only, ephemeral=True)
-        return
-    if category is None:  # nothing selected
-        await interaction.response.defer()
-        return
-    try:
-        ticket = await tickets.set_category(
-            ticket_id,
-            category,
-            source="staff",
-            allowed=bot.settings.ticket_categories,
-        )
-    except (tickets.InvalidCategoryError, TicketNotFoundError):
-        await respond_text(
-            interaction, get_copy().errors.ticket_missing, ephemeral=True
-        )
-        return
-    # Re-render the card in place as the interaction response
-    embed, view = await staff_card.render(bot, ticket)
-    await interaction.response.edit_message(embed=embed, view=view)

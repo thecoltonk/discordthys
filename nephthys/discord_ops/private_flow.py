@@ -43,6 +43,7 @@ from nephthys.ui.ticket_buttons import opener_view
 from nephthys.utils.metrics import TICKETS_OPENED
 from nephthys.utils.metrics import TICKETS_REOPENED
 from nephthys.utils.metrics import TICKETS_RESOLVED
+from nephthys.zammad import hooks as zammad_hooks
 
 if TYPE_CHECKING:
     from nephthys.bot import SupportBot
@@ -363,7 +364,9 @@ def ping_role_ids(bot: "SupportBot", ticket: Ticket) -> list[int]:
 
 
 async def on_leaf(bot: "SupportBot", ticket: Ticket) -> None:
-    """Post the staff alert card, pinging the owning role (+ Staff if High)."""
+    """Post the staff alert card, pinging the owning role (+ Staff if High),
+    and start the Zammad mirror."""
+    await zammad_hooks.ticket_ready(bot, ticket)
     if ticket.staff_card_message_id:
         return
     roles = ping_role_ids(bot, ticket)
@@ -388,13 +391,18 @@ async def close_private(
     user: discord.abc.User | None,
     *,
     source: str,
+    by_name: str | None = None,
+    mirror: bool = True,
 ) -> Ticket:
     """Resolve and post the closing message + CSAT prompt. The thread stays
     open (locked for the player when TICKETS_LOCK_ON_CLOSE) so the opener can
     rate; it's archived when they rate or after CSAT_TIMEOUT_HOURS. A ticket
     that was already rated has nothing to wait for and is archived now.
-    Raises the core refusal errors."""
-    result = await tickets.resolve(ticket_id, actor)
+    Raises the core refusal errors.
+
+    `by_name` is who closed it when that isn't a Discord user (a Zammad agent);
+    `mirror=False` means the close came from Zammad, so it isn't sent back."""
+    result = await tickets.resolve(ticket_id, actor, by_name=by_name)
     TICKETS_RESOLVED.labels(source=source).inc()
     ticket = result.ticket
     copy = get_copy().tickets
@@ -403,7 +411,7 @@ async def close_private(
         if thread.archived:
             async with threads.best_effort("unarchive"):
                 await thread.edit(archived=False)
-        who = user.mention if user is not None else get_copy().card.someone
+        who = who_text(user, by_name)
         closed_text = copy.closed.format(user=who)
         closed_style = get_copy().embeds.ticket_closed
         async with threads.best_effort("send_closed"):
@@ -430,7 +438,25 @@ async def close_private(
     if ticket.csat_rating is not None:
         await archive_private(bot, ticket)
     await staff_card.refresh_staff_card(bot, ticket.id)
+    if mirror:
+        await zammad_hooks.ticket_closed(bot, ticket, display_name_of(user))
     return ticket
+
+
+def display_name_of(user: discord.abc.User | None) -> str | None:
+    if user is None:
+        return None
+    return getattr(user, "display_name", None) or user.name
+
+
+def who_text(user: discord.abc.User | None, by_name: str | None) -> str:
+    """Who did something, for a thread message: a mention, or the bold name of
+    someone without a Discord account here (a Zammad agent)."""
+    if user is not None:
+        return user.mention
+    if by_name:
+        return f"**{discord.utils.escape_markdown(by_name)}**"
+    return get_copy().card.someone
 
 
 async def archive_private(bot: "SupportBot", ticket: Ticket) -> None:
@@ -447,13 +473,16 @@ async def archive_private(bot: "SupportBot", ticket: Ticket) -> None:
 async def reopen_private(
     bot: "SupportBot",
     ticket_id: int,
-    actor: Actor,
-    user: discord.abc.User,
+    actor: Actor | None,
+    user: discord.abc.User | None,
     *,
     source: str,
+    by_name: str | None = None,
+    mirror: bool = True,
 ) -> Ticket:
-    """Staff only (the player can't reach a locked thread anyway)."""
-    if not actor.is_staff:
+    """Staff only (the player can't reach a locked thread anyway). `actor=None`
+    with `by_name` is a re-open made in Zammad (`mirror=False`: not sent back)."""
+    if actor is not None and not actor.is_staff:
         raise PermissionDenied(
             "Only staff can re-open a private ticket", user_id=actor.discord_id
         )
@@ -469,9 +498,12 @@ async def reopen_private(
             await thread.add_user(discord.Object(opener.discord_id))
         async with threads.best_effort("send_reopened"):
             await send_text(
-                thread, get_copy().tickets.reopened.format(user=user.mention)
+                thread,
+                get_copy().tickets.reopened.format(user=who_text(user, by_name)),
             )
     await staff_card.refresh_staff_card(bot, ticket.id)
+    if mirror:
+        await zammad_hooks.ticket_reopened(bot, ticket, display_name_of(user))
     return ticket
 
 
@@ -533,6 +565,11 @@ async def csat_from_interaction(
     if ticket.status == TicketStatus.CLOSED and ticket.archived_at is None:
         await archive_private(bot, ticket)
     await staff_card.refresh_staff_card(bot, ticket_id)
+    await zammad_hooks.internal_note(
+        bot,
+        ticket,
+        f"CSAT: the player rated this ticket {rating}/5 in Discord.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -556,3 +593,6 @@ async def record_private_message(
     ):
         await staff_card.refresh_staff_card(bot, ticket.id)
     await record_reply(bot, message, ticket, actor)
+    await zammad_hooks.thread_message(
+        bot, message, ticket, is_staff=actor.is_staff, is_opener=is_opener
+    )

@@ -32,13 +32,44 @@ async def send_text(
     allowed_mentions: discord.AllowedMentions = NO_MENTIONS,
     delete_after: float | None = None,
     reference: Any = None,
+    files: list[discord.File] | None = None,
 ) -> Any:
     """Send a plain-text message to a channel, thread or partial messageable."""
     return await target.send(
         content,
         suppress_embeds=True,
         allowed_mentions=allowed_mentions,
-        **_extras(view, delete_after=delete_after, reference=reference),
+        **_extras(
+            view, delete_after=delete_after, reference=reference, files=files or None
+        ),
+    )
+
+
+async def send_webhook_text(
+    webhook: Any,
+    content: str,
+    *,
+    thread_id: int,
+    username: str,
+    avatar_url: str | None = None,
+    files: list[discord.File] | None = None,
+) -> Any:
+    """Post into a thread through a channel webhook, under another name and
+    avatar (Zammad agents). Plain text only, same rules as `send_text`: no
+    link previews, no pings. Returns the created message."""
+    extras: dict[str, Any] = {}
+    if avatar_url:
+        extras["avatar_url"] = avatar_url
+    if files:
+        extras["files"] = files
+    return await webhook.send(
+        content,
+        username=username,
+        thread=discord.Object(thread_id),
+        wait=True,
+        suppress_embeds=True,
+        allowed_mentions=NO_MENTIONS,
+        **extras,
     )
 
 

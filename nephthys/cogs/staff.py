@@ -30,6 +30,8 @@ from nephthys.discord_ops.send import followup_embeds
 from nephthys.discord_ops.send import followup_text
 from nephthys.discord_ops.send import respond_text
 from nephthys.discord_ops.threads import actor_from_user
+from nephthys.zammad.outbox import OutboxStats
+from nephthys.zammad.outbox import stats as outbox_stats
 
 log = logging.getLogger(__name__)
 
@@ -42,8 +44,26 @@ def waiting_lines(guild_id: int, waiting: list[Ticket]) -> list[str]:
     return [ticket_line(template, t, guild_id, TITLE_MAX) for t in waiting]
 
 
+def zammad_sync_text(sync: OutboxStats) -> str:
+    stats = get_copy().stats
+    if sync.healthy:
+        return stats.zammad_ok
+    return stats.zammad_backlog.format(
+        pending=sync.pending,
+        failed=sync.failed,
+        oldest=format_minutes(
+            sync.oldest_pending_seconds / 60
+            if sync.oldest_pending_seconds is not None
+            else None
+        ),
+    )
+
+
 def stats_embed(
-    summary: StatsSummary, days: int, surface: TicketSurface = TicketSurface.COMMUNITY
+    summary: StatsSummary,
+    days: int,
+    surface: TicketSurface = TicketSurface.COMMUNITY,
+    zammad: OutboxStats | None = None,
 ) -> discord.Embed:
     stats = get_copy().stats
     style = get_copy().embeds.stats
@@ -97,6 +117,10 @@ def stats_embed(
         value=leaderboard_text(summary.top_claimers),
         inline=False,
     )
+    if zammad is not None:
+        embed.add_field(
+            name=stats.field_zammad, value=zammad_sync_text(zammad), inline=False
+        )
     return embed
 
 
@@ -156,7 +180,8 @@ class Staff(commands.Cog):
             private = await calculate_stats(
                 since=since, until=now, surface=TicketSurface.PRIVATE
             )
-            embeds.append(stats_embed(private, days, TicketSurface.PRIVATE))
+            sync = await outbox_stats() if self.bot.settings.zammad_enabled else None
+            embeds.append(stats_embed(private, days, TicketSurface.PRIVATE, sync))
         await followup_embeds(interaction, embeds)
 
 

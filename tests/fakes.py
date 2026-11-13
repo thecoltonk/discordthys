@@ -120,6 +120,46 @@ class FakeMessageable:
         return FakePartialMessage(self.world, self.id, message_id)
 
 
+class FakeWebhook:
+    """A channel webhook owned by the bot. Messages it posts into a thread are
+    recorded like any other send, flagged `via_webhook`."""
+
+    def __init__(self, world: FakeWorld, channel_id: int, name: str):
+        self.world = world
+        self.channel_id = channel_id
+        self.name = name
+        self.id = next_id()
+        self.token = "webhook-token"
+        self.user = SimpleNamespace(id=BOT_USER_ID)
+        # Set to an exception to make every send fail (e.g. private-thread limits)
+        self.fail_with: Exception | None = None
+        self.calls = 0
+
+    async def send(self, content: str | None = None, **kwargs: Any) -> SentMessage:
+        self.calls += 1
+        if self.fail_with is not None:
+            raise self.fail_with
+        thread_id = kwargs.pop("thread").id
+        thread = self.world.threads.get(thread_id)
+        if thread is None or thread.parent_id != self.channel_id:
+            raise not_found()
+        if thread.archived:
+            thread.archived = False  # webhooks unarchive the thread
+        msg = SentMessage(
+            id=next_id(),
+            content=content,
+            channel_id=thread_id,
+            channel=SimpleNamespace(id=thread_id),
+            via_webhook=True,
+            webhook_id=self.id,
+            thread_id=thread_id,
+            **kwargs,
+        )
+        self.world.channel_sends[thread_id].append(msg)
+        self.world.messages[(thread_id, msg.id)] = msg
+        return msg
+
+
 def make_thread(world: FakeWorld, thread_id: int, parent_id: int) -> MagicMock:
     thread = MagicMock(spec=discord.Thread)
     thread.id = thread_id
@@ -166,6 +206,13 @@ def make_thread(world: FakeWorld, thread_id: int, parent_id: int) -> MagicMock:
 
         return gen()
 
+    async def fetch_message(message_id: int) -> Any:
+        found = next((m for m in thread.human_messages if m.id == message_id), None)
+        if found is None:
+            raise not_found()
+        return found
+
+    thread.fetch_message = AsyncMock(side_effect=fetch_message)
     thread.send = AsyncMock(side_effect=send)
     thread.edit = AsyncMock(side_effect=edit)
     thread.delete = AsyncMock(side_effect=delete)
@@ -187,7 +234,19 @@ class FakeBot:
         self.world = FakeWorld(self.settings)
         self.user = SimpleNamespace(id=BOT_USER_ID)
         self.ai_client: Any = None
+        self.zammad: Any = None
+        self.db_ready = True
+        self.latency = 0.01
         self.tasks: list[asyncio.Task[None]] = []
+
+    async def wait_until_ready(self) -> None:
+        return None
+
+    def is_ready(self) -> bool:
+        return True
+
+    def is_closed(self) -> bool:
+        return False
 
     def spawn(self, coro: Any, *, name: str) -> None:
         self.tasks.append(asyncio.ensure_future(coro))
@@ -313,6 +372,27 @@ def make_text_channel(bot: "FakeBot", channel_id: int) -> MagicMock:
 
         return gen()
 
+    channel.hooks = []
+    channel.webhooks_forbidden = False
+
+    async def webhooks() -> list[Any]:
+        if channel.webhooks_forbidden:
+            raise discord.Forbidden(
+                MagicMock(status=403, reason="Forbidden"), "Missing Permissions"
+            )
+        return list(channel.hooks)
+
+    async def create_webhook(**kwargs: Any) -> Any:
+        if channel.webhooks_forbidden:
+            raise discord.Forbidden(
+                MagicMock(status=403, reason="Forbidden"), "Missing Permissions"
+            )
+        hook = FakeWebhook(world, channel_id, kwargs.get("name", "hook"))
+        channel.hooks.append(hook)
+        return hook
+
+    channel.webhooks = AsyncMock(side_effect=webhooks)
+    channel.create_webhook = AsyncMock(side_effect=create_webhook)
     channel.create_thread = AsyncMock(side_effect=create_thread)
     channel.send = AsyncMock(side_effect=messageable.send)
     channel.history = history

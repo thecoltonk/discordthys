@@ -1,0 +1,27 @@
+# Zammad two-way sync: puts the bot on Zammad's Docker network as well.
+#
+# Use it together with the main file, either per command:
+#   docker compose -f docker-compose.yml -f docker-compose.zammad.yml up -d --build
+# or once, in .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.zammad.yml
+#
+# - The bot reaches Zammad at http://zammad-nginx:8080 (ZAMMAD_URL).
+# - Zammad's webhook reaches the bot at http://cloudsail-support-bot:3000/zammad/webhook.
+#   Nothing new is published on the host.
+#
+# The network belongs to Zammad's compose project and must exist already. Find
+# its name with:  docker network ls | grep zammad
+services:
+  bot:
+    environment:
+      ZAMMAD_URL: ${ZAMMAD_URL:-http://zammad-nginx:8080}
+    networks:
+      internal: {}
+      zammad:
+        aliases:
+          - cloudsail-support-bot
+
+networks:
+  zammad:
+    external: true
+    name: ${ZAMMAD_DOCKER_NETWORK:-zammad-docker-compose_default}

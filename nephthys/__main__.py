@@ -74,6 +74,38 @@ def load_copy_or_exit(settings: Settings) -> None:
         sys.exit(2)
 
 
+def zammad_setup(settings: Settings) -> int:
+    """`nephthys zammad-setup`: create/update what the sync needs in Zammad."""
+    from nephthys.zammad.setup import format_report
+    from nephthys.zammad.setup import redact
+    from nephthys.zammad.setup import run_setup
+
+    report = asyncio.run(run_setup(settings))
+    print(redact(format_report(report), settings))
+    return 0 if report.success else 1
+
+
+def zammad_retry(settings: Settings) -> int:
+    """`nephthys zammad-retry`: re-queue sync items the worker gave up on. The
+    running bot picks them up within seconds."""
+
+    async def run() -> int:
+        from nephthys.zammad import outbox
+        from piccolo_conf import DB
+
+        await DB.start_connection_pool()
+        try:
+            return await outbox.retry_failed()
+        finally:
+            await DB.close_connection_pool()
+
+    print(f"Re-queued {asyncio.run(run())} failed Zammad sync item(s).")
+    return 0
+
+
+COMMANDS = {"zammad-setup": zammad_setup, "zammad-retry": zammad_retry}
+
+
 def start() -> None:
     try:
         settings = get_settings()
@@ -82,6 +114,17 @@ def start() -> None:
         sys.exit(2)
     configure_logging(settings)
     load_copy_or_exit(settings)
+
+    if len(sys.argv) > 1:
+        command = COMMANDS.get(sys.argv[1])
+        if command is None:
+            print(
+                f"Unknown command {sys.argv[1]!r}. Commands: {', '.join(COMMANDS)} "
+                "(no command starts the bot).",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        sys.exit(command(settings))
 
     try:
         import uvloop

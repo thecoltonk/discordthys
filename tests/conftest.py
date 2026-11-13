@@ -19,6 +19,7 @@ async def migrated_db():
     from nephthys.piccolo_migrations import cloudsail_002_cards_categories_ai
     from nephthys.piccolo_migrations import cloudsail_003_private_tickets
     from nephthys.piccolo_migrations import cloudsail_004_ticket_archived_at
+    from nephthys.piccolo_migrations import cloudsail_005_zammad
 
     await Ticket.raw("DROP SCHEMA IF EXISTS public CASCADE")
     await Ticket.raw("CREATE SCHEMA public")
@@ -27,6 +28,7 @@ async def migrated_db():
         cloudsail_002_cards_categories_ai,
         cloudsail_003_private_tickets,
         cloudsail_004_ticket_archived_at,
+        cloudsail_005_zammad,
     ):
         await Ticket.raw(postgresql_code_block(migration.FORWARDS))
     yield
@@ -38,7 +40,8 @@ async def db(migrated_db):
     from nephthys.database.tables import Ticket
 
     await Ticket.raw(
-        "TRUNCATE app_user, ticket, bot_message, sticky_message, ai_suggestion "
+        "TRUNCATE app_user, ticket, bot_message, sticky_message, ai_suggestion, "
+        "zammad_outbox, zammad_message_map "
         "RESTART IDENTITY CASCADE"
     )
     await Ticket.raw("ALTER SEQUENCE ticket_number_seq RESTART WITH 1")

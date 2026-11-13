@@ -107,7 +107,13 @@ async def calculate_stats(
         for t in resolved
         if (claimer := fk_id_or_none(t.assigned_to)) is not None
     )
-    summary.resolved_without_staff = summary.resolved - sum(credits.values())
+    # Claimed by a Zammad agent: staffed, but there's no Discord user to credit
+    claimed_in_zammad = sum(
+        1 for t in resolved if t.assigned_to is None and t.assigned_name is not None
+    )
+    summary.resolved_without_staff = (
+        summary.resolved - sum(credits.values()) - claimed_in_zammad
+    )
 
     if credits:
         top = credits.most_common(leaderboard_size)

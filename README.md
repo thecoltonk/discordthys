@@ -33,6 +33,19 @@ A private, Mava-style ticket system, enabled by setting `TICKETS_CHANNEL_ID`:
 - `/escalate` moves a sensitive #community-help post into a private ticket.
 - Categories live in [`copy/ticket_categories.toml`](copy/ticket_categories.toml). Setup is in DEPLOY.md.
 
+## Zammad two-way sync (Phase 3, optional)
+
+Admins work #tickets tickets in Zammad; players stay in their Discord thread. Enabled by setting `ZAMMAD_URL` and `ZAMMAD_TOKEN`:
+
+- A leaf category creates a Zammad ticket (`T-<n> <category>`) in the category's group, with one Zammad customer per Discord player.
+- Every thread message becomes a public note article; attachments are copied.
+- An agent's **public** article is posted into the thread under their Zammad name and avatar. Internal notes never leave Zammad.
+- Close, re-open, CSAT and group changes sync both ways.
+- Everything goes through an outbox with retries, so Discord never waits on Zammad and nothing is posted twice.
+- `nephthys zammad-setup` configures Zammad (attribute, webhook, trigger); `nephthys zammad-retry` re-queues failed items.
+
+Design: PRODUCT.md §2b. Setup: DEPLOY.md §7.
+
 ## Changing what the bot says
 
 Every message players and staff see lives in [`copy/copy.toml`](copy/copy.toml), with comments listing each key's `{placeholders}`. That includes each embed's title, description, colour, footer and thumbnail (`[embeds.*]`).
@@ -63,6 +76,8 @@ TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/cs_test uv run pytest
 ```
 
 The tests wipe the database in `TEST_DATABASE_URL`, so point it at a throwaway database.
+
+The Zammad sync tests run against an in-process fake of Zammad's API. To also run them against a real, throwaway Zammad, set `ZAMMAD_TEST_URL`, `ZAMMAD_TEST_ADMIN_TOKEN` and `ZAMMAD_TEST_CALLBACK_HOST` (see `tests/zammad/conftest.py`).
 
 ## License
 

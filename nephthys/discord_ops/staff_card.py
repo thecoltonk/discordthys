@@ -76,6 +76,16 @@ def mention(user: User | None) -> str:
     return f"<@{user.discord_id}>" if user else get_copy().card.someone
 
 
+def zammad_agent(name: str) -> str:
+    return get_copy().card.zammad_agent.format(name=discord.utils.escape_markdown(name))
+
+
+def zammad_ticket_url(public_url: str | None, zammad_ticket_id: int) -> str | None:
+    if not public_url:
+        return None
+    return f"{public_url}/#ticket/zoom/{zammad_ticket_id}"
+
+
 def status_line(ctx: CardContext) -> tuple[str, str]:
     """The status text and its hex colour ([embeds.staff_card] color_*)."""
     card = get_copy().card
@@ -83,20 +93,27 @@ def status_line(ctx: CardContext) -> tuple[str, str]:
     t = ctx.ticket
     reopened = card.reopened_suffix if t.reopened_at is not None else ""
     if t.status == TicketStatus.CLOSED:
-        by = (
-            card.resolved_automatically
-            if ctx.closer is None
-            else card.resolved_by.format(user=mention(ctx.closer))
-        )
-        credit = (
-            card.credit.format(user=mention(ctx.claimer))
-            if ctx.claimer
-            else card.no_credit
-        )
+        if ctx.closer is not None:
+            by = card.resolved_by.format(user=mention(ctx.closer))
+        elif t.closed_by_name:
+            by = card.resolved_by.format(user=zammad_agent(t.closed_by_name))
+        else:
+            by = card.resolved_automatically
+        if ctx.claimer:
+            credit = card.credit.format(user=mention(ctx.claimer))
+        elif t.assigned_name:
+            credit = card.credit.format(user=zammad_agent(t.assigned_name))
+        else:
+            credit = card.no_credit
         return card.status_resolved.format(by=by, credit=credit), style.color_resolved
-    if ctx.claimer is not None:
+    if ctx.claimer is not None or t.assigned_name:
+        claimer = (
+            mention(ctx.claimer)
+            if ctx.claimer is not None
+            else zammad_agent(t.assigned_name or "")
+        )
         return (
-            card.status_claimed.format(claimer=mention(ctx.claimer), reopened=reopened),
+            card.status_claimed.format(claimer=claimer, reopened=reopened),
             style.color_claimed,
         )
     return card.status_waiting.format(reopened=reopened), style.color_waiting
@@ -157,7 +174,26 @@ def private_category_text(ticket: Ticket) -> str:
     return " › ".join(parts)
 
 
-def build_card_embed(ctx: CardContext, guild_id: int) -> discord.Embed:
+def zammad_field(ticket: Ticket, public_url: str | None) -> str | None:
+    """The Zammad ticket (linked when ZAMMAD_PUBLIC_URL is set) and its group."""
+    if ticket.zammad_ticket_id is None:
+        return None
+    card = get_copy().card
+    number = ticket.zammad_ticket_number or str(ticket.zammad_ticket_id)
+    url = zammad_ticket_url(public_url, ticket.zammad_ticket_id)
+    value = (
+        card.zammad_value.format(number=number, link=url)
+        if url
+        else card.zammad_value_no_link.format(number=number)
+    )
+    if ticket.zammad_group:
+        value += card.zammad_group.format(group=ticket.zammad_group)
+    return value
+
+
+def build_card_embed(
+    ctx: CardContext, guild_id: int, zammad_public_url: str | None = None
+) -> discord.Embed:
     card = get_copy().card
     style = get_copy().embeds.staff_card
     t = ctx.ticket
@@ -211,6 +247,8 @@ def build_card_embed(ctx: CardContext, guild_id: int) -> discord.Embed:
         else:
             category = card.category_none
         embed.add_field(name=card.field_category, value=category, inline=True)
+    if (zammad := zammad_field(t, zammad_public_url)) is not None:
+        embed.add_field(name=card.field_zammad, value=zammad, inline=True)
     if ctx.escalated_from is not None:
         embed.add_field(
             name=card.field_escalated,
@@ -244,7 +282,7 @@ def build_card_view(ticket: Ticket, categories: tuple[str, ...], guild_id: int):
 
 async def render(bot: "SupportBot", ticket: Ticket):
     ctx = await load_card_context(ticket)
-    embed = build_card_embed(ctx, bot.settings.guild_id)
+    embed = build_card_embed(ctx, bot.settings.guild_id, bot.settings.zammad_public_url)
     view = build_card_view(
         ticket, bot.settings.ticket_categories, bot.settings.guild_id
     )

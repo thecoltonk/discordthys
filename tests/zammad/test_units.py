@@ -420,3 +420,21 @@ async def test_queue_order_per_ticket_and_direction(db: None):
     await outbox.drop_unstarted(a.id)  # a is in Zammad: nothing is dropped
     assert await ZammadOutbox.count().where(ZammadOutbox.ticket == b.id) == 0
     assert (await outbox.stats()).pending == 3
+
+
+def test_agent_display_name_template_and_80_char_limit():
+    from nephthys.core.copytext import DEFAULT_COPY
+    from nephthys.zammad.text import agent_username
+
+    template = DEFAULT_COPY.zammad.agent_name
+    assert template == "{name} (Support)"
+    assert agent_username(template, "Bea Agent", "Support") == "Bea Agent (Support)"
+    # Too long: the name is shortened, the suffix survives, 80 characters max
+    long = agent_username(template, "Bartholomew " * 10, "Support")
+    assert len(long) == 80 and long.endswith("… (Support)")
+    # Reserved words are removed; nothing usable left -> the fallback alone
+    assert agent_username(template, "Discord Dave", "Support") == "Dave (Support)"
+    assert agent_username(template, "", "Support") == "Support"
+    assert agent_username(template, "clyde", "Support") == "Support"
+    # A custom template from copy
+    assert agent_username("{name} · Cloudsail", "Bea", "Support") == "Bea · Cloudsail"

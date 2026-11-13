@@ -316,10 +316,10 @@
 
 [zammad]
 # Zammad replies posted into #tickets threads.
-# The name shown on an agent's reply (max 80 characters; Discord does not allow "discord" in it).
+# The webhook display name on an agent's reply; {name} is their Zammad display name. Discord allows 80 characters: a long {name} is shortened so the rest still fits. "discord", "clyde", @ # : and ``` are removed (Discord refuses them).
 # Placeholders: {name}
-# agent_name = "{name}"
-# Used when an agent has no usable name.
+# agent_name = "{name} (Support)"
+# The whole display name when an agent has no usable name.
 # unknown_agent = "Support"
 # Plain bot message used when the reply can't be posted under the agent's name.
 # Placeholders: {name}, {text}

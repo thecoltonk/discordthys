@@ -403,7 +403,7 @@ What this exposes: profile pictures of Zammad users to anyone who knows a pictur
 
 1. In Discord, **Create Ticket** → pick **Store**. Within a few seconds the staff card gains an **Open in Zammad** button (before **Open in Discord**).
 2. Type "test 1" in the thread and attach an image. In Zammad the ticket shows the article "… (Player via Discord)" with the image.
-3. In Zammad, add a **public** note "hello from Zammad" with an attachment. It appears in the thread under your Zammad name and picture, with the file. The staff card says "Claimed by <you> (Zammad)".
+3. In Zammad, add a **public** note "hello from Zammad" with an attachment. It appears in the thread as "<your Zammad name> (Support)" with your picture, with the file. The staff card says "Claimed by <you> (Zammad)".
 4. Add an **internal** note. Nothing appears in Discord.
 5. Move the ticket to another group in Zammad. Nothing changes in Discord (the card doesn't show the group); the bot just records it.
 6. Close the ticket in Zammad. The thread gets the closing message and the 1–5 rating. Click a rating: Zammad gets an internal note "CSAT: … 4/5".

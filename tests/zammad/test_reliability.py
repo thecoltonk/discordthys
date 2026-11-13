@@ -195,7 +195,7 @@ async def test_reply_missed_while_the_bot_was_down_is_recovered(world: World):
     await world.sync.drain()
     [message] = world.replies(thread)
     assert message.content == "sent while the bot was down"
-    assert message.username == AGENT_NAME
+    assert message.username == f"{AGENT_NAME} (Support)"
     ticket = await world.fresh(ticket)
     assert ticket.status == TicketStatus.CLOSED and ticket.assigned_name == AGENT_NAME
     assert await world.sync.reconcile() == 0  # nothing left, nothing repeated

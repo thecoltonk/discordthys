@@ -535,14 +535,17 @@ class ZammadCopy(Section):
     }
 
     agent_name: str = Field(
-        default="{name}",
+        default="{name} (Support)",
         description=(
-            "The name shown on an agent's reply (max 80 characters; Discord "
-            'does not allow "discord" in it).'
+            "The webhook display name on an agent's reply; {name} is their Zammad "
+            "display name. Discord allows 80 characters: a long {name} is "
+            'shortened so the rest still fits. "discord", "clyde", @ # : and ``` '
+            "are removed (Discord refuses them)."
         ),
     )
     unknown_agent: str = Field(
-        default="Support", description="Used when an agent has no usable name."
+        default="Support",
+        description="The whole display name when an agent has no usable name.",
     )
     fallback_reply: str = Field(
         default="**{name} (Support):** {text}",

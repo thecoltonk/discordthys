@@ -255,7 +255,7 @@ async def test_agent_public_reply_is_posted_through_the_webhook(world: World):
         == "Hi **Alex**,\nfixed! See the store (https://cloudsail.uk/store)."
     )
     # The agent's Zammad display name, not a Discord account
-    assert message.username == AGENT_NAME
+    assert message.username == f"{AGENT_NAME} (Support)"
     assert message.avatar_url == DEFAULT_AVATAR  # this agent has no picture
     assert message.thread_id == thread.id
     # No embeds, no link previews, no pings
@@ -307,7 +307,7 @@ async def test_agent_avatar_uses_the_public_zammad_address(world: World):
     assert "article" in await world.sync.handle_webhook(payload)
     await world.sync.drain()
     [message] = world.replies(thread)
-    assert message.username == "Bea Agent"
+    assert message.username == "Bea Agent (Support)"
     assert message.avatar_url == f"{PUBLIC_URL}/api/v1/users/image/abc123"
 
 

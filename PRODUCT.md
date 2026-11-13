@@ -117,7 +117,7 @@ Zammad is the core support platform. **Admins work tickets in Zammad; the Discor
 
 - A Zammad **trigger + signed webhook** calls the bot when an agent adds a **public** article to a Discord ticket. The bot checks the signature (HMAC) before doing anything.
 - **Internal notes never go to Discord.** The trigger doesn't fire for them, and the bot drops any article that isn't explicitly public and written by an agent.
-- The reply is posted in the player's thread through a Discord webhook on #tickets, under the **agent's Zammad display name and avatar**. Plain text, no embeds. Attachments are forwarded as files.
+- The reply is posted in the player's thread through a Discord webhook on #tickets, under the **agent's Zammad display name and avatar**, shown as `<name> (Support)` by default (`[zammad] agent_name` in copy, at most 80 characters). Plain text, no embeds. Attachments are forwarded as files.
 - If the webhook can't post (missing permission, Discord refusing it for that thread), the bot posts `**<name> (Support):** <text>` itself and notes it in the log channel.
 - An agent's **first public reply claims** the ticket on the Discord side. The claimer is shown as the agent's Zammad name.
 - Messages the bot posts on behalf of Zammad are never mirrored back.

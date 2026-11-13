@@ -204,6 +204,15 @@ async def _run_from_interaction(
         TicketNotClosedError,
         TicketNotFoundError,
     ) as e:
+        if isinstance(e, PermissionDenied):
+            # Enough to tell a real refusal from a staff member who wasn't
+            # recognised as staff
+            log.info(
+                f"Refused {'re-open' if reopen else 'resolve'} ticket_id={ticket_id} "
+                f"user={interaction.user.id} type={type(interaction.user).__name__} "
+                f"roles={sorted(threads.role_ids_of(interaction.user))} "
+                f"staff_role={bot.settings.staff_role_id}"
+            )
         await followup_text(interaction, refusal_message(e) or str(e))
     except Exception as e:
         log.exception(f"Button failed ticket_id={ticket_id} reopen={reopen}")

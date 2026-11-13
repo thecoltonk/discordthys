@@ -46,7 +46,9 @@ async def close_stale_tickets(
         except Exception as e:
             log.exception(f"Failed to close stale ticket id={ticket.id}")
             await send_heartbeat(
-                bot, f"❌ Failed to auto-close stale ticket #{ticket.id}: `{e}`"
+                bot,
+                f"❌ Failed to auto-close stale ticket #{ticket.id}: `{e}`",
+                error=True,
             )
         if delay:
             await asyncio.sleep(delay)

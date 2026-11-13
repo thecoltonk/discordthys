@@ -457,3 +457,11 @@ One commit per numbered request, all in one PR. Entries 48–53 (community staff
 197. **`[zammad] agent_name` now defaults to `{name} (Support)`** (was `{name}`), `{name}` being the agent's Zammad display name. It's the webhook username on relayed replies. The key already existed; only its default and its handling of long names changed. The plain-message fallback (`fallback_reply`) already said "(Support)" and is unchanged.
 198. **The 80-character limit keeps the template's own text.** If the filled-in template is too long, `{name}` alone is shortened (ending in "…") so a suffix like "(Support)" survives; only if the template itself is longer than 80 characters is the whole thing cut. Words Discord refuses in usernames ("discord", "clyde", `@ # : `` ` ``) are still removed (entry 150).
 199. **An agent with no usable name is shown as just `unknown_agent`** ("Support"), not "Support (Support)". The claim still records "Support" as the claimer, as before.
+
+**6. Log channel**
+
+200. **`LOG_STARTUP_NOTICE` (default `false`)** controls the "🟢 Cloudsail Support is online" message. When on, it's sent once per process (not on reconnects), @silent.
+201. **Only real errors notify.** `send_heartbeat` takes `error=True` for failures that need a person; everything else goes out with Discord's @silent flag (in the channel, no push/desktop notification). `ping=True` (mentions `MAINTAINER_ID`) implies an error.
+     - **Errors:** unhandled event errors, failed background tasks, a failing button, a stale auto-close that failed, the Zammad sync giving up on items, and a ticket thread that couldn't be created (either channel) or a player who couldn't be added to theirs. Those last three were ⚠️ before; they're now ❌ because a player is left without a ticket.
+     - **Silent:** the startup notice, the Zammad backlog warning, the webhook-fallback note (the reply was still delivered), and "caught up".
+202. **Rate limiting is unchanged**: `ZammadSync.alert` still allows one message per topic per 30 minutes, and it now passes `error` through.

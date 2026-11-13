@@ -56,6 +56,8 @@ class Settings:
     ticket_categories_file_explicit: bool
     log_channel_id: int | None
     maintainer_id: int | None
+    # Post "online" to the log channel at startup (@silent)
+    log_startup_notice: bool
 
     # Database
     database_url: str
@@ -382,6 +384,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         csat_timeout_hours=csat_timeout,
         log_channel_id=snowflake("LOG_CHANNEL_ID", optional=True),
         maintainer_id=snowflake("MAINTAINER_ID", optional=True),
+        log_startup_notice=boolean("LOG_STARTUP_NOTICE", False),
         database_url=required("DATABASE_URL"),
         faq_url=get("FAQ_URL", "") or "",
         server_address=get("SERVER_ADDRESS", "") or "",

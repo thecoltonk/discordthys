@@ -238,13 +238,17 @@ async def open_private_ticket(
         )
     except discord.HTTPException as e:
         await send_heartbeat(
-            bot, f"⚠️ Couldn't create a private thread for T-{number}: `{e}`"
+            bot,
+            f"❌ Couldn't create a private thread for T-{number}: `{e}`",
+            error=True,
         )
         raise TicketCreateError(str(e)) from e
     try:
         await thread.add_user(discord.Object(player.discord_id))
     except discord.HTTPException as e:
-        await send_heartbeat(bot, f"⚠️ Couldn't add the player to T-{number}: `{e}`")
+        await send_heartbeat(
+            bot, f"❌ Couldn't add the player to T-{number}: `{e}`", error=True
+        )
         async with threads.best_effort("delete_failed_ticket_thread"):
             await thread.delete()
         raise TicketCreateError(str(e)) from e

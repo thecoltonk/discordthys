@@ -33,15 +33,20 @@ async def send_text(
     delete_after: float | None = None,
     reference: Any = None,
     files: list[discord.File] | None = None,
+    silent: bool = False,
 ) -> Any:
-    """Send a plain-text message to a channel, thread or partial messageable."""
+    """Send a plain-text message to a channel, thread or partial messageable.
+    `silent` is Discord's @silent flag (no push or desktop notification)."""
+    extras = _extras(
+        view, delete_after=delete_after, reference=reference, files=files or None
+    )
+    if silent:
+        extras["silent"] = True
     return await target.send(
         content,
         suppress_embeds=True,
         allowed_mentions=allowed_mentions,
-        **_extras(
-            view, delete_after=delete_after, reference=reference, files=files or None
-        ),
+        **extras,
     )
 
 

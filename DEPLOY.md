@@ -51,7 +51,7 @@ The bot only makes **outbound** connections (to the Discord gateway and API). Yo
 4. **Staff role:** anyone with this role can claim tickets (by replying), resolve, re-open, rate AI suggestions, and use `/faq`, `/ip`, `/resolve`, `/reopen`, `/waiting` and `/stats`. Discord shows the slash commands to everyone; the bot refuses non-staff, privately. To hide them as well, use Server Settings → Integrations → Cloudsail Support → limit commands to the Staff role.
 5. Optional channels (staff-only):
    - **Staff channel** (`STAFF_CHANNEL_ID`): #tickets alert cards, AI shadow suggestions (if AI is on), and the daily summary. #community-help tickets don't get cards here; they show up in `/stats`, `/waiting` and the summary.
-   - **Log channel:** errors and "online" notices (`LOG_CHANNEL_ID`).
+   - **Log channel** (`LOG_CHANNEL_ID`): errors and notable events. Only real errors notify (and ping `MAINTAINER_ID` where it matters); everything else, such as "Zammad sync is behind" or "caught up", is posted @silent. The "online" notice at startup is off unless `LOG_STARTUP_NOTICE=true`.
    - The bot needs View Channel, Send Messages and Embed Links in both.
 6. Copy these IDs: the server (`GUILD_ID`), #community-help (`COMMUNITY_CHANNEL_ID`), the Staff role (`STAFF_ROLE_ID`), and optionally the staff channel, the log channel and your own user ID (`MAINTAINER_ID`).
 
@@ -132,6 +132,7 @@ Edit `.env` and set at least these values:
 | `POSTGRES_PASSWORD` | a long random password, e.g. from `openssl rand -hex 24` |
 | `FAQ_URL`, `SERVER_ADDRESS` | your FAQ link and the Minecraft server address |
 | `STAFF_CHANNEL_ID`, `LOG_CHANNEL_ID`, `MAINTAINER_ID` | optional, but recommended |
+| `LOG_STARTUP_NOTICE` | `false` (default): no "online" message in the log channel at startup |
 
 Every variable is documented in `.env.example`. In Docker, `DATABASE_URL` is built from the `POSTGRES_*` values automatically, so you don't need to set it.
 

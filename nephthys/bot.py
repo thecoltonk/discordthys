@@ -186,7 +186,9 @@ class SupportBot(commands.Bot):
                 log.exception(f"Background task {name} failed")
                 from nephthys.discord_ops.heartbeat import send_heartbeat
 
-                await send_heartbeat(self, f"❌ Background task `{name}` failed: `{e}`")
+                await send_heartbeat(
+                    self, f"❌ Background task `{name}` failed: `{e}`", error=True
+                )
 
         task = asyncio.create_task(guarded(), name=name)
         self.background_tasks.add(task)
@@ -219,9 +221,11 @@ class SupportBot(commands.Bot):
         log.info(f"Logged in as {self.user} (id={self.user.id if self.user else '?'})")
         if not self.announced_online:
             self.announced_online = True
-            from nephthys.discord_ops.heartbeat import send_heartbeat
+            if self.settings.log_startup_notice:
+                from nephthys.discord_ops.heartbeat import send_heartbeat
 
-            await send_heartbeat(self, "🟢 Cloudsail Support is online")
+                # A notice, not an error: sent @silent
+                await send_heartbeat(self, "🟢 Cloudsail Support is online")
 
     async def on_error(self, event_method: str, /, *args: Any, **kwargs: Any) -> None:
         log.exception(f"Unhandled error in {event_method}")

@@ -64,7 +64,9 @@ async def open_ticket(bot: "SupportBot", message: discord.Message) -> Ticket | N
         # e.g. the message was deleted already, or someone made a thread on it
         log.warning(f"Could not create thread for message_id={message.id}: {e}")
         await send_heartbeat(
-            bot, f"⚠️ Couldn't open a thread for {message.jump_url}: `{e}`"
+            bot,
+            f"❌ Couldn't open a thread for {message.jump_url}: `{e}`",
+            error=True,
         )
         return None
 

@@ -346,6 +346,9 @@ class World:
     def log(self) -> list[str]:
         return [m.content for m in self.bot.sends(self.settings.log_channel_id)]
 
+    def log_messages(self) -> list[Any]:
+        return list(self.bot.sends(self.settings.log_channel_id))
+
     def card(self, ticket: Any) -> Any:
         return self.bot.message(
             ticket.staff_card_channel_id, ticket.staff_card_message_id

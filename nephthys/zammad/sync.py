@@ -163,7 +163,11 @@ class ZammadSync:
 
     # -- log-channel reporting (rate-limited) ----------------------------------------
 
-    async def alert(self, topic: str, text: str, *, ping: bool = False) -> bool:
+    async def alert(
+        self, topic: str, text: str, *, error: bool = False, ping: bool = False
+    ) -> bool:
+        """One log-channel message per topic per ALERT_INTERVAL_SECONDS.
+        Only `error` (or `ping`) messages notify; the rest are @silent."""
         now = time.monotonic()
         last = self._alerted.get(topic)
         if last is not None and now - last < ALERT_INTERVAL_SECONDS:
@@ -171,7 +175,7 @@ class ZammadSync:
         self._alerted[topic] = now
         from nephthys.discord_ops.heartbeat import send_heartbeat
 
-        await send_heartbeat(self.bot, text, ping=ping)
+        await send_heartbeat(self.bot, text, error=error, ping=ping)
         return True
 
     async def report_health(self) -> None:

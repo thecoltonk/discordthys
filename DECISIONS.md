@@ -430,3 +430,10 @@ One commit per numbered request, all in one PR. Entries 48–53 (community staff
 182. **Cards already posted for community tickets are left alone and keep working**: they're still re-rendered on claim/resolve/re-open (now with just the thread link, no select) and deleted with their ticket. Old cards on tickets that never change again keep their dead select; clicking it does nothing ("interaction failed"). Not worth a migration.
 183. **New "Claimed" count** in `/stats` and the daily summary, for both channels: tickets whose first staff claim (Discord reply or Zammad agent reply) happened in the window. With no cards, this is how staff see claims at a glance. Copy key `[stats] field_claimed`.
 184. **Removed copy keys are ignored with a warning, not rejected.** `[card] category_placeholder` no longer exists; a `copy.local.toml` that still sets it would otherwise stop the bot at startup (unknown keys are fatal). `REMOVED_KEYS` in `copytext.py` lists such keys.
+
+**2. #tickets staff card**
+
+185. **The Zammad text field is replaced by link buttons:** **Open in Zammad** first, then **Open in Discord** (the old "Open thread" button, relabelled; the key is still `[card] open_thread_button`). Discord draws every link button in the same grey: a link button can't be blurple, so "primary" here means first in the row.
+186. **When the Zammad button shows:** the sync is on, the ticket has a Zammad ID, and `ZAMMAD_PUBLIC_URL` is set (the bot's own `ZAMMAD_URL` is a Docker-network address browsers can't open). Otherwise only Open in Discord. The card is re-rendered when the mirror lands (it already was, for the old field), so the button appears then.
+187. **The card no longer shows the Zammad group or ticket number.** The button replaces both; the group is still stored (`ticket.zammad_group`) and a group change still refreshes the card. `[card] field_zammad`, `zammad_value`, `zammad_value_no_link` and `zammad_group` are removed (ignored with a warning if set, per 184).
+188. **Footer default is `Ticket {ref}`**: `Ticket T-29` on #tickets cards (`#<id>` only on old community cards). `{id}` stays allowed, so a customised footer keeps working.

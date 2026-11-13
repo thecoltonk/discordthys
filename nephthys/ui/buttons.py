@@ -203,12 +203,19 @@ class AINeedHumanButton(
         )
 
 
-def link_only_view(thread_url: str) -> discord.ui.View:
+def card_links_view(
+    thread_url: str, *, zammad_url: str | None = None
+) -> discord.ui.View:
+    """Staff card buttons: "Open in Zammad" (when there's a Zammad ticket to
+    link to) first, then "Open in Discord"."""
+    card = get_copy().card
     view = discord.ui.View(timeout=None)
-    view.add_item(
-        discord.ui.Button(
-            label=get_copy().card.open_thread_button, url=thread_url, emoji="🧵"
+    if zammad_url:
+        view.add_item(
+            discord.ui.Button(label=card.open_zammad_button, url=zammad_url, emoji="🎫")
         )
+    view.add_item(
+        discord.ui.Button(label=card.open_thread_button, url=thread_url, emoji="🧵")
     )
     return view
 

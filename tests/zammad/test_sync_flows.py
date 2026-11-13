@@ -100,11 +100,18 @@ async def test_leaf_category_creates_the_zammad_ticket(world: World):
     assert first["body"].startswith("Alex (Player via Discord)")
     assert f"T-{ticket.number}" in first["body"]
 
-    # The staff card links to the Zammad ticket
-    card = fields(world.card(ticket).embed)
-    assert card[C.card.field_zammad] == (
-        f"[#{z['number']}]({PUBLIC_URL}/#ticket/zoom/{z['id']}) · Store"
-    )
+    # The staff card links to the Zammad ticket with a button (first), then to
+    # the thread; no Zammad text field, and the footer shows the T-number
+    card = world.card(ticket)
+    assert [(b.label, b.url) for b in card.view.children] == [
+        (C.card.open_zammad_button, f"{PUBLIC_URL}/#ticket/zoom/{z['id']}"),
+        (
+            C.card.open_thread_button,
+            f"https://discord.com/channels/100/{ticket.thread_id}",
+        ),
+    ]
+    assert "Zammad" not in fields(card.embed)
+    assert card.embed.footer.text == f"Ticket T-{ticket.number}"
 
 
 async def test_no_zammad_ticket_before_a_leaf_is_reached(world: World):
@@ -475,7 +482,7 @@ async def test_reopen_in_zammad_reopens_the_discord_ticket(world: World):
     assert (await world.admin.get_ticket(ticket.zammad_ticket_id))["state"] == "open"
 
 
-async def test_group_change_in_zammad_updates_the_staff_card(world: World):
+async def test_group_change_in_zammad_is_recorded(world: World):
     ticket, _thread, _ = await world.open_ticket("store")
     ticket = await world.synced(ticket)
     await world.agent.update_ticket(ticket.zammad_ticket_id, {"group": "Reports"})
@@ -484,7 +491,6 @@ async def test_group_change_in_zammad_updates_the_staff_card(world: World):
         return (await world.fresh(ticket)).zammad_group == "Reports"
 
     await world.eventually(moved, "the group change")
-    assert fields(world.card(ticket).embed)[C.card.field_zammad].endswith(" · Reports")
     assert (await world.fresh(ticket)).status == TicketStatus.OPEN
 
 
@@ -579,9 +585,12 @@ async def test_oversized_attachments_are_named_not_copied(backend: Any, db: None
         assert last["body"].endswith(
             "see file\n\n[Attachment not mirrored (too large): big.png]"
         )
-        card = fields(world.card(ticket).embed)
-        assert card["field_zammad:"].startswith("zammad_value:")
-        assert "zammad_group:Store" in card["field_zammad:"]
+        card = world.card(ticket)
+        assert [b.label for b in card.view.children] == [
+            "open_zammad_button:",
+            "open_thread_button:",
+        ]
+        assert card.embed.footer.text == f"footer:{ticket.id}|T-{ticket.number}"
 
         await reply(
             world,

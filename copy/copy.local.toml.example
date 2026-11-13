@@ -114,7 +114,10 @@
 # ai_not_helpful = "👎 rated not helpful"
 # ai_fixed = "✅ player said it fixed it"
 # ai_needs_human = "🙋 player still needs a human"
-# open_thread_button = "Open thread"
+# Card link button to the ticket's Discord thread.
+# open_thread_button = "Open in Discord"
+# #tickets card link button to the Zammad ticket (shown once the ticket is mirrored, when ZAMMAD_PUBLIC_URL is set).
+# open_zammad_button = "Open in Zammad"
 # category_pending = "category not picked yet"
 # awaiting_first_message = "*(waiting for the player's first message)*"
 # field_priority = "Priority"
@@ -127,16 +130,6 @@
 # field_escalated_to = "Escalated to"
 # Placeholders: {link}, {number}
 # escalated_to_value = "[T-{number}]({link})"
-# field_zammad = "Zammad"
-# Link to the Zammad ticket (needs ZAMMAD_PUBLIC_URL).
-# Placeholders: {link}, {number}
-# zammad_value = "[#{number}]({link})"
-# The Zammad ticket number when ZAMMAD_PUBLIC_URL is unset.
-# Placeholders: {number}
-# zammad_value_no_link = "#{number}"
-# Added after the Zammad ticket: the group it is in now.
-# Placeholders: {group}
-# zammad_group = " · {group}"
 # A Zammad agent, where the card would mention a Discord user.
 # Placeholders: {name}
 # zammad_agent = "{name} (Zammad)"
@@ -373,8 +366,9 @@
 # description = "{question}"
 # Hex colour like #5865F2 (empty = none).
 # color = ""
+# {ref} is T-<number> for #tickets (#<id> on old #community-help cards).
 # Placeholders: {id}, {ref}
-# footer = "Ticket #{id}"
+# footer = "Ticket {ref}"
 # Optional image URL (https://...).
 # thumbnail_url = ""
 # #tickets cards.

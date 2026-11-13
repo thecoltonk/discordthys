@@ -110,7 +110,7 @@ Zammad is the core support platform. **Admins work tickets in Zammad; the Discor
 - **Customer.** One Zammad customer per Discord player, found or created: login `discord:<user_id>`, name = display name, email `<user_id>@discord.invalid`, plus a custom **Discord ID** attribute.
 - **Messages.** Every message in the thread becomes an article: type *note*, public, starting with `<name> (Player via Discord)` or `<name> (Staff via Discord)`. Attachments are uploaded when they fit; otherwise they're named in the article.
 - **Escalated tickets** (`/escalate`) include the original public question and a link to the public thread.
-- **Staff card** links to the Zammad ticket and shows its group.
+- **Staff card** has an **Open in Zammad** button (first) next to **Open in Discord**. Until the ticket is mirrored (or with the sync off) only the Discord button shows; the Zammad one is added when the mirror lands. The footer shows the T-number.
 - **No email, ever.** The bot only writes notes (never email-type articles), the customer's address can't receive mail, and Zammad is told to skip `@discord.invalid` for trigger emails.
 
 ### Zammad → Discord
@@ -131,7 +131,7 @@ Zammad is the core support platform. **Admins work tickets in Zammad; the Discor
 | Re-opened in Zammad | Discord thread unlocked and unarchived, player re-added |
 | Re-opened in Discord (`/reopen`) | Zammad ticket set back to open |
 | CSAT rating in Discord | Internal note on the Zammad ticket |
-| Group changed in Zammad | Staff card updated |
+| Group changed in Zammad | Recorded on the ticket (the card no longer shows the group) |
 
 Tickets created directly in Zammad are out of scope and left alone.
 

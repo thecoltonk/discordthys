@@ -341,7 +341,7 @@ Zammad's nginx only listens on the host's `127.0.0.1:8090`, which a container ca
 | `ZAMMAD_TOKEN` | the bot user's token (§7.1 step 3) |
 | `ZAMMAD_SETUP_TOKEN` | the admin token (§7.1 step 4); remove after setup |
 | `ZAMMAD_WEBHOOK_SECRET` | a random secret: `openssl rand -hex 32` |
-| `ZAMMAD_PUBLIC_URL` | `https://support.cloudsail.uk` (ticket links on staff cards, agent avatars) |
+| `ZAMMAD_PUBLIC_URL` | `https://support.cloudsail.uk` (the staff card's **Open in Zammad** button, agent avatars; without it the button isn't shown) |
 | `ZAMMAD_DEFAULT_AVATAR_URL` | a public image URL used when an agent has no picture or it can't be shown |
 | `ZAMMAD_WEBHOOK_URL` | leave at `http://cloudsail-support-bot:3000/zammad/webhook` |
 
@@ -401,11 +401,11 @@ What this exposes: profile pictures of Zammad users to anyone who knows a pictur
 
 ### 7.7 Smoke test
 
-1. In Discord, **Create Ticket** → pick **Store**. Within a few seconds the staff card gains a **Zammad** field linking to the new ticket.
+1. In Discord, **Create Ticket** → pick **Store**. Within a few seconds the staff card gains an **Open in Zammad** button (before **Open in Discord**).
 2. Type "test 1" in the thread and attach an image. In Zammad the ticket shows the article "… (Player via Discord)" with the image.
 3. In Zammad, add a **public** note "hello from Zammad" with an attachment. It appears in the thread under your Zammad name and picture, with the file. The staff card says "Claimed by <you> (Zammad)".
 4. Add an **internal** note. Nothing appears in Discord.
-5. Move the ticket to another group in Zammad. The staff card's Zammad field shows the new group.
+5. Move the ticket to another group in Zammad. Nothing changes in Discord (the card doesn't show the group); the bot just records it.
 6. Close the ticket in Zammad. The thread gets the closing message and the 1–5 rating. Click a rating: Zammad gets an internal note "CSAT: … 4/5".
 7. In Discord run `/reopen` in the thread. The Zammad ticket goes back to open. Close it with **Close Ticket**: Zammad shows closed.
 8. `/stats` shows **Zammad sync: ✅ in sync** on the #tickets embed.

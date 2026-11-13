@@ -1,8 +1,8 @@
 """Staff ticket cards in STAFF_CHANNEL_ID, for #tickets only.
 
 One card per private ticket: the question, who asked (and how many tickets
-they've opened before), status and claimer, priority, CSAT, and links to the
-thread. The card is edited whenever any of that changes.
+they've opened before), status and claimer, priority and CSAT, with link
+buttons to the Zammad ticket (once mirrored) and the Discord thread. The card is edited whenever any of that changes.
 
 #community-help tickets no longer get cards (they're counted in /stats,
 /waiting and the daily summary instead). Cards posted for them before that
@@ -32,10 +32,11 @@ from nephthys.discord_ops.formatting import ticket_ref
 from nephthys.discord_ops.send import send_embed
 from nephthys.discord_ops.threads import best_effort
 from nephthys.discord_ops.threads import thread_link
-from nephthys.ui.buttons import link_only_view
+from nephthys.ui.buttons import card_links_view
 
 if TYPE_CHECKING:
     from nephthys.bot import SupportBot
+    from nephthys.config import Settings
 
 log = logging.getLogger(__name__)
 
@@ -177,26 +178,7 @@ def private_category_text(ticket: Ticket) -> str:
     return " › ".join(parts)
 
 
-def zammad_field(ticket: Ticket, public_url: str | None) -> str | None:
-    """The Zammad ticket (linked when ZAMMAD_PUBLIC_URL is set) and its group."""
-    if ticket.zammad_ticket_id is None:
-        return None
-    card = get_copy().card
-    number = ticket.zammad_ticket_number or str(ticket.zammad_ticket_id)
-    url = zammad_ticket_url(public_url, ticket.zammad_ticket_id)
-    value = (
-        card.zammad_value.format(number=number, link=url)
-        if url
-        else card.zammad_value_no_link.format(number=number)
-    )
-    if ticket.zammad_group:
-        value += card.zammad_group.format(group=ticket.zammad_group)
-    return value
-
-
-def build_card_embed(
-    ctx: CardContext, guild_id: int, zammad_public_url: str | None = None
-) -> discord.Embed:
+def build_card_embed(ctx: CardContext, guild_id: int) -> discord.Embed:
     card = get_copy().card
     style = get_copy().embeds.staff_card
     t = ctx.ticket
@@ -250,8 +232,6 @@ def build_card_embed(
         else:
             category = card.category_none
         embed.add_field(name=card.field_category, value=category, inline=True)
-    if (zammad := zammad_field(t, zammad_public_url)) is not None:
-        embed.add_field(name=card.field_zammad, value=zammad, inline=True)
     if ctx.escalated_from is not None:
         embed.add_field(
             name=card.field_escalated,
@@ -275,14 +255,28 @@ def build_card_embed(
     return embed
 
 
-def build_card_view(ticket: Ticket, guild_id: int):
-    return link_only_view(thread_link(guild_id, ticket.thread_id))
+def zammad_link(ticket: Ticket, settings: "Settings") -> str | None:
+    """The Zammad ticket's address, once it's mirrored and Zammad is on (and
+    ZAMMAD_PUBLIC_URL says where browsers reach it)."""
+    if not settings.zammad_enabled or ticket.zammad_ticket_id is None:
+        return None
+    return zammad_ticket_url(settings.zammad_public_url, ticket.zammad_ticket_id)
+
+
+def build_card_view(ticket: Ticket, settings: "Settings"):
+    """Link buttons: "Open in Zammad" first when the ticket is mirrored, then
+    "Open in Discord". The Zammad one appears when the card is refreshed after
+    the mirror lands."""
+    return card_links_view(
+        thread_link(settings.guild_id, ticket.thread_id),
+        zammad_url=zammad_link(ticket, settings),
+    )
 
 
 async def render(bot: "SupportBot", ticket: Ticket):
     ctx = await load_card_context(ticket)
-    embed = build_card_embed(ctx, bot.settings.guild_id, bot.settings.zammad_public_url)
-    view = build_card_view(ticket, bot.settings.guild_id)
+    embed = build_card_embed(ctx, bot.settings.guild_id)
+    view = build_card_view(ticket, bot.settings)
     return embed, view
 
 

@@ -192,9 +192,6 @@ class CardCopy(Section):
         "csat_value": {"rating"},
         "escalated_value": {"id", "link"},
         "escalated_to_value": {"number", "link"},
-        "zammad_value": {"number", "link"},
-        "zammad_value_no_link": {"number"},
-        "zammad_group": {"group"},
         "zammad_agent": {"name"},
     }
 
@@ -229,7 +226,17 @@ class CardCopy(Section):
     ai_not_helpful: str = "👎 rated not helpful"
     ai_fixed: str = "✅ player said it fixed it"
     ai_needs_human: str = "🙋 player still needs a human"
-    open_thread_button: str = "Open thread"
+    open_thread_button: str = Field(
+        default="Open in Discord",
+        description="Card link button to the ticket's Discord thread.",
+    )
+    open_zammad_button: str = Field(
+        default="Open in Zammad",
+        description=(
+            "#tickets card link button to the Zammad ticket (shown once the ticket "
+            "is mirrored, when ZAMMAD_PUBLIC_URL is set)."
+        ),
+    )
     category_pending: str = "category not picked yet"
     awaiting_first_message: str = "*(waiting for the player's first message)*"
     field_priority: str = "Priority"
@@ -239,19 +246,6 @@ class CardCopy(Section):
     escalated_value: str = "[#{id}]({link})"
     field_escalated_to: str = "Escalated to"
     escalated_to_value: str = "[T-{number}]({link})"
-    field_zammad: str = "Zammad"
-    zammad_value: str = Field(
-        default="[#{number}]({link})",
-        description="Link to the Zammad ticket (needs ZAMMAD_PUBLIC_URL).",
-    )
-    zammad_value_no_link: str = Field(
-        default="#{number}",
-        description="The Zammad ticket number when ZAMMAD_PUBLIC_URL is unset.",
-    )
-    zammad_group: str = Field(
-        default=" · {group}",
-        description="Added after the Zammad ticket: the group it is in now.",
-    )
     zammad_agent: str = Field(
         default="{name} (Zammad)",
         description="A Zammad agent, where the card would mention a Discord user.",
@@ -641,7 +635,10 @@ class StaffCardEmbed(EmbedStyle):
     color_waiting: str = GOLD
     color_claimed: str = BLURPLE
     color_resolved: str = GREEN
-    footer: str = "Ticket #{id}"
+    footer: str = Field(
+        default="Ticket {ref}",
+        description="{ref} is T-<number> for #tickets (#<id> on old #community-help cards).",
+    )
 
 
 class DailySummaryEmbed(EmbedStyle):
@@ -778,6 +775,10 @@ MOVED_KEYS: dict[tuple[str, str], str] = {
 # with a warning (not rejected), so an old copy.local.toml doesn't stop startup.
 REMOVED_KEYS: dict[tuple[str, str], str] = {
     ("card", "category_placeholder"): "#community-help staff cards were removed",
+    ("card", "field_zammad"): "the card links to Zammad with a button now",
+    ("card", "zammad_value"): "the card links to Zammad with a button now",
+    ("card", "zammad_value_no_link"): "the card links to Zammad with a button now",
+    ("card", "zammad_group"): "the card links to Zammad with a button now",
 }
 
 

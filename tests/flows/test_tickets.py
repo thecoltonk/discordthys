@@ -267,8 +267,45 @@ async def test_category_flow_with_subcategory_and_high_priority_alert():
     assert f["Priority"] == "🔴 High"
     assert f["Status"].startswith("🟡 Waiting")
     assert alert.embed.description == C.card.awaiting_first_message
-    assert ids(alert.view) == [None]  # link button only (no category select)
+    # Zammad is off: only "Open in Discord"; the footer is the T-number
+    assert [(b.label, b.url) for b in alert.view.children] == [
+        ("Open in Discord", f"https://discord.com/channels/100/{ticket.thread_id}")
+    ]
+    assert alert.embed.footer.text == "Ticket T-26"
     assert ticket.staff_card_message_id == alert.id
+
+
+def test_card_zammad_button_needs_a_mirrored_ticket_and_zammad_on():
+    from nephthys.database.enums import TicketSurface
+    from nephthys.database.tables import Ticket
+    from nephthys.discord_ops.staff_card import build_card_view
+
+    zammad_env = {
+        "TICKETS_CHANNEL_ID": "600",
+        "ZAMMAD_URL": "http://zammad:8080",
+        "ZAMMAD_TOKEN": "t",
+        "ZAMMAD_WEBHOOK_SECRET": "s" * 20,
+    }
+    on = make_settings(**zammad_env, ZAMMAD_PUBLIC_URL="https://support.example")
+    no_public_url = make_settings(**zammad_env)
+    off = make_settings(TICKETS_CHANNEL_ID="600")
+    pending = Ticket(id=5, thread_id=77, surface=TicketSurface.PRIVATE, number=29)
+    mirrored = Ticket(
+        id=5, thread_id=77, surface=TicketSurface.PRIVATE, number=29, zammad_ticket_id=8
+    )
+
+    def labels(ticket, settings):
+        view = build_card_view(ticket, settings)
+        return [(b.label, b.url) for b in cast(list[Any], view.children)]
+
+    discord_link = ("Open in Discord", "https://discord.com/channels/100/77")
+    assert labels(pending, on) == [discord_link]  # not mirrored yet
+    assert labels(mirrored, on) == [
+        ("Open in Zammad", "https://support.example/#ticket/zoom/8"),
+        discord_link,
+    ]
+    assert labels(mirrored, off) == [discord_link]  # Zammad switched off
+    assert labels(mirrored, no_public_url) == [discord_link]  # nowhere to link
 
 
 async def test_leaf_category_pings_owning_role():

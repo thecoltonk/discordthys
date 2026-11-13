@@ -37,9 +37,9 @@ A private, Mava-style ticket system, enabled by setting `TICKETS_CHANNEL_ID`:
 
 Admins work #tickets tickets in Zammad; players stay in their Discord thread. Enabled by setting `ZAMMAD_URL` and `ZAMMAD_TOKEN`:
 
-- A leaf category creates a Zammad ticket (`T-<n> <category>`) in the category's group, with one Zammad customer per Discord player.
+- A leaf category creates a Zammad ticket (`T-<n> <category>`) in the category's group, with one Zammad customer per Discord player. The customer's name follows their Discord display name; with the optional `ZAMMAD_AVATAR_TOKEN` (`admin.user`, see DEPLOY.md §7.1) it also gets their Discord profile picture.
 - Every thread message becomes a public note article; attachments are copied.
-- An agent's **public** article is posted into the thread under their Zammad name and avatar. Internal notes never leave Zammad.
+- An agent's **public** article is posted into the thread as "<Zammad name> (Support)" with their Zammad avatar. Internal notes never leave Zammad.
 - Close, re-open, CSAT and group changes sync both ways.
 - Everything goes through an outbox with retries, so Discord never waits on Zammad and nothing is posted twice.
 - `nephthys zammad-setup` configures Zammad (attribute, webhook, trigger); `nephthys zammad-retry` re-queues failed items.

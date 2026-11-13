@@ -9,6 +9,9 @@ class Actor:
     discord_id: int
     username: str | None
     is_staff: bool
+    # Their Discord avatar (display_avatar), when known
+    avatar_key: str | None = None
+    avatar_url: str | None = None
 
 
 def is_staff(role_ids: Iterable[int], staff_role_id: int) -> bool:

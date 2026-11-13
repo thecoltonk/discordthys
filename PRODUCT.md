@@ -107,7 +107,7 @@ Zammad is the core support platform. **Admins work tickets in Zammad; the Discor
   - title `T-<n> <category>`, e.g. `T-26 Store` or `T-27 Server Issue (Urgent)`;
   - group from the category (`zammad_group` in `ticket_categories.toml`; by default the same-named groups Server Issue, Store, Bans & Appeals, Reports, Other);
   - priority mapped: Low → `1 low`, Medium → `2 normal`, High → `3 high`.
-- **Customer.** One Zammad customer per Discord player, found or created: login `discord:<user_id>`, name = display name, email `<user_id>@discord.invalid`, plus a custom **Discord ID** attribute.
+- **Customer.** One Zammad customer per Discord player, found or created: login `discord:<user_id>`, name = display name, email `<user_id>@discord.invalid`, plus a custom **Discord ID** attribute. The name follows the player's Discord display name. With the optional avatar token (`admin.user`, on a separate Zammad user), the customer also shows their Discord profile picture, refreshed when it changes, at most once a day.
 - **Messages.** Every message in the thread becomes an article: type *note*, public, starting with `<name> (Player via Discord)` or `<name> (Staff via Discord)`. Attachments are uploaded when they fit; otherwise they're named in the article.
 - **Escalated tickets** (`/escalate`) include the original public question and a link to the public thread.
 - **Staff card** has an **Open in Zammad** button (first) next to **Open in Discord**. Until the ticket is mirrored (or with the sync off) only the Discord button shows; the Zammad one is added when the mirror lands. The footer shows the T-number.

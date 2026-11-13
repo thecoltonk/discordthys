@@ -10,6 +10,7 @@ from aiohttp.test_utils import TestClient
 from aiohttp.test_utils import TestServer
 
 from nephthys.config import ConfigError
+from nephthys.core.permissions import Actor
 from nephthys.core.ticket_categories import DEFAULT_TICKET_CATEGORIES
 from nephthys.core.ticket_categories import parse_ticket_categories
 from nephthys.core.ticket_categories import TicketCategoriesError
@@ -438,3 +439,71 @@ def test_agent_display_name_template_and_80_char_limit():
     assert agent_username(template, "clyde", "Support") == "Support"
     # A custom template from copy
     assert agent_username("{name} · Cloudsail", "Bea", "Support") == "Bea · Cloudsail"
+
+
+async def test_migration_006_round_trip(db: None):
+    from nephthys.core.users import upsert_user
+    from nephthys.piccolo_migrations import cloudsail_006_zammad_profiles as m006
+
+    added = {
+        "avatar_key",
+        "avatar_url",
+        "zammad_name",
+        "zammad_avatar_key",
+        "zammad_avatar_at",
+    }
+    assert added <= await columns("app_user")
+    user = await upsert_user(Actor(discord_id=1, username="a", is_staff=False))
+    try:
+        await Ticket.raw(postgresql_code_block(m006.BACKWARDS))
+        assert not added & await columns("app_user")
+        rows = await Ticket.raw("SELECT id FROM app_user")
+        assert [r["id"] for r in rows] == [user.id]
+    finally:
+        await Ticket.raw(postgresql_code_block(m006.BACKWARDS))
+        await Ticket.raw(postgresql_code_block(m006.FORWARDS))
+    assert added <= await columns("app_user")
+
+
+async def test_upsert_keeps_the_last_known_avatar(db: None):
+    from nephthys.core.users import upsert_user
+
+    with_avatar = Actor(
+        discord_id=7,
+        username="p",
+        is_staff=False,
+        avatar_key="abc",
+        avatar_url="https://cdn.discordapp.com/avatars/7/abc.png?size=256",
+    )
+    user = await upsert_user(with_avatar)
+    assert (user.avatar_key, user.avatar_url) == (
+        with_avatar.avatar_key,
+        with_avatar.avatar_url,
+    )
+    # An actor without avatar info (e.g. a Zammad-side action) doesn't erase it
+    user = await upsert_user(Actor(discord_id=7, username="p2", is_staff=False))
+    assert user.username == "p2" and user.avatar_key == "abc"
+
+
+def test_avatar_is_read_from_the_member_as_png():
+    from unittest.mock import MagicMock
+
+    import discord
+
+    from nephthys.discord_ops.threads import actor_from_user
+    from tests.fakes import make_member
+    from tests.helpers import make_settings
+
+    settings = make_settings()
+    member = make_member(settings, user_id=5)
+    actor = actor_from_user(member, settings.staff_role_id)
+    # No custom avatar: Discord's default one
+    assert actor.avatar_url and "/embed/avatars/" in actor.avatar_url
+    animated = MagicMock(spec=discord.Member)
+    animated.id, animated.display_name, animated.roles = 5, "x", []
+    animated.display_avatar = discord.Asset._from_avatar(MagicMock(), 5, "a_hash")
+    actor = actor_from_user(animated, settings.staff_role_id)
+    assert actor.avatar_key == "a_hash"
+    assert (
+        actor.avatar_url == "https://cdn.discordapp.com/avatars/5/a_hash.png?size=256"
+    )

@@ -144,6 +144,9 @@ class Tickets(commands.Cog):
         player = Player(
             discord_id=opener.discord_id,
             display_name=opener.username or str(opener.discord_id),
+            # As last seen on their public post
+            avatar_key=opener.avatar_key,
+            avatar_url=opener.avatar_url,
         )
         try:
             private = await private_flow.open_private_ticket(

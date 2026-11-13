@@ -65,11 +65,17 @@ class Player:
 
     discord_id: int
     display_name: str
+    avatar_key: str | None = None
+    avatar_url: str | None = None
 
 
 def player_from(user: discord.abc.User) -> Player:
+    avatar_key, avatar_url = threads.avatar_of(user)
     return Player(
-        discord_id=user.id, display_name=getattr(user, "display_name", user.name)
+        discord_id=user.id,
+        display_name=getattr(user, "display_name", user.name),
+        avatar_key=avatar_key,
+        avatar_url=avatar_url,
     )
 
 
@@ -254,7 +260,11 @@ async def open_private_ticket(
         raise TicketCreateError(str(e)) from e
 
     actor = Actor(
-        discord_id=player.discord_id, username=player.display_name, is_staff=False
+        discord_id=player.discord_id,
+        username=player.display_name,
+        is_staff=False,
+        avatar_key=player.avatar_key,
+        avatar_url=player.avatar_url,
     )
     ticket = await pt.create_private_ticket(
         author=actor,

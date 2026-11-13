@@ -24,6 +24,8 @@ from aiohttp import web
 ADMIN_TOKEN = "fake-admin-token"
 USER = web.RequestKey("user", dict)
 API = "/api/v1"
+# Roles that grant admin.user (needed to act "From" another user)
+ADMIN_USER_ROLES = {"Admin", "Discord avatars"}
 STATES = {1: "new", 2: "open", 3: "pending reminder", 4: "closed", 5: "merged"}
 PRIORITIES = {1: "1 low", 2: "2 normal", 3: "3 high"}
 SENDERS = {1: "Agent", 2: "Customer", 3: "System"}
@@ -51,6 +53,8 @@ class FakeZammad:
         self.articles: dict[int, dict[str, Any]] = {}
         self.attachments: dict[int, bytes] = {}
         self.images: dict[str, bytes] = {}
+        # (user id, store hash) for every POST /users/avatar
+        self.avatar_uploads: list[tuple[int, str]] = []
         self.attributes: dict[int, dict[str, Any]] = {}
         self.webhooks: dict[int, dict[str, Any]] = {}
         self.triggers: dict[int, dict[str, Any]] = {}
@@ -118,6 +122,7 @@ class FakeZammad:
         r.add_get(API + "/users/search", self.users_search)
         r.add_get(API + "/users/image/{hash}", self.users_image)
         r.add_post(API + "/users", self.users_create)
+        r.add_post(API + "/users/avatar", self.users_avatar)
         r.add_get(API + "/users/{id}", self.users_show)
         r.add_put(API + "/users/{id}", self.users_update)
         r.add_get(API + "/tickets/search", self.tickets_search)
@@ -172,10 +177,15 @@ class FakeZammad:
         user_id = self.tokens.get(match.group(1)) if match else None
         if user_id is None:
             return error(401, "Invalid token")
-        behalf = request.headers.get("X-On-Behalf-Of")
+        # "From" (X-On-Behalf-Of is its deprecated name). Zammad checks the
+        # token *user's* roles for admin.user, not the token's own scope.
+        behalf = request.headers.get("From") or request.headers.get("X-On-Behalf-Of")
         if behalf:
-            if "Admin" not in self.users[user_id]["roles"]:
-                return error(403, "Not authorized")
+            if not ADMIN_USER_ROLES & set(self.users[user_id]["roles"]):
+                return error(
+                    403,
+                    "Current user has no permission to use 'From'/'X-On-Behalf-Of'!",
+                )
             other = next(
                 (
                     u
@@ -284,6 +294,27 @@ class FakeZammad:
         if data is None:
             return web.Response(body=b"GIF89a", content_type="image/gif")
         return web.Response(body=data, content_type="image/png")
+
+    async def users_avatar(self, request: web.Request) -> web.Response:
+        """POST /users/avatar: always the *current* user's avatar (which is the
+        customer when called with "From")."""
+        data = await request.json()
+        images = []
+        for key in ("avatar_full", "avatar_resize"):
+            match = re.fullmatch(
+                r"data:(image/[a-z+.-]+);base64,(.+)", data.get(key) or ""
+            )
+            if match is None:
+                return error(422, "The image is invalid.")
+            images.append(base64.b64decode(match.group(2)))
+        store_hash = hashlib.md5(images[0]).hexdigest()
+        self.images[store_hash] = images[0]
+        me = request[USER]
+        me["image"] = store_hash
+        self.avatar_uploads.append((me["id"], store_hash))
+        return web.json_response(
+            {"avatar": {"o_id": me["id"], "default": True, "store_hash": store_hash}}
+        )
 
     async def users_create(self, request: web.Request) -> web.Response:
         if not self.is_agent(request):

@@ -293,7 +293,7 @@ Admins work #tickets tickets in Zammad; players stay in their Discord thread. Th
 
 This was built and tested against **Zammad 7.2.3**.
 
-### 7.1 Zammad: groups, a bot user and two tokens
+### 7.1 Zammad: groups, a bot user and its tokens
 
 1. **Groups.** Admin → Groups: make sure there is a group per #tickets category. By default they have the same names: `Server Issue`, `Store`, `Bans & Appeals`, `Reports`, `Other`. To use other groups, set `zammad_group` per category in `copy/ticket_categories.toml`.
 2. **A user for the bot.** Admin → Users → New user, e.g. "Discord Bot" with any address you own as its email.
@@ -313,6 +313,14 @@ This was built and tested against **Zammad 7.2.3**.
    - `admin.channel_email` (to block trigger emails to Discord customers)
 
    Delete this token again after §7.4. The bot never needs it at runtime.
+5. **Optional: an avatar token** (`ZAMMAD_AVATAR_TOKEN`), so each player's Zammad customer shows their Discord profile picture. Without it the bot still keeps customers' names in sync, just not their pictures.
+   - Why a separate one: Zammad 7.2 can only set the avatar of the user making the request. The bot therefore uploads the picture *as the customer*, with Zammad's `From` header, and Zammad allows that only for users whose role has **`admin.user`**. The everyday `ticket.agent` token gets 403 "no permission to use 'From'". `admin.user` is the minimum; full `admin` isn't needed.
+   - Zammad checks the *user's* roles here, not the token's ticked permissions. So don't add `admin.user` to the bot user from step 2: its everyday token could then act as anyone. Use a separate user instead:
+     1. Admin → Roles → New role "Discord avatars": permission **`admin.user`** only, no groups.
+     2. Admin → Users → New user "Discord Avatars" (any address you own), role **Discord avatars** only. Not Agent.
+     3. Log in as that user (or set a password and use it once): Profile → Token Access → Create, tick **`admin.user`**, copy the token into `ZAMMAD_AVATAR_TOKEN`.
+   - `admin.user` lets that token manage users and act as any user. Keep it in `.env` only. The bot uses it for one call: uploading a picture. Leave it unset to skip avatars.
+   - The bot downloads the picture from Discord's CDN itself, so Zammad needs no internet access for this. A player's picture is uploaded when their customer is created, then again when it changes in Discord, at most once a day. Their display name is refreshed whenever they write in a ticket and it has changed.
 
 ### 7.2 Network: join the bot to Zammad's Docker network
 
@@ -341,6 +349,7 @@ Zammad's nginx only listens on the host's `127.0.0.1:8090`, which a container ca
 | `ZAMMAD_URL` | `http://zammad-nginx:8080` |
 | `ZAMMAD_TOKEN` | the bot user's token (§7.1 step 3) |
 | `ZAMMAD_SETUP_TOKEN` | the admin token (§7.1 step 4); remove after setup |
+| `ZAMMAD_AVATAR_TOKEN` | optional: the "Discord Avatars" user's `admin.user` token (§7.1 step 5); blank = no Discord pictures on customers |
 | `ZAMMAD_WEBHOOK_SECRET` | a random secret: `openssl rand -hex 32` |
 | `ZAMMAD_PUBLIC_URL` | `https://support.cloudsail.uk` (the staff card's **Open in Zammad** button, agent avatars; without it the button isn't shown) |
 | `ZAMMAD_DEFAULT_AVATAR_URL` | a public image URL used when an agent has no picture or it can't be shown |
@@ -410,7 +419,7 @@ What this exposes: profile pictures of Zammad users to anyone who knows a pictur
 6. Close the ticket in Zammad. The thread gets the closing message and the 1–5 rating. Click a rating: Zammad gets an internal note "CSAT: … 4/5".
 7. In Discord run `/reopen` in the thread. The Zammad ticket goes back to open. Close it with **Close Ticket**: Zammad shows closed.
 8. `/stats` shows **Zammad sync: ✅ in sync** on the #tickets embed.
-9. Check the Zammad customer (Customers → search the Discord name): login `discord:<id>`, the Discord ID field filled, and no email-type articles on the ticket.
+9. Check the Zammad customer (Customers → search the Discord name): login `discord:<id>`, the Discord ID field filled, and no email-type articles on the ticket. With `ZAMMAD_AVATAR_TOKEN` set, it shows your Discord profile picture. Change your Discord display name and write in the ticket again: the customer's name follows.
 
 ### 7.8 Operating it
 

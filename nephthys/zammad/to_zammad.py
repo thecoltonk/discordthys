@@ -6,6 +6,9 @@ only have an address under `.invalid`, so no email can reach a player.
 """
 
 import logging
+from datetime import datetime
+from datetime import timedelta
+from datetime import UTC
 from typing import Any
 from typing import TYPE_CHECKING
 
@@ -36,6 +39,9 @@ log = logging.getLogger(__name__)
 # names ending in "_id", so it can't literally be called "discord_id".
 DISCORD_ATTRIBUTE = "discord_uid"
 CLOSED_STATES = ("closed", "merged")
+# A player's avatar is uploaded to Zammad at most this often
+AVATAR_REFRESH = timedelta(days=1)
+AVATAR_MAX_BYTES = 5 * 1024 * 1024  # Zammad's Avatar::MAX_IMAGE_SIZE
 
 
 def is_closed_state(state: object) -> bool:
@@ -47,14 +53,19 @@ def is_closed_state(state: object) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def customer_name(user: User) -> str:
+    return (user.username or "").strip() or f"Discord user {user.discord_id}"
+
+
 async def ensure_customer(sync: "ZammadSync", user: User) -> int:
     """Find or create the Zammad customer for a Discord player (one per
-    player), and remember its id."""
+    player), and remember its id. Their name and avatar are then kept up to
+    date by `sync_profile`."""
     if user.zammad_user_id is not None:
         return user.zammad_user_id
     login = customer_login(user.discord_id)
     email = customer_email(user.discord_id)
-    name = (user.username or "").strip() or f"Discord user {user.discord_id}"
+    name = customer_name(user)
     data = {
         "login": login,
         "firstname": name,
@@ -78,8 +89,78 @@ async def ensure_customer(sync: "ZammadSync", user: User) -> int:
                 customer["id"], {"firstname": name, "lastname": ""}
             )
     customer_id = int(customer["id"])
-    await User.update({User.zammad_user_id: customer_id}).where(User.id == user.id)
+    await User.update({User.zammad_user_id: customer_id, User.zammad_name: name}).where(
+        User.id == user.id
+    )
     return customer_id
+
+
+async def sync_profile(sync: "ZammadSync", user_id: int) -> None:
+    """Bring the player's Zammad customer in line with Discord: their display
+    name (whenever it changed) and their avatar (when it changed, at most once
+    a day). Best effort: a failure is logged and never holds up the ticket."""
+    try:
+        await _sync_profile(sync, user_id)
+    except Exception as e:  # noqa: BLE001 - never fail the outbox row over a profile
+        log.warning(f"Couldn't update the Zammad profile of user id={user_id}: {e}")
+
+
+async def _sync_profile(sync: "ZammadSync", user_id: int) -> None:
+    user = await User.objects().where(User.id == user_id).first()
+    if user is None or user.zammad_user_id is None:
+        return
+    name = customer_name(user)
+    if name != user.zammad_name:
+        await sync.client.update_user(
+            user.zammad_user_id, {"firstname": name, "lastname": ""}
+        )
+        await User.update({User.zammad_name: name}).where(User.id == user.id)
+        log.info(f"Zammad customer id={user.zammad_user_id} renamed")
+    await _sync_avatar(sync, user)
+
+
+def avatar_due(user: User, now: datetime) -> bool:
+    if not user.avatar_url or not user.avatar_key:
+        return False
+    if user.avatar_key == user.zammad_avatar_key:
+        return False
+    last = user.zammad_avatar_at
+    return last is None or now - last >= AVATAR_REFRESH
+
+
+async def _sync_avatar(sync: "ZammadSync", user: User) -> None:
+    client = sync.avatar_client
+    now = datetime.now(UTC)
+    if client is None or sync.avatars_off_reason or not avatar_due(user, now):
+        return
+    assert user.zammad_user_id is not None and user.avatar_url
+    # Count the attempt first: a failure waits for the next day too
+    await User.update({User.zammad_avatar_at: now}).where(User.id == user.id)
+    async with sync.http().get(user.avatar_url) as response:
+        response.raise_for_status()
+        image = await response.read()
+        mime = (response.content_type or "image/png").split(";")[0]
+    if not image or len(image) > AVATAR_MAX_BYTES or not mime.startswith("image/"):
+        log.info(f"Skipped the Discord avatar of user id={user.id} ({mime})")
+        return
+    try:
+        await client.set_avatar_of(user.zammad_user_id, image, mime)
+    except ZammadError as e:
+        if e.status in (401, 403):
+            # The token can't act as customers (no admin.user): stop trying
+            # until the next restart, and say why once
+            sync.avatars_off_reason = str(e)
+            await sync.alert(
+                "avatars",
+                "⚠️ Can't set Discord avatars on Zammad customers: "
+                f"`{e}`. ZAMMAD_AVATAR_TOKEN must belong to a Zammad user whose "
+                "role grants `admin.user` (DEPLOY.md §7). Names are still synced.",
+            )
+        raise
+    await User.update({User.zammad_avatar_key: user.avatar_key}).where(
+        User.id == user.id
+    )
+    log.info(f"Zammad customer id={user.zammad_user_id} got the Discord avatar")
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +212,7 @@ async def create_ticket(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
         return
     opener = await tickets.get_opener(ticket)
     customer_id = await ensure_customer(sync, opener)
+    await sync_profile(sync, opener.id)
     label, group = category_text(ticket)
     title = f"T-{ticket.number} {label}"
 
@@ -261,6 +343,8 @@ async def article(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
             opener = await tickets.get_opener(ticket)
             if opener.zammad_user_id is not None:
                 data["origin_by_id"] = opener.zammad_user_id
+                # Their name or avatar may have changed since the last message
+                await sync_profile(sync, opener.id)
         if uploads:
             data["attachments"] = uploads
         created = await sync.client.create_article(data)

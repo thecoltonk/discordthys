@@ -25,6 +25,7 @@ from tests.fakes import make_interaction
 from tests.fakes import make_message
 from tests.fakes import make_user
 from tests.zammad.conftest import AGENT_NAME
+from tests.zammad.conftest import BOT_LOGIN
 from tests.zammad.conftest import DEFAULT_AVATAR
 from tests.zammad.conftest import new_player
 from tests.zammad.conftest import PNG
@@ -622,4 +623,162 @@ async def test_oversized_attachments_are_named_not_copied(backend: Any, db: None
         assert status == f"status_claimed:zammad_agent:{AGENT_NAME}|"
     finally:
         use_copy(C)
+        await world.stop()
+
+
+# ---------------------------------------------------------------------------
+# Customer profiles: Discord name and avatar
+# ---------------------------------------------------------------------------
+
+
+def solid_png(rgb: tuple[int, int, int], size: int = 4) -> bytes:
+    import struct
+    import zlib
+
+    raw = b"".join(b"\x00" + bytes(rgb) * size for _ in range(size))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(kind + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
+
+    header = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+
+
+def give_avatar(world: World, player: Any, key: str, image: bytes) -> None:
+    """The player's Discord avatar, served by the stand-in CDN."""
+    from unittest.mock import MagicMock
+
+    import discord
+
+    world.files[f"{key}.png"] = image
+    player.display_avatar = discord.Asset(
+        MagicMock(), url=f"{world.files_url}/{key}.png", key=key
+    )
+
+
+async def customer_of(world: World, ticket: Any) -> dict[str, Any]:
+    opener = await tickets.get_opener(ticket)
+    assert opener.zammad_user_id is not None
+    return await world.admin.get_user(opener.zammad_user_id)
+
+
+async def customer_image(world: World, customer: dict[str, Any]) -> bytes | None:
+    if not customer.get("image") or customer["image"] == "none":
+        return None
+    return await world.admin.request(
+        "GET", f"/users/image/{customer['image']}", raw=True
+    )
+
+
+def full_name(customer: dict[str, Any]) -> str:
+    # Zammad splits "First Last" given as firstname alone
+    return " ".join(
+        p for p in (customer.get("firstname"), customer.get("lastname")) if p
+    )
+
+
+async def test_customer_gets_the_discord_avatar_and_name(backend: Any, db: None):
+    from datetime import timedelta
+
+    from nephthys.database.tables import User
+
+    blue, red = solid_png((88, 101, 242)), solid_png((237, 66, 69))
+    # The admin token has admin.user; production uses a separate user whose
+    # only role grants it (DEPLOY.md §7, DECISIONS 208)
+    world = await World(backend, ZAMMAD_AVATAR_TOKEN=backend.admin_token).start()
+    try:
+        player = new_player("Alex")
+        give_avatar(world, player, f"av-{player.id}-1", blue)
+        ticket, thread, _ = await world.open_ticket("store", player=player)
+        ticket = await world.synced(ticket)
+        customer = await customer_of(world, ticket)
+        assert full_name(customer) == "Alex"
+        assert await customer_image(world, customer) == blue
+
+        # New name and avatar in Discord: the name follows at once, the
+        # avatar waits (at most one upload a day per player)
+        player.display_name = "Alex Renamed"
+        give_avatar(world, player, f"av-{player.id}-2", red)
+        await world.say(thread, player, "me again")
+        await world.drain()
+        customer = await customer_of(world, ticket)
+        assert full_name(customer) == "Alex Renamed"
+        assert await customer_image(world, customer) == blue
+
+        # A day later, the next message brings the new avatar
+        opener = await tickets.get_opener(ticket)
+        await User.update(
+            {User.zammad_avatar_at: opener.zammad_avatar_at - timedelta(hours=25)}  # type: ignore[operator]
+        ).where(User.id == opener.id)
+        await world.say(thread, player, "and again")
+        await world.drain()
+        customer = await customer_of(world, ticket)
+        assert await customer_image(world, customer) == red
+
+        # Unchanged avatar: no new upload, even after a day
+        await User.update(
+            {User.zammad_avatar_at: opener.zammad_avatar_at - timedelta(days=3)}  # type: ignore[operator]
+        ).where(User.id == opener.id)
+        before = len(backend.fake.avatar_uploads) if backend.fake else None
+        await world.say(thread, player, "still here")
+        await world.drain()
+        if backend.fake:
+            assert len(backend.fake.avatar_uploads) == before
+        # The articles themselves were all mirrored
+        bodies = [a["body"] for a in await world.articles(ticket)]
+        assert any(b.endswith("still here") for b in bodies)
+    finally:
+        await world.stop()
+
+
+async def test_no_avatar_token_means_names_only(backend: Any, db: None):
+    world = await World(backend).start()
+    try:
+        player = new_player("Sam")
+        give_avatar(world, player, f"av-{player.id}", solid_png((1, 2, 3)))
+        ticket, thread, _ = await world.open_ticket("store", player=player)
+        ticket = await world.synced(ticket)
+        player.display_name = "Sam Two"
+        await world.say(thread, player, "hello")
+        await world.drain()
+        customer = await customer_of(world, ticket)
+        assert full_name(customer) == "Sam Two"
+        assert await customer_image(world, customer) is None
+        if backend.fake:
+            assert backend.fake.avatar_uploads == []
+    finally:
+        await world.stop()
+
+
+async def test_avatar_token_without_admin_user_is_reported_once(backend: Any, db: None):
+    """The everyday ticket.agent token (or any user without admin.user) can't
+    act "From" a customer: Zammad answers 403. The bot says so once, stops
+    trying, and everything else carries on."""
+    fake = backend.fake
+    if fake is None:
+        pytest.skip(
+            "needs a token without admin.user: fake only (checked live, DECISIONS 207)"
+        )
+    bot_user = next(u for u in fake.users.values() if u["login"] == BOT_LOGIN)
+    fake.tokens["agent-only-token"] = bot_user["id"]  # role: Agent only
+    world = await World(backend, ZAMMAD_AVATAR_TOKEN="agent-only-token").start()
+    try:
+        for name in ("Ann", "Ben"):
+            player = new_player(name)
+            give_avatar(world, player, f"av-{player.id}", solid_png((9, 9, 9)))
+            ticket, _thread, _ = await world.open_ticket("store", player=player)
+            ticket = await world.synced(ticket)  # the ticket itself is fine
+            assert full_name(await customer_of(world, ticket)) == name
+        assert fake.avatar_uploads == []
+        warnings = [m for m in world.log_messages() if "avatars" in m.content]
+        assert len(warnings) == 1 and "admin.user" in warnings[0].content
+        assert warnings[0].silent is True  # a setup problem, not an outage
+        assert world.sync.avatars_off_reason and "403" in world.sync.avatars_off_reason
+    finally:
         await world.stop()

@@ -54,6 +54,18 @@ class ZammadSync:
             settings.zammad_token,
             timeout=settings.zammad_timeout_seconds,
         )
+        # Sets customers' avatars (needs admin.user); None = avatars are off
+        self.avatar_client: ZammadClient | None = (
+            ZammadClient(
+                settings.zammad_url,
+                settings.zammad_avatar_token,
+                timeout=settings.zammad_timeout_seconds,
+            )
+            if settings.zammad_avatar_token
+            else None
+        )
+        # Why avatars stopped for this run (e.g. the token lacks admin.user)
+        self.avatars_off_reason: str | None = None
         self._http: aiohttp.ClientSession | None = None
         self._wake = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -75,6 +87,8 @@ class ZammadSync:
             await asyncio.gather(self._task, return_exceptions=True)
             self._task = None
         await self.client.close()
+        if self.avatar_client is not None:
+            await self.avatar_client.close()
         if self._http is not None and not self._http.closed:
             await self._http.close()
 

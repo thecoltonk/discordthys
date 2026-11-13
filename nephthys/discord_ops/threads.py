@@ -61,12 +61,33 @@ def role_ids_of(user: object) -> set[int]:
     return ids
 
 
+AVATAR_SIZE = 256
+
+
+def avatar_of(user: object) -> tuple[str | None, str | None]:
+    """(key, PNG url) of the avatar people see for this user in the server
+    (the server avatar if they set one, else their own, else Discord's
+    default). Animated avatars give their first frame."""
+    asset = getattr(user, "display_avatar", None)
+    key = getattr(asset, "key", None)
+    if not isinstance(asset, discord.Asset) or not isinstance(key, str):
+        return None, None
+    try:
+        url = asset.replace(format="png", size=AVATAR_SIZE).url
+    except (ValueError, TypeError):
+        url = asset.url
+    return key, url
+
+
 def actor_from_user(user: discord.User | discord.Member, staff_role_id: int) -> Actor:
     """Map a Discord user to an `Actor`. Only guild members can be staff."""
+    avatar_key, avatar_url = avatar_of(user)
     return Actor(
         discord_id=user.id,
         username=getattr(user, "display_name", None) or user.name,
         is_staff=is_staff(role_ids_of(user), staff_role_id),
+        avatar_key=avatar_key,
+        avatar_url=avatar_url,
     )
 
 

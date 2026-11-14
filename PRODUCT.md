@@ -44,7 +44,13 @@ Works like Nephthys and #nest-help.
   - `?ip` posts the server address
   - `?resolve` and `?reopen`
   - `?ticket` escalates the post: it opens a private #tickets thread for the poster with a link back, then locks the public post. Use it when someone posts something sensitive in public.
-- **AI tagging (optional):** auto-applies a forum tag such as Gameplay, Bug, Claims or Economy. Staff can change it.
+- **Categories (optional):** Jev, a decision model, picks one of the configured categories (Gameplay, Bug, Claims, Economy, Store, Other) for each new ticket. They're staff-side, for stats.
+- **FAQ matcher (optional):** common questions are answered from a list of pre-written answers.
+  - Each FAQ entry is a file with an id, a short description of what it covers, and the exact answer text.
+  - Jev is asked which entry fits a new ticket, or "other" for none. On a confident match the bot posts that entry's answer, word for word, with **[Mark as resolved]**. Otherwise it says nothing and a human answers as usual.
+  - **No model-written text ever reaches a player.** A previous Cloudsail AI bot was abused into producing NSFW output; this one can't write at all. The model only names an entry.
+  - **Other channels (e.g. #general):** in channels staff choose, the bot replies only when Jev is very confident the message is a real question *and* an entry answers it (a higher bar than in #community-help). The reply is the answer plus a pointer to #community-help. Optionally it also points confident support questions with no match to #community-help. There are per-user and per-channel cooldowns, it never replies to bots, and it never creates tickets from those channels.
+  - **Shadow mode first:** by default nothing is shown to players. Each match, its confidence and the text that would have been posted go to the staff channel, until staff switch it to public.
 
 ## 2. #tickets (private)
 
@@ -201,6 +207,5 @@ Full stats can come later, either in a staff-only `/stats` command or in Zammad 
 ## Open questions
 
 - Should staff stop replying in Discord threads once everyone works in Zammad? Today both work and both are mirrored.
-- AI tagging: worth it at current volume? Which model would it use (Hack Club AI)?
 - How long to keep closed tickets, and should old threads be deleted or only archived?
 - Should OP-resolved community posts count toward staff stats?

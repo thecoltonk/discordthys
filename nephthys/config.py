@@ -17,8 +17,10 @@ from dotenv import load_dotenv
 VALID_ARCHIVE_DURATIONS = (60, 1440, 4320, 10080)
 
 DEFAULT_CATEGORIES = ("Gameplay", "Bug", "Claims", "Economy", "Store", "Other")
-AI_ANSWER_MODES = ("off", "shadow", "public")
-DEFAULT_AI_BASE_URL = "https://ai.hackclub.com/proxy/v1"
+FAQ_MODES = ("off", "shadow", "public")
+# Jev, TypeSafe's decision model, served by Hack Club AI (POST <base>/systemone)
+DEFAULT_JEV_BASE_URL = "https://ai.hackclub.com/proxy/v1/jev"
+DEFAULT_JEV_MODEL = "jev-latest"
 
 # The bot's service alias on Zammad's Docker network (docker-compose.zammad.yml)
 DEFAULT_ZAMMAD_WEBHOOK_URL = "http://cloudsail-support-bot:3000/zammad/webhook"
@@ -35,6 +37,10 @@ REMOVED_ENV: dict[str, str] = {
     "TICKETS_LOCK_ON_CLOSE": "closed #tickets threads are always locked and archived",
     "STORE_ROLE_ID": "staff alerts no longer ping roles",
     "MOD_ROLE_ID": "staff alerts no longer ping roles",
+    "AI_MODEL": "the generative assistant was replaced by the Jev FAQ matcher (JEV_MODEL)",
+    "AI_BASE_URL": "the generative assistant was replaced by the Jev FAQ matcher (JEV_BASE_URL)",
+    "AI_ANSWER_MODE": "replaced by FAQ_MODE",
+    "AI_ANSWER_MIN_CONFIDENCE": "replaced by FAQ_THRESHOLD",
 }
 
 
@@ -93,14 +99,26 @@ class Settings:
     daily_summary_minute: int
     daily_summary_timezone: str
 
-    # AI (optional: disabled when ai_api_key is unset)
+    # Jev (optional: everything below is off when ai_api_key is unset). It
+    # only ever picks between pre-written options; it never writes text.
     ai_api_key: str | None
-    ai_base_url: str
-    ai_model: str | None
+    jev_base_url: str
+    jev_model: str
     ai_categorize: bool
-    ai_answer_mode: str  # off | shadow | public
-    ai_answer_min_confidence: float
     ai_timeout_seconds: float
+    # FAQ matcher: off | shadow (matches go to the staff channel) | public
+    faq_mode: str
+    # Minimum confidence to answer a new #community-help ticket
+    faq_threshold: float
+    # Other channels (#general etc.) watched for questions the FAQ answers
+    faq_watch_channel_ids: tuple[int, ...]
+    # Minimum confidence there (both "it's a real question" and the match)
+    faq_watch_threshold: float
+    # Also point confident support questions with no FAQ match to #community-help
+    faq_watch_pointer: bool
+    faq_user_cooldown_seconds: float
+    faq_channel_cooldown_seconds: float
+    # The FAQ entries (one file each)
     kb_dir: str
 
     # Zammad two-way sync for #tickets (off unless url + token are both set)
@@ -148,15 +166,23 @@ class Settings:
 
     @property
     def ai_enabled(self) -> bool:
-        return bool(self.ai_api_key and self.ai_model)
+        return bool(self.ai_api_key)
 
     @property
     def ai_categorize_enabled(self) -> bool:
         return self.ai_enabled and self.ai_categorize
 
     @property
-    def ai_answers_enabled(self) -> bool:
-        return self.ai_enabled and self.ai_answer_mode != "off"
+    def faq_enabled(self) -> bool:
+        return self.ai_enabled and self.faq_mode != "off"
+
+    @property
+    def faq_public(self) -> bool:
+        return self.faq_mode == "public"
+
+    @property
+    def faq_watch_enabled(self) -> bool:
+        return self.faq_enabled and bool(self.faq_watch_channel_ids)
 
 
 def _parse_bool(name: str, value: str) -> bool:
@@ -266,25 +292,46 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
     except (ZoneInfoNotFoundError, ValueError):
         errors.append(f"DAILY_SUMMARY_TIMEZONE is not a known timezone: {summary_tz!r}")
 
+    def fraction(name: str, default: float) -> float:
+        raw = get(name)
+        if raw is None:
+            return default
+        try:
+            value = float(raw)
+            if not 0 <= value <= 1:
+                raise ValueError
+        except ValueError:
+            errors.append(f"{name} must be between 0 and 1, got {raw!r}")
+            return default
+        return value
+
     ai_api_key = get("AI_API_KEY")
-    ai_model = get("AI_MODEL")
-    if ai_api_key and not ai_model:
-        errors.append("AI_MODEL is required when AI_API_KEY is set")
-    ai_mode = (get("AI_ANSWER_MODE", "shadow") or "shadow").lower()
-    if ai_mode not in AI_ANSWER_MODES:
-        errors.append(
-            f"AI_ANSWER_MODE must be one of {AI_ANSWER_MODES}, got {ai_mode!r}"
-        )
-    min_conf_raw = get("AI_ANSWER_MIN_CONFIDENCE", "0.8") or "0.8"
-    try:
-        min_conf = float(min_conf_raw)
-        if not 0 <= min_conf <= 1:
-            raise ValueError
-    except ValueError:
-        errors.append(
-            f"AI_ANSWER_MIN_CONFIDENCE must be between 0 and 1, got {min_conf_raw!r}"
-        )
-        min_conf = 0.8
+    faq_mode = (get("FAQ_MODE", "shadow") or "shadow").lower()
+    if faq_mode not in FAQ_MODES:
+        errors.append(f"FAQ_MODE must be one of {FAQ_MODES}, got {faq_mode!r}")
+    watch_ids: list[int] = []
+    for part in (get("FAQ_WATCH_CHANNEL_IDS") or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if not part.isdigit():
+            errors.append(
+                "FAQ_WATCH_CHANNEL_IDS must be comma-separated numeric channel IDs, "
+                f"got {part!r}"
+            )
+            continue
+        if int(part) not in watch_ids:
+            watch_ids.append(int(part))
+    # Watching a channel the bot already runs would answer its own surfaces
+    for name in (
+        "COMMUNITY_CHANNEL_ID",
+        "TICKETS_CHANNEL_ID",
+        "STAFF_CHANNEL_ID",
+        "LOG_CHANNEL_ID",
+    ):
+        own = get(name)
+        if own and own.isdigit() and int(own) in watch_ids:
+            errors.append(f"FAQ_WATCH_CHANNEL_IDS must not include {name} ({own})")
     ai_timeout_raw = get("AI_TIMEOUT_SECONDS", "30") or "30"
     try:
         ai_timeout = max(1.0, float(ai_timeout_raw))
@@ -391,14 +438,19 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         daily_summary_minute=summary_minute,
         daily_summary_timezone=summary_tz,
         ai_api_key=ai_api_key,
-        ai_base_url=(
-            get("AI_BASE_URL", DEFAULT_AI_BASE_URL) or DEFAULT_AI_BASE_URL
-        ).rstrip("/"),
-        ai_model=ai_model,
+        jev_base_url=http_url("JEV_BASE_URL") or DEFAULT_JEV_BASE_URL,
+        jev_model=get("JEV_MODEL", DEFAULT_JEV_MODEL) or DEFAULT_JEV_MODEL,
         ai_categorize=boolean("AI_CATEGORIZE", True),
-        ai_answer_mode=ai_mode,
-        ai_answer_min_confidence=min_conf,
         ai_timeout_seconds=ai_timeout,
+        faq_mode=faq_mode,
+        faq_threshold=fraction("FAQ_THRESHOLD", 0.9),
+        faq_watch_channel_ids=tuple(watch_ids),
+        faq_watch_threshold=fraction("FAQ_WATCH_THRESHOLD", 0.95),
+        faq_watch_pointer=boolean("FAQ_WATCH_POINTER", False),
+        faq_user_cooldown_seconds=number("FAQ_USER_COOLDOWN_SECONDS", 600.0, minimum=0),
+        faq_channel_cooldown_seconds=number(
+            "FAQ_CHANNEL_COOLDOWN_SECONDS", 120.0, minimum=0
+        ),
         kb_dir=get("KB_DIR", "kb") or "kb",
         zammad_url=zammad_url,
         zammad_token=zammad_token,

@@ -234,7 +234,10 @@ class FakeBot:
         self.settings = settings or make_settings()
         self.world = FakeWorld(self.settings)
         self.user = SimpleNamespace(id=BOT_USER_ID)
-        self.ai_client: Any = None
+        from nephthys.ai.faq import FAQStore
+
+        self.jev: Any = None
+        self.faq = FAQStore(self.settings.kb_dir)
         self.zammad: Any = None
         self.db_ready = True
         self.latency = 0.01
@@ -253,7 +256,7 @@ class FakeBot:
         self.tasks.append(asyncio.ensure_future(coro))
 
     async def drain(self) -> None:
-        """Wait for everything `spawn`ed (e.g. AI processing)."""
+        """Wait for everything `spawn`ed (e.g. the FAQ matcher)."""
         while self.tasks:
             await self.tasks.pop(0)
 

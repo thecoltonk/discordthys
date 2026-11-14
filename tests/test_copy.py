@@ -278,3 +278,28 @@ def test_copy_files_from_before_the_cleanup_still_load(
     assert "reopened" not in type(copy.tickets).model_fields
     # #community-help re-opening is unchanged
     assert copy.community.reopened and copy.commands.reopened
+
+
+def test_copy_files_from_the_generative_assistant_still_load(
+    caplog: pytest.LogCaptureFixture,
+):
+    """The [ai] section, its embeds and its card/summary/error keys are gone.
+    An old copy.local.toml that sets them loads; they're ignored with a warning."""
+    old = (
+        '[ai]\nfixed_button = "Fixed"\npublic_footer = "x"\nneed_human_reply = "ok"\n'
+        '[embeds.ai_shadow]\ntitle = "AI {id} {title}"\n'
+        '[embeds.ai_public]\nfooter = "Sources: {sources}"\n'
+        '[embeds.sticky]\ntitle = "Kept"\n'
+        '[card]\nfield_ai = "AI"\nai_line = "{mode} {confidence} {outcome}"\n'
+        '[summary]\nfield_ai = "AI"\nai_none = "none"\n'
+        '[errors]\nalready_rated = "x"\nai_already_answered = "y"\n'
+        'staff_only = "staff!"\n'
+    )
+    with caplog.at_level("WARNING"):
+        copy = parse_copy(old)
+    assert copy.embeds.sticky.title == "Kept" and copy.errors.staff_only == "staff!"
+    warned = [r.getMessage() for r in caplog.records if "ignoring" in r.getMessage()]
+    assert len(warned) == 9
+    assert not hasattr(copy, "ai")
+    assert not hasattr(copy.embeds, "ai_shadow")
+    assert not hasattr(copy.embeds, "ai_public")

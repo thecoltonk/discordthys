@@ -52,8 +52,6 @@
 # ticket_missing = "i couldn't find a ticket for this thread."
 # staff_only = "this command is for staff only."
 # not_a_ticket_thread = "use this inside a ticket thread."
-# already_rated = "someone already rated this one."
-# ai_already_answered = "this has already been answered, thanks!"
 
 [commands]
 # Staff slash commands: /faq, /ip, /resolve, /reopen, /waiting.
@@ -107,17 +105,9 @@
 # reopened_suffix = " (re-opened)"
 # field_category = "Category"
 # category_none = "—"
-# An AI-set category.
+# A category picked by Jev.
 # Placeholders: {category}
 # category_ai = "{category} (AI)"
-# field_ai = "🤖 AI"
-# Placeholders: {confidence}, {mode}, {outcome}
-# ai_line = "{mode} answer ({confidence}) — {outcome}"
-# ai_pending = "awaiting feedback"
-# ai_helpful = "👍 rated helpful"
-# ai_not_helpful = "👎 rated not helpful"
-# ai_fixed = "✅ player said it fixed it"
-# ai_needs_human = "🙋 player still needs a human"
 # Card link button to the ticket's Discord thread.
 # open_thread_button = "Open in Discord"
 # Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
@@ -185,46 +175,36 @@
 # waiting_line = "• [{ref} {title}]({link}) — {last_message}"
 # Placeholders: {count}
 # waiting_more = "…and {count} more (see /waiting)"
-# field_ai = "🤖 AI"
-# ai_none = "no AI activity"
-# Placeholders: {day_helpful}, {day_pct}, {day_rated}, {week_helpful}, {week_pct}, {week_rated}
-# ai_shadow_accuracy = "**Shadow accuracy** (👍 / rated): 24h {day_pct} ({day_helpful}/{day_rated}), 7d {week_pct} ({week_helpful}/{week_rated})"
-# Placeholders: {posted}, {unrated}
-# ai_shadow_counts = "Suggestions 24h: {posted} posted, {unrated} unrated"
-# Placeholders: {fixed}, {needs_human}, {no_response}, {posted}, {week_fix_rate}
-# ai_public = "**Public answers** 24h: {posted} posted — {fixed} fixed, {needs_human} needed a human, {no_response} no response; 7d fix rate {week_fix_rate}"
-# Placeholders: {attempts}, {skipped}
-# ai_attempts = "Attempts 24h: {attempts} ({skipped} not posted)"
-# Placeholders: {attempts}, {reasons}, {skipped}
-# ai_attempts_reasons = "Attempts 24h: {attempts} ({skipped} not posted: {reasons})"
 
-[ai]
-# AI answers (shadow suggestions for staff, public answers for players).
-# fixed_button = "This fixed it"
-# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
-# fixed_button_emoji = "✅"
-# need_human_button = "I still need a human"
-# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
-# need_human_button_emoji = "🙋"
-# need_human_reply = "no worries — a human will be along to help soon! feel free to add any extra details while you wait."
+[faq]
+# The FAQ matcher. The answers themselves are the files in kb/, posted word
+# for word; this is only the text around them.
+# Reply to a question in a watched channel (FAQ_WATCH_CHANNEL_IDS): {answer} is the FAQ entry's answer, word for word; {channel} is #community-help.
+# Placeholders: {answer}, {channel}
+# watch_reply = '''
+# {answer}
+#
+# -# got another question? ask in {channel}'''
+# Reply to a support question in a watched channel that no FAQ entry answers (only with FAQ_WATCH_POINTER=true).
+# Placeholders: {channel}
+# watch_pointer = "that sounds like one for {channel} — post it there and someone will help you out!"
+# Private reply to a click on a button of the removed AI assistant.
+# retired_button = "that button belonged to the old AI assistant, which has been removed."
 # shadow_field_confidence = "Confidence"
-# shadow_field_sources = "Sources"
-# no_sources = "none"
-# helpful_button = "Helpful"
-# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
-# helpful_button_emoji = "👍"
-# not_helpful_button = "Not helpful"
-# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
-# not_helpful_button_emoji = "👎"
-# field_outcome = "Outcome"
-# Placeholders: {user}
-# rated_helpful = "👍 helpful — rated by {user}"
-# Placeholders: {user}
-# rated_not_helpful = "👎 not helpful — rated by {user}"
-# Placeholders: {user}
-# outcome_fixed = "✅ {user} said this fixed it"
-# Placeholders: {user}
-# outcome_needs_human = "🙋 {user} still needs a human"
+# shadow_field_where = "Where"
+# shadow_field_question = "Message"
+# shadow_no_text = "*(no text)*"
+# Placeholders: {id}, {link}
+# shadow_where_ticket = "new ticket [#{id}]({link})"
+# Placeholders: {channel}, {link}
+# shadow_where_channel = "{channel} · [message]({link})"
+# Watched channels: both of Jev's confidence scores.
+# Placeholders: {match}, {question}
+# shadow_confidence_watch = "match {match} · real question {question}"
+# Placeholders: {question}
+# shadow_confidence_pointer = "support question {question} · no FAQ match"
+# Stands in for the entry id when only the pointer would be sent.
+# shadow_pointer_name = "pointer to #community-help"
 
 [tickets]
 # #tickets: the panel, private ticket threads, closing and escalation.
@@ -425,26 +405,15 @@
 # Optional image URL (https://...).
 # thumbnail_url = ""
 
-[embeds.ai_shadow]
-# AI suggestions posted to staff (shadow mode).
-# Placeholders: {id}, {title}
-# title = "🤖 AI suggestion (shadow) · #{id} {title}"
-# Placeholders: {answer}
-# description = "{answer}"
+[embeds.faq_shadow]
+# Shadow mode: what the FAQ matcher would have posted, shown to staff only.
+# {entry} is the FAQ entry's id; {text} is the exact text players would get.
+# Placeholders: {entry}
+# title = "FAQ match (shadow) · {entry}"
+# Placeholders: {text}
+# description = "{text}"
 # Hex colour, e.g. #5865F2 ("" = none).
 # color = "#11806A"
-# footer = "Not shown to the player. Would this have been a good answer?"
-# Optional image URL (https://...).
-# thumbnail_url = ""
-
-[embeds.ai_public]
-# AI answers posted to players (public mode).
-# title = "🤖 Automated answer"
-# Placeholders: {answer}
-# description = "{answer}"
-# Hex colour, e.g. #5865F2 ("" = none).
-# color = "#11806A"
-# Placeholders: {sources}
-# footer = "I'm a bot answering from the Cloudsail knowledge base, and I can be wrong. Sources: {sources}"
+# footer = "Not shown to the player. Set FAQ_MODE=public to post these."
 # Optional image URL (https://...).
 # thumbnail_url = ""

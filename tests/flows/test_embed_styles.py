@@ -18,9 +18,7 @@ from nephthys.core.copytext import DEFAULT_COPY as C
 from nephthys.core.copytext import parse_copy
 from nephthys.core.copytext import use_copy
 from nephthys.core.stats import StatsSummary
-from nephthys.database.tables import AISuggestion
-from nephthys.discord_ops.ai_flow import public_embed
-from nephthys.discord_ops.ai_flow import shadow_embed
+from nephthys.discord_ops.faq_flow import report_shadow
 from nephthys.discord_ops.sticky import build_sticky_embed
 from nephthys.tasks.daily_summary import send_daily_summary
 from nephthys.ui.ticket_buttons import CloseTicketButton
@@ -58,18 +56,6 @@ async def community_card(bot: FakeBot):
     return cog, ticket, card
 
 
-def fake_suggestion() -> AISuggestion:
-    return AISuggestion(
-        id=1,
-        ticket=1,
-        mode="shadow",
-        model="m",
-        answer="use /claim",
-        confidence=0.9,
-        kb_sources=["faq.md"],
-    )
-
-
 async def test_defaults_keep_the_old_look():
     bot = FakeBot()
     sticky = build_sticky_embed("https://faq")
@@ -87,15 +73,19 @@ async def test_defaults_keep_the_old_look():
     s = stats_embed(StatsSummary(since=datetime.now(UTC), until=datetime.now(UTC)), 7)
     assert (s.title, colour(s)) == ("#community-help — last 7 days", 0x5865F2)
 
-    ticket_ = tickets.Ticket(id=3, title="t", thread_id=9)
-    shadow = shadow_embed(ticket_, fake_suggestion(), 100)
-    assert (
-        colour(shadow) == 0x11806A and shadow.footer.text == C.embeds.ai_shadow.footer
+    shadow = await report_shadow(
+        cast(Any, bot),
+        name="server-ip",
+        would_post="the address is play.example.com",
+        confidence="97%",
+        where="new ticket",
+        question="what's the ip?",
+        link=None,
     )
-    public = public_embed(fake_suggestion())
-    assert public.title == "🤖 Automated answer" and "Sources: faq.md" in (
-        public.footer.text or ""
-    )
+    assert shadow.embed.title == "FAQ match (shadow) · server-ip"
+    assert shadow.embed.description == "the address is play.example.com"
+    assert colour(shadow.embed) == 0x11806A
+    assert shadow.embed.footer.text == C.embeds.faq_shadow.footer
 
     i = make_interaction(bot, make_user(staff=True))
     await cast(Any, Staff.waiting).callback(Staff(cast(Any, bot)), i)
@@ -140,8 +130,9 @@ color = ""
 footer = "summary footer"
 thumbnail_url = "{THUMB}"
 
-[embeds.ai_public]
-footer = "bot answer · {{sources}}"
+[embeds.faq_shadow]
+title = "would post {{entry}}"
+footer = "shadow footer"
 color = "#000006"
 """
         )
@@ -194,8 +185,20 @@ color = "#000006"
         for e in summary.embeds
     )
 
-    public = public_embed(fake_suggestion())
-    assert (public.footer.text, colour(public)) == ("bot answer · faq.md", 6)
+    shadow = await report_shadow(
+        cast(Any, bot),
+        name="server-ip",
+        would_post="text",
+        confidence="97%",
+        where="here",
+        question="q",
+        link=None,
+    )
+    assert (shadow.embed.title, shadow.embed.footer.text, colour(shadow.embed)) == (
+        "would post server-ip",
+        "shadow footer",
+        6,
+    )
 
 
 async def test_daily_summary_is_silent():

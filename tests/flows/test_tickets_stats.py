@@ -12,7 +12,6 @@ from nephthys.cogs.staff import Staff
 from nephthys.core import private_tickets as pt
 from nephthys.core import tickets
 from nephthys.database.tables import Ticket
-from nephthys.discord_ops.formatting import csat_text
 from nephthys.discord_ops.formatting import priorities_text
 from nephthys.discord_ops.formatting import ticket_ref
 from nephthys.tasks.daily_summary import build_daily_summary
@@ -31,7 +30,7 @@ pytestmark = pytest.mark.usefixtures("db")
 
 def now() -> datetime:
     # Read the clock per call: a module-level timestamp goes stale when the suite
-    # runs long, and CSAT is stamped with the real time when it's given
+    # runs long
     return datetime.now(UTC)
 
 
@@ -41,8 +40,8 @@ def fields(embed: Any) -> dict[str, str]:
 
 async def seed() -> list[Ticket]:
     start = now()
-    """Three private tickets (store/medium rated 5, urgent/high rated 3, one
-    unpicked and waiting 4 days) and one community ticket."""
+    """Three private tickets (store/medium and urgent/high, both resolved, and
+    one unpicked and waiting 4 days) and one community ticket."""
     await pt.align_number_sequence(26)
     mod = staff(name="mod")
     made = []
@@ -63,9 +62,8 @@ async def seed() -> list[Ticket]:
     await tickets.record_message(
         store, mod, at=store.created_at + timedelta(minutes=10)
     )
-    for t, op, rating in ((store, store_op, 5), (urgent, urgent_op, 3)):
+    for t, op in ((store, store_op), (urgent, urgent_op)):
         await tickets.resolve(t.id, op)
-        await pt.rate_csat(t.id, rating, op)
     await new_ticket(created_at=start - timedelta(hours=1))
     return [t for t, _ in made]
 
@@ -76,8 +74,6 @@ def test_formatting_helpers():
     assert priorities_text({"high": 1, "medium": 2, "unset": 1}) == (
         "🔴 High 1, 🟡 Medium 2, not picked yet 1"
     )
-    assert csat_text(4.25, 4) == "4.2/5 from 4 rating(s)"
-    assert csat_text(None, 0) == "no ratings yet"
 
 
 async def test_stats_includes_tickets_when_enabled():
@@ -92,7 +88,7 @@ async def test_stats_includes_tickets_when_enabled():
     assert private.title == "#tickets — last 7 days"
     f = fields(private)
     assert f["Opened"] == "3"
-    assert f["CSAT average"] == "4.0/5 from 2 rating(s)"
+    assert not any("CSAT" in name for name in f)
     assert f["By priority"] == "🔴 High 1, 🟡 Medium 1, not picked yet 1"
     assert f["Opened by category"] == "❗ Server Issue 1, 🛒 Store 1, Uncategorised 1"
     assert f["Median first staff response"] == "10 min"
@@ -128,7 +124,7 @@ async def test_daily_summary_has_a_tickets_embed():
     assert private.title == "📊 #tickets daily summary"
     f = fields(private)
     assert f["Opened"] == "2"  # the 4-day-old one is outside the window
-    assert f["CSAT average"] == "4.0/5 from 2 rating(s)"
+    assert not any("CSAT" in name for name in f)
     assert f["By priority"] == "🔴 High 1, 🟡 Medium 1"
     assert f["By category"] == "❗ Server Issue 1, 🛒 Store 1"
     waiting = f["Waiting > 3 days (1)"]

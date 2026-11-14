@@ -216,7 +216,6 @@ class CardCopy(Section):
         "credit": {"user"},
         "category_ai": {"category"},
         "ai_line": {"mode", "confidence", "outcome"},
-        "csat_value": {"rating"},
         "escalated_value": {"id", "link"},
         "escalated_to_value": {"number", "link"},
         "zammad_agent": {"name"},
@@ -269,8 +268,6 @@ class CardCopy(Section):
     category_pending: str = "category not picked yet"
     awaiting_first_message: str = "*(waiting for the player's first message)*"
     field_priority: str = "Priority"
-    field_csat: str = "CSAT"
-    csat_value: str = "{rating}/5"
     field_escalated: str = "Escalated from"
     escalated_value: str = "[#{id}]({link})"
     field_escalated_to: str = "Escalated to"
@@ -285,7 +282,6 @@ class StatsCopy(Section):
     """Shared by /stats and the daily summary."""
 
     PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
-        "csat_value": {"average", "count"},
         "resolved_value": {"resolved", "without_staff"},
         "field_waiting": {"days"},
         "leaderboard_line": {"rank", "user", "count"},
@@ -312,9 +308,6 @@ class StatsCopy(Section):
     uncategorised: str = "Uncategorised"
     field_by_priority: str = "By priority"
     priority_unset: str = "not picked yet"
-    field_csat: str = "CSAT average"
-    csat_value: str = "{average}/5 from {count} rating(s)"
-    csat_none: str = "no ratings yet"
     field_top_helpers: str = "Top helpers (resolved, by claimer)"
     leaderboard_line: str = "{rank}. {user} — {count}"
     leaderboard_empty: str = "nobody yet"
@@ -406,7 +399,7 @@ class AICopy(Section):
 
 
 class TicketsCopy(Section):
-    """#tickets: the panel, private ticket threads, closing, CSAT and escalation."""
+    """#tickets: the panel, private ticket threads, closing and escalation."""
 
     PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
         "thread_name": {"name", "number"},
@@ -417,9 +410,6 @@ class TicketsCopy(Section):
         "created": {"link"},
         "too_many_open": {"count", "links"},
         "closed": {"user"},
-        "csat_thanks": {"rating", "emoji"},
-        "reopened": {"user"},
-        "alert_ping": {"roles", "priority"},
         "escalated_public": {"user", "link"},
         "escalated_quote": {"quote"},
         "escalate_done": {"link"},
@@ -474,36 +464,19 @@ class TicketsCopy(Section):
         default="this ticket has been closed by {user}. thanks for reaching out!",
         description="Posted when a ticket is closed (button or /resolve).",
     )
-    csat_prompt: str = Field(
-        default="how did we do?",
-        description="Posted as its own message after the closing message, above the rating buttons.",
-    )
-    csat_button_1: str = Field(
-        default="",
-        description="CSAT buttons 1 (worst) to 5 (best): label (often empty) and emoji.",
-    )
-    csat_button_1_emoji: str = "😡"
-    csat_button_2: str = ""
-    csat_button_2_emoji: str = "🙁"
-    csat_button_3: str = ""
-    csat_button_3_emoji: str = "😐"
-    csat_button_4: str = ""
-    csat_button_4_emoji: str = "🙂"
-    csat_button_5: str = ""
-    csat_button_5_emoji: str = "🤩"
-    csat_thanks: str = Field(
-        default="thanks! you rated {rating}/5 {emoji}",
-        description=(
-            "Replaces the prompt after a rating (the buttons stay, disabled). "
-            "{emoji} is that rating's button emoji."
+    no_reopen: str = Field(
+        default=(
+            "closed tickets can't be re-opened. if there's more to sort out, the "
+            "player can open a new ticket in #tickets."
         ),
+        description="Private reply to /reopen inside a #tickets thread.",
     )
-    csat_not_opener: str = "only the person who opened this ticket can rate it."
-    csat_already: str = "you've already rated this ticket — thanks!"
-    reopened: str = "this ticket has been re-opened by {user}."
-    alert_ping: str = Field(
-        default="{roles} new **{priority}** ticket",
-        description="Text above the staff alert card; {roles} are the pinged roles.",
+    csat_retired: str = Field(
+        default="we're no longer collecting ratings here — thanks anyway!",
+        description=(
+            "Private reply to a click on a rating button left in a thread from "
+            "before ratings were removed."
+        ),
     )
     priority_low: str = "🟢 Low"
     priority_medium: str = "🟡 Medium"
@@ -833,12 +806,26 @@ MOVED_KEYS: dict[tuple[str, str], str] = {
 
 # Keys that no longer exist because what they labelled is gone. They're ignored
 # with a warning (not rejected), so an old copy.local.toml doesn't stop startup.
+CSAT_REMOVED = "CSAT ratings were removed"
 REMOVED_KEYS: dict[tuple[str, str], str] = {
     ("card", "category_placeholder"): "#community-help staff cards were removed",
     ("card", "field_zammad"): "the card links to Zammad with a button now",
     ("card", "zammad_value"): "the card links to Zammad with a button now",
     ("card", "zammad_value_no_link"): "the card links to Zammad with a button now",
     ("card", "zammad_group"): "the card links to Zammad with a button now",
+    ("card", "field_csat"): CSAT_REMOVED,
+    ("card", "csat_value"): CSAT_REMOVED,
+    ("stats", "field_csat"): CSAT_REMOVED,
+    ("stats", "csat_value"): CSAT_REMOVED,
+    ("stats", "csat_none"): CSAT_REMOVED,
+    ("tickets", "csat_prompt"): CSAT_REMOVED,
+    **{("tickets", f"csat_button_{n}"): CSAT_REMOVED for n in range(1, 6)},
+    **{("tickets", f"csat_button_{n}_emoji"): CSAT_REMOVED for n in range(1, 6)},
+    ("tickets", "csat_thanks"): CSAT_REMOVED,
+    ("tickets", "csat_not_opener"): CSAT_REMOVED,
+    ("tickets", "csat_already"): CSAT_REMOVED,
+    ("tickets", "reopened"): "closed #tickets threads can't be re-opened any more",
+    ("tickets", "alert_ping"): "staff alerts no longer ping roles",
 }
 
 

@@ -19,8 +19,9 @@ from nephthys.database.enums import UserType
 from nephthys.database.tables import User
 from nephthys.database.tables import ZammadOutbox
 from nephthys.ui.ticket_buttons import CloseTicketButton
-from nephthys.ui.ticket_buttons import CSATButton
+from nephthys.ui.ticket_buttons import RetiredCSATButton
 from nephthys.zammad import outbox
+from nephthys.zammad.to_zammad import REOPEN_REFUSED_NOTE
 from tests.fakes import make_interaction
 from tests.fakes import make_message
 from tests.fakes import make_user
@@ -397,7 +398,7 @@ async def test_long_replies_are_split_and_never_double_posted(world: World):
 # ---------------------------------------------------------------------------
 
 
-async def test_close_in_zammad_runs_the_discord_close_and_csat(world: World):
+async def test_close_in_zammad_runs_the_discord_close(world: World):
     ticket, thread, player = await world.open_ticket("store")
     await world.say(thread, player, "hi")
     ticket = await world.synced(ticket)
@@ -410,9 +411,9 @@ async def test_close_in_zammad_runs_the_discord_close_and_csat(world: World):
     ticket = await world.fresh(ticket)
     assert ticket.closed_by is None and ticket.closed_by_name == AGENT_NAME
     texts = [m.content for m in world.thread_posts(thread)]
-    assert C.tickets.closed.format(user=f"**{AGENT_NAME}**") in texts
-    assert C.tickets.csat_prompt in texts
-    assert thread.locked is True
+    # The closing message is the last post (no rating prompt), then lock + archive
+    assert texts[-1] == C.tickets.closed.format(user=f"**{AGENT_NAME}**")
+    assert thread.locked is True and thread.archived is True
     status = fields(world.card(ticket).embed)[C.card.field_status]
     assert status.startswith(f"✅ Resolved by {AGENT_NAME} (Zammad)")
 
@@ -421,17 +422,16 @@ async def test_close_in_zammad_runs_the_discord_close_and_csat(world: World):
     assert await ZammadOutbox.count().where(ZammadOutbox.kind == outbox.CLOSE) == 0
     assert (await world.fresh(ticket)).status == TicketStatus.CLOSED
 
-    # The player's CSAT rating becomes an internal note in Zammad
-    await CSATButton(ticket.id, 4).callback(make_interaction(world.bot, player))
+    # A click on a rating button from before CSAT was removed sends nothing
+    before = len(await world.articles(ticket))
+    await RetiredCSATButton(ticket.id, 4).callback(make_interaction(world.bot, player))
     await world.drain()
-    last = (await world.articles(ticket))[-1]
-    assert last["internal"] is True and last["type"] == "note"
-    assert "4/5" in last["body"]
     await world.quiet()
-    assert "4/5" not in "".join(m.content or "" for m in world.replies(thread))
+    assert len(await world.articles(ticket)) == before
+    assert await ZammadOutbox.count().where(ZammadOutbox.kind == outbox.NOTE) == 0
 
 
-async def test_close_and_reopen_in_discord_sync_to_zammad(world: World):
+async def test_close_in_discord_syncs_to_zammad_and_reopen_is_refused(world: World):
     ticket, thread, player = await world.open_ticket("store")
     await world.say(thread, player, "hi")
     ticket = await world.synced(ticket)
@@ -444,43 +444,128 @@ async def test_close_and_reopen_in_discord_sync_to_zammad(world: World):
     # Zammad's echo of our own close changes nothing
     await world.quiet()
     assert (await world.fresh(ticket)).status == TicketStatus.CLOSED
-    assert [m.content for m in world.thread_posts(thread)].count(
-        C.tickets.csat_prompt
-    ) == 1
+    closing = C.tickets.closed.format(user=player.mention)
+    assert [m.content for m in world.thread_posts(thread)].count(closing) == 1
+    assert thread.locked is True and thread.archived is True
 
+    # /reopen in the thread is refused privately; Zammad never hears about it
+    articles = len(await world.articles(ticket))
     mod = make_user(staff=True, name="Mod")
+    i = make_interaction(world.bot, mod, channel=thread)
     await cast(Any, TicketCommands.reopen).callback(
-        TicketCommands(cast(Any, world.bot)),
-        make_interaction(world.bot, mod, channel=thread),
+        TicketCommands(cast(Any, world.bot)), i
     )
+    assert i.response.send_message.call_args.args[0] == C.tickets.no_reopen
     await world.drain()
-    assert (await world.admin.get_ticket(ticket.zammad_ticket_id))["state"] == "open"
     await world.quiet()
+    assert (await world.admin.get_ticket(ticket.zammad_ticket_id))["state"] == "closed"
+    assert len(await world.articles(ticket)) == articles
+    assert await ZammadOutbox.count().where(ZammadOutbox.kind == outbox.REOPEN) == 0
     ticket = await world.fresh(ticket)
-    assert ticket.status == TicketStatus.OPEN and thread.locked is False
+    assert ticket.status == TicketStatus.CLOSED and thread.locked is True
 
 
-async def test_reopen_in_zammad_reopens_the_discord_ticket(world: World):
+@pytest.mark.parametrize("state", ["open", "pending reminder"])
+async def test_reopen_in_zammad_is_undone_and_explained_to_the_agent(
+    world: World, state: str
+):
+    """A closed Discord ticket stays closed. If an agent re-opens it in Zammad,
+    nothing changes in Discord; Zammad is closed again with an internal note
+    saying why and what to do instead."""
     ticket, thread, player = await world.open_ticket("store")
     ticket = await world.synced(ticket)
     await CloseTicketButton(ticket.id).callback(make_interaction(world.bot, player))
     await world.drain()
     await world.quiet()
-    assert thread.locked is True
+    assert thread.locked is True and thread.archived is True
+    posts = len(world.thread_posts(thread))
+    thread.added_users.clear()
+
+    update: dict[str, Any] = {"state": state}
+    if state.startswith("pending"):
+        update["pending_time"] = "2099-01-01T00:00:00Z"
+    await world.agent.update_ticket(ticket.zammad_ticket_id, update)
+
+    async def closed_again() -> bool:
+        current = await world.admin.get_ticket(ticket.zammad_ticket_id)
+        return current["state"] == "closed"
+
+    await world.eventually(closed_again, "Zammad being closed again")
+    await world.quiet()
+
+    # Discord: untouched. Still closed, locked and archived; nobody re-added,
+    # nothing posted, no re-open recorded
+    ticket = await world.fresh(ticket)
+    assert ticket.status == TicketStatus.CLOSED and ticket.reopened_at is None
+    assert thread.locked is True and thread.archived is True
+    assert thread.added_users == []
+    assert len(world.thread_posts(thread)) == posts
+
+    # Zammad: closed, with exactly one internal note for the agent
+    assert (await world.admin.get_ticket(ticket.zammad_ticket_id))["state"] == "closed"
+    notes = [
+        a for a in await world.articles(ticket) if a["body"] == REOPEN_REFUSED_NOTE
+    ]
+    assert len(notes) == 1
+    assert notes[0]["internal"] is True and notes[0]["type"] == "note"
+    assert "open a new ticket" in REOPEN_REFUSED_NOTE
+    # The note never reaches the player's thread
+    assert REOPEN_REFUSED_NOTE not in "".join(
+        m.content or "" for m in world.thread_posts(thread)
+    )
+    # ...and it settles: no close/re-open ping-pong between the two systems
+    assert await ZammadOutbox.count().where(ZammadOutbox.status == "pending") == 0
+    assert await ZammadOutbox.count().where(ZammadOutbox.kind == outbox.REOPEN) == 0
+
+
+async def test_reply_on_a_reopened_closed_ticket_is_delivered_then_put_away(
+    world: World,
+):
+    """An agent who re-opens a closed ticket by replying: the reply still
+    reaches the (locked) thread, which is archived again, and Zammad goes back
+    to closed."""
+    ticket, thread, player = await world.open_ticket("store")
+    ticket = await world.synced(ticket)
+    await CloseTicketButton(ticket.id).callback(make_interaction(world.bot, player))
+    await world.drain()
+    await world.quiet()
 
     await world.agent.update_ticket(ticket.zammad_ticket_id, {"state": "open"})
+    await reply(world, ticket, "one more thing: check your inbox in game")
 
-    async def reopened() -> bool:
-        return (await world.fresh(ticket)).status != TicketStatus.CLOSED
+    async def settled() -> bool:
+        current = await world.admin.get_ticket(ticket.zammad_ticket_id)
+        delivered = any(
+            "one more thing" in (m.content or "") for m in world.replies(thread)
+        )
+        return current["state"] == "closed" and delivered
 
-    await world.eventually(reopened, "the re-open")
-    assert thread.locked is False and thread.archived is False
-    assert player.id in thread.added_users
-    texts = [m.content for m in world.thread_posts(thread)]
-    assert C.tickets.reopened.format(user=f"**{AGENT_NAME}**") in texts
+    await world.eventually(settled, "the reply and the re-close")
     await world.quiet()
-    assert await ZammadOutbox.count().where(ZammadOutbox.kind == outbox.REOPEN) == 0
-    assert (await world.admin.get_ticket(ticket.zammad_ticket_id))["state"] == "open"
+    assert (await world.fresh(ticket)).status == TicketStatus.CLOSED
+    assert thread.locked is True and thread.archived is True
+
+
+async def test_leftover_reopen_and_csat_rows_are_skipped_not_failed(world: World):
+    """Rows queued by an older version (a Discord re-open, a CSAT note) must
+    not re-open anything, post anything, or end up as failures."""
+    ticket, _thread, player = await world.open_ticket("store")
+    ticket = await world.synced(ticket)
+    await CloseTicketButton(ticket.id).callback(make_interaction(world.bot, player))
+    await world.drain()
+    await world.quiet()
+    articles = len(await world.articles(ticket))
+
+    await outbox.enqueue(ticket.id, outbox.TO_ZAMMAD, outbox.REOPEN, {"by": "Mod"})
+    await outbox.enqueue(
+        ticket.id, outbox.TO_ZAMMAD, outbox.NOTE, {"text": "CSAT: 4/5"}
+    )
+    await world.drain()
+    await world.quiet()
+    assert await ZammadOutbox.count().where(ZammadOutbox.status != "done") == 0
+    assert (await world.admin.get_ticket(ticket.zammad_ticket_id))["state"] == "closed"
+    assert len(await world.articles(ticket)) == articles
+    assert (await world.fresh(ticket)).status == TicketStatus.CLOSED
 
 
 async def test_group_change_in_zammad_is_recorded(world: World):

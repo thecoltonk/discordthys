@@ -203,13 +203,14 @@ def ai_bot(kb_dir: Path, **env: str) -> FakeBot:
 
 async def run_tickets_everything(bot: FakeBot, interactions: list[Any]) -> None:
     """Every #tickets message path: panel, create, picks, alert, first message,
-    claim, close + CSAT, reopen, limit, escalate (+quote, already escalated)."""
+    claim, close, an old CSAT button, a refused /reopen, limit, escalate
+    (+quote, already escalated)."""
     from nephthys.cogs.tickets import Tickets
     from nephthys.core import private_tickets as pt
     from nephthys.ui.ticket_buttons import CategoryButton
     from nephthys.ui.ticket_buttons import CloseTicketButton
     from nephthys.ui.ticket_buttons import CreateTicketButton
-    from nephthys.ui.ticket_buttons import CSATButton
+    from nephthys.ui.ticket_buttons import RetiredCSATButton
     from nephthys.ui.ticket_buttons import SubcategoryButton
 
     def interaction(user: Any, **kwargs: Any) -> Any:
@@ -241,9 +242,7 @@ async def run_tickets_everything(bot: FakeBot, interactions: list[Any]) -> None:
     await CloseTicketButton(ticket.id).callback(interaction(rando))
     await CloseTicketButton(ticket.id).callback(interaction(player))
     await CloseTicketButton(ticket.id).callback(interaction(player))
-    await CSATButton(ticket.id, 5).callback(interaction(mod))
-    await CSATButton(ticket.id, 5).callback(interaction(player))
-    await CSATButton(ticket.id, 1).callback(interaction(player))
+    await RetiredCSATButton(ticket.id, 5).callback(interaction(player))
     await cast(Any, TicketCommands.reopen).callback(
         commands, interaction(mod, channel=thread)
     )
@@ -318,7 +317,6 @@ async def test_code_supplies_every_declared_placeholder(
         assert any("closed:" in t for t in embed_texts)
     for key in (
         *(() if embeds_enabled else ("opener_header:", "closed:")),
-        "reopened:",
         "escalated_public:",
         "escalated_quote:",
     ):
@@ -326,9 +324,10 @@ async def test_code_supplies_every_declared_placeholder(
     alerts = [
         m
         for m in bot.sends(bot.settings.staff_channel_id or 0)
-        if (m.content or "").startswith("alert_ping:")
+        if (m.embed.title or "").startswith("private_title:")
     ]
-    assert alerts and all(m.embed.title.startswith("private_title:") for m in alerts)
+    # Staff alerts are the card alone: no ping line above it
+    assert alerts and all(m.content is None for m in alerts)
 
     now = datetime.now(UTC)
     embed, *_ = await build_daily_summary(
@@ -349,7 +348,7 @@ async def test_link_embeds_are_always_suppressed(kb_dir: Path):
     assert sent
     for m in sent:
         if getattr(m, "embed", None) is not None:
-            # Rich embeds carry no linkable content (at most a role-ping line), so
+            # Rich embeds carry no linkable content (at most a player mention), so
             # nothing can unfurl; suppress_embeds would hide the embed itself
             assert m.content is None or "http" not in m.content
             assert not getattr(m, "suppress_embeds", False)

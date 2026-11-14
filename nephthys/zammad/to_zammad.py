@@ -1,7 +1,7 @@
 """Discord -> Zammad: the handlers for `to_zammad` outbox rows.
 
-Every article is `type: note`, `internal: false` (CSAT and close/reopen notes
-are internal). Nothing here creates an email-type article, and the customers
+Every article is `type: note`, `internal: false` (the notes about a close are
+internal). Nothing here creates an email-type article, and the customers
 only have an address under `.invalid`, so no email can reach a player.
 """
 
@@ -357,8 +357,15 @@ async def article(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
 
 
 # ---------------------------------------------------------------------------
-# close / reopen / note
+# close
 # ---------------------------------------------------------------------------
+
+REOPEN_REFUSED_NOTE = (
+    "This ticket is closed in Discord, and closed Discord tickets can't be "
+    "re-opened, so it has been closed here again. Its Discord thread is locked "
+    "and archived: the player can't see new replies there. If they need more "
+    "help, ask them to open a new ticket in #tickets."
+)
 
 
 async def _internal_note(
@@ -383,40 +390,31 @@ async def _internal_note(
     )
 
 
-async def _set_state(
-    sync: "ZammadSync", row: Row, ticket: Ticket, *, closed: bool, text: str
-) -> None:
+async def close(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
+    """Close the Zammad ticket and say why in an internal note: either it was
+    closed in Discord, or (`reopen_refused`) someone re-opened it in Zammad
+    after that, which Discord tickets don't support."""
     assert ticket.zammad_ticket_id is not None
+    if row.payload.get("reopen_refused"):
+        text = REOPEN_REFUSED_NOTE
+    else:
+        text = f"Closed in Discord by {row.payload.get('by') or 'the bot'}."
     current = await sync.client.get_ticket(ticket.zammad_ticket_id)
-    if is_closed_state(current.get("state")) != closed:
-        await sync.client.update_ticket(
-            ticket.zammad_ticket_id, {"state": "closed" if closed else "open"}
-        )
+    if not is_closed_state(current.get("state")):
+        await sync.client.update_ticket(ticket.zammad_ticket_id, {"state": "closed"})
     await _internal_note(sync, row, ticket, text)
 
 
-async def close(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
-    who = row.payload.get("by") or "the bot"
-    await _set_state(
-        sync, row, ticket, closed=True, text=f"Closed in Discord by {who}."
-    )
-
-
-async def reopen(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
-    who = row.payload.get("by") or "staff"
-    await _set_state(
-        sync, row, ticket, closed=False, text=f"Re-opened in Discord by {who}."
-    )
-
-
-async def note(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
-    await _internal_note(sync, row, ticket, str(row.payload.get("text") or ""))
+async def retired(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
+    """A re-open or CSAT note queued before those features were removed:
+    nothing to send, the row just completes."""
+    log.info(f"Skipped retired Zammad outbox row {row.id} ({row.kind})")
 
 
 HANDLERS = {
     outbox.CREATE_TICKET: create_ticket,
     outbox.ARTICLE: article,
     outbox.CLOSE: close,
-    outbox.REOPEN: reopen,
-    outbox.NOTE: note,
+    outbox.REOPEN: retired,
+    outbox.NOTE: retired,
 }

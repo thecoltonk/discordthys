@@ -8,7 +8,6 @@ from piccolo.columns import JSONB
 from piccolo.columns import OnDelete
 from piccolo.columns import OnUpdate
 from piccolo.columns import Serial
-from piccolo.columns import SmallInt
 from piccolo.columns import Text
 from piccolo.columns import Timestamptz
 from piccolo.columns.defaults.timestamptz import TimestamptzNow
@@ -102,10 +101,6 @@ class Ticket(Table, tablename="ticket"):
     priority = Text(null=True, default=None)  # low | medium | high
     opener_message_id = BigInt(null=True, default=None)
     escalated_from = Integer(null=True, default=None)  # FK ticket.id in SQL
-    csat_rating = SmallInt(null=True, default=None)  # 1-5
-    csat_at = Timestamptz(null=True, default=None)
-    # When the closed #tickets thread was archived (after CSAT or the timeout)
-    archived_at = Timestamptz(null=True, default=None)
 
     # Zammad mirror (#tickets only; NULL until the ticket exists in Zammad)
     zammad_ticket_id = Integer(unique=True, null=True, default=None)

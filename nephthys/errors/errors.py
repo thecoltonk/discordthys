@@ -20,3 +20,11 @@ class PermissionDenied(Exception):
     def __init__(self, message: str, user_id: int):
         super().__init__(message)
         self.user_id = user_id
+
+
+class PrivateTicketReopenError(Exception):
+    """A closed #tickets (private) ticket stays closed: the player opens a new one."""
+
+    def __init__(self, ticket_id: int):
+        super().__init__("Closed private tickets can't be re-opened")
+        self.ticket_id = ticket_id

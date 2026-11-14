@@ -2,6 +2,7 @@ import pytest
 
 from nephthys.config import ConfigError
 from nephthys.config import load_settings
+from nephthys.config import REMOVED_ENV
 from tests.helpers import BASE_ENV
 from tests.helpers import make_settings
 
@@ -121,29 +122,48 @@ def test_tickets_settings():
     assert s.ticket_number_start == 26
     assert s.tickets_max_open_per_user == 2
     assert s.ticket_categories_file == "copy/ticket_categories.toml"
-    s = make_settings(
-        TICKETS_CHANNEL_ID="600", STORE_ROLE_ID="301", TICKET_NUMBER_START="100"
-    )
+    s = make_settings(TICKETS_CHANNEL_ID="600", TICKET_NUMBER_START="100")
     assert (
         s.tickets_enabled
         and s.tickets_channel_id == 600
         and s.ticket_number_start == 100
     )
-    assert s.role_id_for("store") == 301
-    assert s.role_id_for("mod") == s.staff_role_id  # falls back to Staff
-    assert s.role_id_for("staff") == 300
-    assert s.role_id_for("12345") == 12345
     with pytest.raises(ConfigError):
         make_settings(TICKET_NUMBER_START="0")
     with pytest.raises(ConfigError):
         make_settings(TICKETS_MAX_OPEN_PER_USER="-1")
 
 
-def test_csat_archive_settings():
-    s = make_settings()
-    assert s.csat_timeout_hours == 24 and s.tickets_lock_on_close is True
-    s = make_settings(CSAT_TIMEOUT_HOURS="0.5", TICKETS_LOCK_ON_CLOSE="no")
-    assert s.csat_timeout_hours == 0.5 and s.tickets_lock_on_close is False
-    for bad in ("0", "-1", "soon"):
-        with pytest.raises(ConfigError):
-            make_settings(CSAT_TIMEOUT_HOURS=bad)
+def test_removed_variables_are_ignored_whatever_they_hold():
+    """A .env written for an older version still starts the bot: the removed
+    CSAT and role-ping variables are never read, so even values that used to
+    be rejected are fine. They're only reported, to be logged at startup."""
+    assert make_settings().removed_env_set == ()
+    leftovers = {
+        "CSAT_TIMEOUT_HOURS": "soon",
+        "TICKETS_LOCK_ON_CLOSE": "maybe",
+        "STORE_ROLE_ID": "not-an-id",
+        "MOD_ROLE_ID": "302",
+    }
+    s = make_settings(TICKETS_CHANNEL_ID="600", **leftovers)
+    assert set(s.removed_env_set) == set(leftovers) == set(REMOVED_ENV)
+    for gone in (
+        "csat_timeout_hours",
+        "tickets_lock_on_close",
+        "store_role_id",
+        "mod_role_id",
+        "role_id_for",
+    ):
+        assert not hasattr(s, gone)
+
+
+def test_startup_logs_removed_variables(caplog: pytest.LogCaptureFixture):
+    from nephthys.__main__ import load_copy_or_exit
+
+    with caplog.at_level("INFO"):
+        load_copy_or_exit(
+            make_settings(CSAT_TIMEOUT_HOURS="24", TICKETS_LOCK_ON_CLOSE="true")
+        )
+    messages = [r.getMessage() for r in caplog.records]
+    for name in ("CSAT_TIMEOUT_HOURS", "TICKETS_LOCK_ON_CLOSE"):
+        assert any(name in m and "no longer used" in m for m in messages)

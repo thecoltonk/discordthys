@@ -32,6 +32,8 @@ TO_DISCORD = "to_discord"
 CREATE_TICKET = "create_ticket"
 ARTICLE = "article"
 CLOSE = "close"
+# No longer queued (private tickets can't be re-opened; CSAT notes are gone).
+# Rows of these kinds left over from before the upgrade are skipped.
 REOPEN = "reopen"
 NOTE = "note"
 # to_discord

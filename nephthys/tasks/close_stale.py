@@ -30,7 +30,7 @@ async def close_stale_tickets(
     if not days:
         return 0
     cutoff = (now or datetime.now(UTC)) - timedelta(days=days)
-    # #community-help only: private tickets are closed by people (with CSAT)
+    # #community-help only: private tickets are closed by people
     stale = [
         t
         for t in await get_stale_tickets(cutoff)

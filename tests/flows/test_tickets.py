@@ -1,4 +1,4 @@
-"""#tickets (Phase 2): panel, create, category flow, alerts, close, CSAT, escalate."""
+"""#tickets (Phase 2): panel, create, category flow, alerts, close, escalate."""
 
 from types import SimpleNamespace
 from typing import Any
@@ -15,16 +15,18 @@ from nephthys.core import tickets
 from nephthys.core.copytext import DEFAULT_COPY as C
 from nephthys.core.ticket_categories import Category
 from nephthys.core.ticket_categories import DEFAULT_TICKET_CATEGORIES
+from nephthys.core.ticket_categories import Priority
 from nephthys.core.ticket_categories import TicketCategories
 from nephthys.core.ticket_categories import use_ticket_categories
 from nephthys.database.enums import TicketStatus
 from nephthys.database.enums import TicketSurface
 from nephthys.database.enums import UserType
 from nephthys.discord_ops import flows
+from nephthys.errors.errors import PrivateTicketReopenError
 from nephthys.ui.ticket_buttons import CategoryButton
 from nephthys.ui.ticket_buttons import CloseTicketButton
 from nephthys.ui.ticket_buttons import CreateTicketButton
-from nephthys.ui.ticket_buttons import CSATButton
+from nephthys.ui.ticket_buttons import RetiredCSATButton
 from nephthys.ui.ticket_buttons import SubcategoryButton
 from tests.fakes import FakeBot
 from tests.fakes import make_interaction
@@ -37,7 +39,6 @@ pytestmark = pytest.mark.usefixtures("db")
 
 TICKETS = 600
 STAFF_ROLE = 300
-STORE_ROLE = 301
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +49,7 @@ def default_categories():
 
 
 def tickets_bot(**env: str) -> FakeBot:
-    env = {"TICKETS_CHANNEL_ID": str(TICKETS), "STORE_ROLE_ID": str(STORE_ROLE), **env}
+    env = {"TICKETS_CHANNEL_ID": str(TICKETS), **env}
     bot = FakeBot(make_settings(**env))
     make_text_channel(bot, TICKETS)
     return bot
@@ -260,8 +261,7 @@ async def test_category_flow_with_subcategory_and_high_priority_alert():
     assert ids(msg.view) == [f"cs:tclose:{ticket.id}"]  # leaf: only Close remains
 
     [alert] = staff_sends(bot)
-    assert alert.content == f"<@&{STAFF_ROLE}> new **🔴 High** ticket"
-    assert [r.id for r in alert.allowed_mentions.roles] == [STAFF_ROLE]
+    assert_pings_nobody(alert)  # High priority, and still no role ping
     assert alert.embed.title == "T-26 · ❗ Server Issue › 💥 Urgent"
     f = fields(alert.embed)
     assert f["Priority"] == "🔴 High"
@@ -308,7 +308,16 @@ def test_card_zammad_button_needs_a_mirrored_ticket_and_zammad_on():
     assert labels(mirrored, no_public_url) == [discord_link]  # nowhere to link
 
 
-async def test_leaf_category_pings_owning_role():
+def assert_pings_nobody(alert: Any) -> None:
+    """A staff alert is the card alone: no content line, so no role mention to
+    resolve, and nothing allowed to ping even if there were."""
+    assert alert.content is None
+    assert "<@&" not in str(alert.embed.to_dict())
+    allowed = alert.allowed_mentions
+    assert (allowed.everyone, allowed.roles, allowed.users) == (False, False, False)
+
+
+async def test_leaf_category_alert_pings_no_role():
     bot = tickets_bot()
     ticket, _, user, _ = await create(bot)
     assert ticket
@@ -316,51 +325,31 @@ async def test_leaf_category_pings_owning_role():
     ticket = await fresh(ticket)
     assert ticket.priority == "medium" and ticket.subcategory is None
     [alert] = staff_sends(bot)
-    assert alert.content == f"<@&{STORE_ROLE}> new **🟡 Medium** ticket"
+    assert_pings_nobody(alert)
+    assert alert.embed.title == "T-26 · 🛒 Store"
     assert "Please tell us your **IGN**" in opener(bot, ticket).content
 
 
-async def test_mod_role_falls_back_to_staff_and_high_pings_both():
+@pytest.mark.parametrize("priority", ["low", "medium", "high"])
+async def test_no_alert_pings_whatever_the_priority_or_leftover_role_config(
+    priority: Priority,
+):
+    """No category role, no Staff role on High, no fallback - including when
+    .env still has the role IDs that used to be pinged."""
     use_ticket_categories(
         TicketCategories(
             categories=(
-                Category(
-                    key="hack", label="Hacked", role="mod", priority="high", blurb="b"
-                ),
+                Category(key="hack", label="Hacked", priority=priority, blurb="b"),
             )
         )
     )
-    bot = tickets_bot(MOD_ROLE_ID="302")
+    bot = tickets_bot(MOD_ROLE_ID="302", STORE_ROLE_ID="301")
     ticket, _, user, _ = await create(bot)
     assert ticket
     await pick(bot, ticket, user, "hack")
     [alert] = staff_sends(bot)
-    assert alert.content == f"<@&302> <@&{STAFF_ROLE}> new **🔴 High** ticket"
-
-    bot = tickets_bot()  # no MOD_ROLE_ID: falls back to Staff (pinged once)
-    ticket, _, user, _ = await create(bot)
-    assert ticket
-    await pick(bot, ticket, user, "hack")
-    assert staff_sends(bot)[0].content == f"<@&{STAFF_ROLE}> new **🔴 High** ticket"
-
-
-async def test_pick_permissions_and_double_clicks():
-    bot = tickets_bot()
-    ticket, _, user, _ = await create(bot)
-    assert ticket
-    rando = await pick(bot, ticket, make_user(), "store")
-    assert rando.response.send_message.call_args.args[0] == C.tickets.not_your_ticket
-    assert (await fresh(ticket)).category is None
-
-    staff = await pick(bot, ticket, make_user(staff=True), "reports")
-    staff.response.defer.assert_awaited_once()
-    again = await pick(bot, ticket, user, "store")  # stale button
-    assert again.response.send_message.call_args.args[0] == C.tickets.already_picked
-    assert (await fresh(ticket)).category == "reports"
-
-    gone = await pick(bot, ticket, user, "minigames")
-    assert gone.response.send_message.call_args.args[0] == C.tickets.option_gone
-    assert len(staff_sends(bot)) == 1
+    assert_pings_nobody(alert)
+    assert fields(alert.embed)["Priority"].endswith(priority.capitalize())
 
 
 async def test_first_message_and_claim_update_the_card():
@@ -391,7 +380,7 @@ async def test_first_message_and_claim_update_the_card():
     assert fields(card.embed)["Status"] == f"🔵 Claimed by <@{mod.id}>"
 
 
-async def test_close_by_opener_then_csat():
+async def test_close_by_opener_locks_and_archives_at_once():
     bot = tickets_bot()
     ticket, thread, user, _ = await create(bot)
     assert ticket
@@ -402,58 +391,78 @@ async def test_close_by_opener_then_csat():
     rando = make_interaction(bot, make_user())
     await CloseTicketButton(ticket.id).callback(rando)
     assert rando.response.send_message.call_args.args[0] == C.tickets.not_your_ticket
+    assert not thread.locked and not thread.archived
 
     await CloseTicketButton(ticket.id).callback(make_interaction(bot, user))
     ticket = await fresh(ticket)
     assert ticket.status == TicketStatus.CLOSED
-    # The CSAT prompt is its own message, after the closing message: short
-    # text and one row of five grey emoji buttons
-    closing, csat = bot.sends(ticket.thread_id)[-2:]
+    # The closing message is the last thing posted: no rating prompt, no buttons
+    closing = bot.sends(ticket.thread_id)[-1]
     assert closing.content == C.tickets.closed.format(user=user.mention)
-    assert csat.content == "how did we do?"
-    assert ids(csat.view) == [f"cs:csat:{ticket.id}:{n}" for n in range(1, 6)]
-    buttons = [cast(Any, b).item for b in csat.view.children]
-    assert [str(b.emoji) for b in buttons] == ["😡", "🙁", "😐", "🙂", "🤩"]
-    assert all(b.label is None for b in buttons)
-    assert {b.style for b in buttons} == {discord.ButtonStyle.secondary}
-    assert {b.row for b in buttons} == {None} and len(buttons) == 5
-    # Locked for the player, but left open so they can still rate
-    assert thread.locked and not thread.archived
-    assert ticket.archived_at is None
+    assert getattr(closing, "view", None) is None
+    assert not any(
+        "cs:csat" in custom_id
+        for m in bot.sends(ticket.thread_id)
+        if getattr(m, "view", None) is not None
+        for custom_id in ids(m.view)
+    )
+    # ...and then the thread is locked and archived straight away, in one edit
+    assert thread.locked and thread.archived
+    thread.edit.assert_awaited_with(locked=True, archived=True)
     card = bot.message(
         bot.settings.staff_channel_id or 0, ticket.staff_card_message_id or 0
     )
     assert fields(card.embed)["Status"].startswith("✅ Resolved")
+    assert "CSAT" not in fields(card.embed)
 
     again = make_interaction(bot, user)
     await CloseTicketButton(ticket.id).callback(again)
     assert again.followup.send.call_args.args[0] == C.errors.already_resolved
-
-    staff_vote = make_interaction(bot, mod)
-    await CSATButton(ticket.id, 5).callback(staff_vote)
-    assert (
-        staff_vote.response.send_message.call_args.args[0] == C.tickets.csat_not_opener
-    )
-
-    vote = make_interaction(bot, user)
-    await CSATButton(ticket.id, 4).callback(vote)
-    kwargs = vote.response.edit_message.call_args.kwargs
-    assert kwargs["content"] == "thanks! you rated 4/5 🙂"
-    assert kwargs["suppress_embeds"] is True
-    # Same row, now disabled
-    disabled = [cast(Any, b).item for b in kwargs["view"].children]
-    assert [str(b.emoji) for b in disabled] == ["😡", "🙁", "😐", "🙂", "🤩"]
-    assert all(b.disabled for b in disabled)
-    assert (await fresh(ticket)).csat_rating == 4
-    assert fields(card.embed)["CSAT"] == "4/5"
-    # Rating ends the wait: the thread is archived now
     assert thread.locked and thread.archived
-    assert (await fresh(ticket)).archived_at is not None
 
-    second = make_interaction(bot, user)
-    await CSATButton(ticket.id, 1).callback(second)
-    assert second.response.send_message.call_args.args[0] == C.tickets.csat_already
-    assert (await fresh(ticket)).csat_rating == 4
+
+async def test_old_csat_button_click_gets_a_private_answer_and_changes_nothing():
+    """Rating buttons posted before CSAT was removed still sit in old threads.
+    A click must not fail: it gets a private reply, records nothing, and leaves
+    the thread, the ticket and the card alone."""
+    bot = tickets_bot()
+    ticket, thread, user, _ = await create(bot)
+    assert ticket
+    await pick(bot, ticket, user, "store")
+    await CloseTicketButton(ticket.id).callback(make_interaction(bot, user))
+    before = await fresh(ticket)
+    sends_before = len(bot.sends(ticket.thread_id))
+    edits_before = thread.edit.await_count
+
+    # Still registered under the old custom_id, so Discord can route the click
+    template = RetiredCSATButton.__discord_ui_compiled_template__
+    assert template.fullmatch(f"cs:csat:{ticket.id}:4")
+    from nephthys.ui.ticket_buttons import TICKET_DYNAMIC_ITEMS
+
+    assert RetiredCSATButton in TICKET_DYNAMIC_ITEMS
+
+    for clicker in (user, make_user(staff=True), make_user()):
+        for rating in (1, 5):
+            i = make_interaction(bot, clicker)
+            await RetiredCSATButton(ticket.id, rating).callback(i)
+            i.response.send_message.assert_awaited_once()
+            assert i.response.send_message.call_args.args[0] == C.tickets.csat_retired
+            assert i.response.send_message.call_args.kwargs["ephemeral"] is True
+            i.response.edit_message.assert_not_called()
+    assert len(bot.sends(ticket.thread_id)) == sends_before
+    assert thread.edit.await_count == edits_before
+    assert thread.locked and thread.archived
+    assert (await fresh(ticket)).to_dict() == before.to_dict()
+
+    # A ticket that no longer exists, and Discord refusing the reply
+    gone = make_interaction(bot, user)
+    await RetiredCSATButton(999_999, 3).callback(gone)
+    assert gone.response.send_message.call_args.args[0] == C.tickets.csat_retired
+    refused = make_interaction(bot, user)
+    refused.response.send_message.side_effect = discord.HTTPException(
+        cast(Any, SimpleNamespace(status=403, reason="Forbidden")), "archived"
+    )
+    await RetiredCSATButton(ticket.id, 2).callback(refused)  # doesn't raise
 
 
 def threads_actor(user):
@@ -462,7 +471,7 @@ def threads_actor(user):
     return actor_from_user(user, STAFF_ROLE)
 
 
-async def test_staff_resolve_and_reopen_commands_in_private_thread():
+async def test_staff_resolve_closes_for_good_and_reopen_is_refused():
     bot = tickets_bot()
     commands = TicketCommands(cast(Any, bot))
     ticket, thread, user, _ = await create(bot)
@@ -473,42 +482,53 @@ async def test_staff_resolve_and_reopen_commands_in_private_thread():
     i = make_interaction(bot, mod, channel=thread)
     await cast(Any, TicketCommands.resolve).callback(commands, i)
     assert i.followup.send.call_args.args[0] == C.commands.resolved
-    assert thread.locked and not thread.archived  # waiting for the rating
-    assert bot.sends(ticket.thread_id)[-1].content == C.tickets.csat_prompt
-
-    thread.added_users.clear()
-    i = make_interaction(bot, mod, channel=thread)
-    await cast(Any, TicketCommands.reopen).callback(commands, i)
-    assert i.followup.send.call_args.args[0] == C.commands.reopened
-    assert not thread.locked and not thread.archived
-    assert thread.added_users == [user.id]
-    assert bot.sends(ticket.thread_id)[-1].content == C.tickets.reopened.format(
-        user=mod.mention
-    )
-    assert (await fresh(ticket)).status == TicketStatus.OPEN
-
-    # Closing again after a rating doesn't ask for CSAT a second time, and
-    # there's nothing to wait for, so it archives straight away
-    await pt.rate_csat(ticket.id, 5, threads_actor(user))
-    i = make_interaction(bot, mod, channel=thread)
-    await cast(Any, TicketCommands.resolve).callback(commands, i)
     assert bot.sends(ticket.thread_id)[-1].content == C.tickets.closed.format(
         user=mod.mention
     )
     assert thread.locked and thread.archived
-    assert (await fresh(ticket)).archived_at is not None
+
+    # /reopen in a #tickets thread: a private refusal, and nothing else happens
+    sends = len(bot.sends(ticket.thread_id))
+    thread.added_users.clear()
+    i = make_interaction(bot, mod, channel=thread)
+    await cast(Any, TicketCommands.reopen).callback(commands, i)
+    assert i.response.send_message.call_args.args[0] == C.tickets.no_reopen
+    assert i.response.send_message.call_args.kwargs["ephemeral"] is True
+    i.response.defer.assert_not_called()
+    assert thread.locked and thread.archived
+    assert thread.added_users == []
+    assert len(bot.sends(ticket.thread_id)) == sends
+    closed = await fresh(ticket)
+    assert closed.status == TicketStatus.CLOSED and closed.reopened_at is None
+
+    # The player isn't stuck: a closed ticket doesn't count against the limit
+    _again, new_thread, _, _ = await create(bot, user)
+    assert new_thread.id != thread.id
 
 
-async def test_player_cannot_reopen_private_ticket():
+@pytest.mark.parametrize("staff", [False, True])
+async def test_nobody_can_reopen_a_private_ticket_through_the_flow(staff: bool):
     bot = tickets_bot()
-    ticket, _, user, _ = await create(bot)
+    ticket, thread, user, _ = await create(bot)
     assert ticket
-    await tickets.resolve(ticket.id, None)
-    with pytest.raises(Exception) as exc:
+    await CloseTicketButton(ticket.id).callback(make_interaction(bot, user))
+    who = make_user(staff=True) if staff else user
+    with pytest.raises(PrivateTicketReopenError) as exc:
         await flows.reopen_ticket(
-            cast(Any, bot), ticket.id, threads_actor(user), user, source="x"
+            cast(Any, bot), ticket.id, threads_actor(who), who, source="x"
         )
-    assert type(exc.value).__name__ == "PermissionDenied"
+    assert flows.refusal_message(exc.value) == C.tickets.no_reopen
+    assert (await fresh(ticket)).status == TicketStatus.CLOSED
+    assert thread.locked and thread.archived
+
+    # A stray Re-open button click (the community button's custom_id with a
+    # private ticket's id) is refused the same way, privately
+    from nephthys.ui.buttons import ReopenButton
+
+    i = make_interaction(bot, who)
+    await ReopenButton(ticket.id).callback(i)
+    assert i.followup.send.call_args.args[0] == C.tickets.no_reopen
+    assert (await fresh(ticket)).status == TicketStatus.CLOSED
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,6 @@ from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.formatting import categories_text
-from nephthys.discord_ops.formatting import csat_text
 from nephthys.discord_ops.formatting import FIELD_MAX
 from nephthys.discord_ops.formatting import format_minutes
 from nephthys.discord_ops.formatting import leaderboard_text
@@ -134,17 +133,12 @@ def build_summary_embed(
         name=copy.stats.field_median,
         value=format_minutes(stats.median_first_response_minutes),
     )
-    if surface == TicketSurface.PRIVATE:
+    if surface == TicketSurface.PRIVATE and stats.by_priority:
         embed.add_field(
-            name=copy.stats.field_csat,
-            value=csat_text(stats.csat_average, stats.csat_count),
+            name=copy.stats.field_by_priority,
+            value=priorities_text(stats.by_priority),
+            inline=False,
         )
-        if stats.by_priority:
-            embed.add_field(
-                name=copy.stats.field_by_priority,
-                value=priorities_text(stats.by_priority),
-                inline=False,
-            )
     if stats.by_category:
         embed.add_field(
             name=copy.summary.field_by_category,

@@ -90,13 +90,6 @@ def priorities_text(by_priority: dict[str, int]) -> str:
     )[:FIELD_MAX]
 
 
-def csat_text(average: float | None, count: int) -> str:
-    stats = get_copy().stats
-    if average is None:
-        return stats.csat_none
-    return stats.csat_value.format(average=f"{average:.1f}", count=count)
-
-
 def surface_name(surface: TicketSurface) -> str:
     stats = get_copy().stats
     return (

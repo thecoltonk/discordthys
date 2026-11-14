@@ -156,21 +156,21 @@ class CloseTicketButton(
         await close_from_interaction(interaction, self.ticket_id)
 
 
-class CSATButton(
+class RetiredCSATButton(
     discord.ui.DynamicItem[discord.ui.Button],
     template=r"cs:csat:(?P<ticket_id>[0-9]+):(?P<rating>[1-5])",
 ):
-    def __init__(self, ticket_id: int, rating: int, *, disabled: bool = False) -> None:
-        self.ticket_id = ticket_id
-        self.rating = rating
-        label, emoji = csat_face(rating)
+    """CSAT was removed, and the bot never posts this button any more. It stays
+    registered only so that a click on a rating button still sitting in an old
+    thread gets a private answer, not "This interaction failed"."""
+
+    def __init__(self, ticket_id: int, rating: int) -> None:
         super().__init__(
             discord.ui.Button(
-                # A button needs a label or an emoji; copy validation ensures one
-                **face(label, emoji),
+                label=str(rating),
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"cs:csat:{ticket_id}:{rating}",
-                disabled=disabled,
+                disabled=True,
             )
         )
 
@@ -181,13 +181,13 @@ class CSATButton(
         item: discord.ui.Item[Any],
         match: re.Match[str],
         /,
-    ) -> "CSATButton":
+    ) -> "RetiredCSATButton":
         return cls(int(match["ticket_id"]), int(match["rating"]))
 
     async def callback(self, interaction: discord.Interaction[Any]) -> None:
-        from nephthys.discord_ops.private_flow import csat_from_interaction
+        from nephthys.discord_ops.private_flow import retired_csat_click
 
-        await csat_from_interaction(interaction, self.ticket_id, self.rating)
+        await retired_csat_click(interaction)
 
 
 def panel_view() -> discord.ui.View:
@@ -216,28 +216,10 @@ def opener_view(
     return view
 
 
-def csat_face(rating: int) -> tuple[str, str]:
-    """(label, emoji) of a CSAT button, from [tickets] csat_button_<n>[_emoji]."""
-    copy = get_copy().tickets
-    return (
-        getattr(copy, f"csat_button_{rating}"),
-        getattr(copy, f"csat_button_{rating}_emoji"),
-    )
-
-
-def csat_view(ticket_id: int, *, disabled: bool = False) -> discord.ui.View:
-    """One row of five grey buttons, 1 (worst) to 5 (best). After a rating the
-    same row is shown disabled."""
-    view = discord.ui.View(timeout=None)
-    for rating in range(1, 6):
-        view.add_item(CSATButton(ticket_id, rating, disabled=disabled))
-    return view
-
-
 TICKET_DYNAMIC_ITEMS = (
     CreateTicketButton,
     CategoryButton,
     SubcategoryButton,
     CloseTicketButton,
-    CSATButton,
+    RetiredCSATButton,
 )

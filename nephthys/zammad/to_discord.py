@@ -16,7 +16,6 @@ from nephthys.discord_ops import threads
 from nephthys.discord_ops.send import send_text
 from nephthys.discord_ops.send import send_webhook_text
 from nephthys.errors.errors import TicketAlreadyClosedError
-from nephthys.errors.errors import TicketNotClosedError
 from nephthys.utils.metrics import TICKETS_CLAIMED
 from nephthys.zammad import outbox
 from nephthys.zammad.client import ZammadError
@@ -188,8 +187,8 @@ async def post_article(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
     if await tickets.claim_by_name(ticket.id, name or get_copy().zammad.unknown_agent):
         TICKETS_CLAIMED.inc()
         await staff_card.refresh_staff_card(bot, ticket.id)
-    if ticket.archived_at is not None and ticket.status == TicketStatus.CLOSED:
-        # A reply on a finished ticket: put the thread away again
+    if ticket.status == TicketStatus.CLOSED:
+        # A reply on a closed ticket: put the thread away again (still locked)
         async with threads.best_effort("rearchive_after_reply"):
             await thread.edit(archived=True)
 
@@ -212,11 +211,9 @@ async def sync_ticket(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
         await Ticket.update({Ticket.zammad_group: group}).where(Ticket.id == ticket.id)
         await staff_card.refresh_staff_card(bot, ticket.id)
 
-    # A close/reopen made in Discord that Zammad hasn't received yet wins;
-    # delivering it triggers another sync
-    if await outbox.has_pending(
-        ticket.id, outbox.TO_ZAMMAD, (outbox.CLOSE, outbox.REOPEN)
-    ):
+    # A close made in Discord that Zammad hasn't received yet wins; delivering
+    # it triggers another sync
+    if await outbox.has_pending(ticket.id, outbox.TO_ZAMMAD, (outbox.CLOSE,)):
         return
     closed_in_zammad = is_closed_state(current.get("state"))
     closed_in_discord = ticket.status == TicketStatus.CLOSED
@@ -234,18 +231,18 @@ async def sync_ticket(sync: "ZammadSync", row: Row, ticket: Ticket) -> None:
         except TicketAlreadyClosedError:
             pass
     elif closed_in_discord and not closed_in_zammad:
-        try:
-            await private_flow.reopen_private(
-                bot,
-                ticket.id,
-                None,
-                None,
-                source="zammad",
-                by_name=by_name,
-                mirror=False,
-            )
-        except TicketNotClosedError:
-            pass
+        # Re-opened in Zammad. A closed Discord ticket stays closed (its thread
+        # is locked and archived, and the player may already have a new
+        # ticket), so Zammad is brought back in line: closed again, with an
+        # internal note telling the agent why and what to do instead.
+        log.info(f"T-{ticket.number} was re-opened in Zammad; closing it there again")
+        await outbox.enqueue(
+            ticket.id,
+            outbox.TO_ZAMMAD,
+            outbox.CLOSE,
+            {"reopen_refused": True},
+        )
+        sync.wake()
 
 
 HANDLERS = {

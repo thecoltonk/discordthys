@@ -16,6 +16,8 @@ Judgment calls and what was checked against the real thing are in [DECISIONS.md]
 2. Adds them to the `<head>` of every HTML page: the login styling always, the chat skin unless the kill switch is off.
 3. Keeps a Zammad logout local instead of ending the whole Cloudflare Access session.
 
+`support.cloudsail.uk` is not behind a self-hosted Cloudflare Access application any more. Zammad's own login is the only gate, and its "Sign in with Cloudflare" button uses Access as the OIDC identity provider. Job 3 is still needed for exactly that reason: Zammad's OIDC logout sends the browser to Access's logout address, which would end the agent's Access session for **every** Access application, not just Zammad. The Worker rewrites that to Zammad's own start page.
+
 Jobs 1 (login part) and 3 are the old login Worker, moved over unchanged. `legacy-login-worker.js` stays in the repo as the rollback.
 
 **The ticket view** (legacy desktop UI, the default in 7.2)
@@ -82,14 +84,14 @@ npx wrangler deploy
 1. Cloudflare dashboard → Workers & Pages → the old login Worker → Settings → Domains & Routes → delete the `support.cloudsail.uk/*` route. Keep the Worker itself: it's a second way back.
 2. `npx wrangler deploy`. It creates the Worker `cloudsail-support-skin` and attaches the route (`wrangler.toml`).
 
-Between the two steps Zammad is served without any Worker for a few seconds: the login page is unstyled and a logout goes to Access. Nothing else changes.
+Between the two steps Zammad is served without any Worker for a few seconds: the login page is unstyled, and a logout goes to Access's logout (ending the agent's session for every Access app). Nothing else changes.
 
 If you'd rather keep one Worker, set `name` in `wrangler.toml` and `wrangler.legacy.toml` to the old Worker's name and skip step 1: the deploy replaces its code, and the rollbacks below still apply.
 
 **Check it:**
 
 ```sh
-curl -sI https://support.cloudsail.uk/__cloudsail/skin.js | head -1     # 200 (Access may answer 302 first)
+curl -sI https://support.cloudsail.uk/__cloudsail/skin.js | head -1     # 200, with no login: the assets are public
 ```
 
 Then open a ticket. In the browser's dev tools the page response carries `x-cloudsail-skin: on; v=<hash>`.

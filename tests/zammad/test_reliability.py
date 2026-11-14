@@ -55,11 +55,14 @@ async def test_discord_flows_never_wait_on_zammad(world: World):
     await CloseTicketButton(ticket.id).callback(make_interaction(world.bot, player))
     await world.drain()
 
-    # Discord side is complete: opener, staff card, claim, close + CSAT
+    # Discord side is complete: opener, staff card, claim, close + archive
     ticket = await world.fresh(ticket)
     assert ticket.status == TicketStatus.CLOSED
     assert ticket.staff_card_message_id is not None and ticket.assigned_to is not None
-    assert C.tickets.csat_prompt in [m.content for m in world.thread_posts(thread)]
+    assert C.tickets.closed.format(user=player.mention) in [
+        m.content for m in world.thread_posts(thread)
+    ]
+    assert thread.locked and thread.archived
     assert ticket.zammad_ticket_id is None
     # Only the head of the queue was tried; the rest wait behind it, untouched
     assert await statuses() == [

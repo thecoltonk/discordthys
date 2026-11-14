@@ -29,6 +29,7 @@ from nephthys.database.tables import BotMessage
 from nephthys.database.tables import Ticket
 from nephthys.database.tables import User
 from nephthys.errors.errors import PermissionDenied
+from nephthys.errors.errors import PrivateTicketReopenError
 from nephthys.errors.errors import TicketAlreadyClosedError
 from nephthys.errors.errors import TicketNotClosedError
 from nephthys.errors.errors import TicketNotFoundError
@@ -300,26 +301,25 @@ async def resolve(
     return ResolveResult(ticket=ticket, resolved_by=resolver_user, credited_to=credited)
 
 
-async def reopen(
-    ticket_id: int, actor: Actor | None, at: datetime | None = None
-) -> Ticket:
-    """Re-open a resolved ticket. The claim (if any) is kept.
+async def reopen(ticket_id: int, actor: Actor, at: datetime | None = None) -> Ticket:
+    """Re-open a resolved #community-help ticket. The claim (if any) is kept.
 
-    `actor=None` means the re-open didn't come from a Discord user (it was
-    re-opened in Zammad), which skips the permission check.
+    Private (#tickets) tickets can't be re-opened by anyone, from Discord or
+    from Zammad: a closed one stays closed and the player opens a new ticket.
 
-    Raises `PermissionDenied`, `TicketNotClosedError` or `TicketNotFoundError`.
+    Raises `PrivateTicketReopenError`, `PermissionDenied`,
+    `TicketNotClosedError` or `TicketNotFoundError`.
     """
     ticket = await require_ticket(ticket_id)
-    user: User | None = None
-    if actor is not None:
-        opener = await get_opener(ticket)
-        if not can_resolve(actor, opener.discord_id):
-            raise PermissionDenied(
-                "Only the person who asked or staff can re-open this ticket",
-                user_id=actor.discord_id,
-            )
-        user = await upsert_user(actor)
+    if ticket.surface == TicketSurface.PRIVATE:
+        raise PrivateTicketReopenError(ticket_id)
+    opener = await get_opener(ticket)
+    if not can_resolve(actor, opener.discord_id):
+        raise PermissionDenied(
+            "Only the person who asked or staff can re-open this ticket",
+            user_id=actor.discord_id,
+        )
+    user = await upsert_user(actor)
     new_status = (
         TicketStatus.IN_PROGRESS
         if ticket.assigned_to is not None or ticket.assigned_name is not None
@@ -332,7 +332,7 @@ async def reopen(
                 Ticket.closed_by: None,
                 Ticket.closed_by_name: None,
                 Ticket.closed_at: None,
-                Ticket.reopened_by: user.id if user else None,
+                Ticket.reopened_by: user.id,
                 Ticket.reopened_at: at or utcnow(),
             }
         )
@@ -341,7 +341,7 @@ async def reopen(
     )
     if not rows:
         raise TicketNotClosedError(ticket_id)
-    log.info(f"Reopened ticket id={ticket_id} by user_id={user.id if user else None}")
+    log.info(f"Reopened ticket id={ticket_id} by user_id={user.id}")
     return await require_ticket(ticket_id)
 
 

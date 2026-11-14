@@ -9,6 +9,7 @@ from nephthys.core import tickets
 from nephthys.core.stats import calculate_stats
 from nephthys.database.enums import TicketStatus
 from nephthys.database.enums import TicketSurface
+from nephthys.errors.errors import PrivateTicketReopenError
 from tests.factories import new_ticket
 from tests.factories import player
 from tests.factories import snowflake
@@ -94,19 +95,6 @@ async def test_first_message():
     assert t.description == "my rank is missing\nbought it yesterday"
 
 
-async def test_csat_opener_only_first_click_counts():
-    op = player()
-    t = await private(op)
-    with pytest.raises(pt.NotTicketOpenerError):
-        await pt.rate_csat(t.id, 5, staff())
-    with pytest.raises(ValueError):
-        await pt.rate_csat(t.id, 6, op)
-    rated = await pt.rate_csat(t.id, 4, op)
-    assert rated.csat_rating == 4 and rated.csat_at is not None
-    with pytest.raises(pt.CSATAlreadyRatedError):
-        await pt.rate_csat(t.id, 1, op)
-
-
 async def test_escalation_link():
     community = await new_ticket()
     escalated = await private(escalated_from=community.id)
@@ -125,9 +113,8 @@ async def test_private_stats():
     await pt.pick_category(ts[0].id, "store", leaf_priority="medium")
     await pt.pick_category(ts[1].id, "server_issue", leaf_priority=None)
     await pt.pick_subcategory(ts[1].id, "server_issue", "urgent", priority="high")
-    for t, op, rating in ((ts[0], ops[0], 5), (ts[1], ops[1], 2)):
+    for t, op in ((ts[0], ops[0]), (ts[1], ops[1])):
         await tickets.resolve(t.id, op)
-        await pt.rate_csat(t.id, rating, op)
     await new_ticket(created_at=now - timedelta(hours=1))  # community: excluded
 
     s = await calculate_stats(
@@ -138,13 +125,12 @@ async def test_private_stats():
     assert s.opened == 3
     assert s.by_category == {"server_issue": 1, "store": 1, "Uncategorised": 1}
     assert s.by_priority == {"high": 1, "medium": 1, "unset": 1}
-    assert s.csat_count == 2 and s.csat_average == 3.5
     assert s.resolved == 2
 
     community = await calculate_stats(
         since=now - timedelta(days=1), until=now + timedelta(minutes=1)
     )
-    assert community.opened == 1 and community.csat_average is None
+    assert community.opened == 1
 
 
 async def test_status_flow_reuses_core():
@@ -154,5 +140,8 @@ async def test_status_flow_reuses_core():
     assert r.claimed
     res = await tickets.resolve(t.id, op)
     assert res.credited_to and res.credited_to.discord_id == mod.discord_id
-    reopened = await tickets.reopen(t.id, mod)
-    assert reopened.status == TicketStatus.IN_PROGRESS
+    # Closed private tickets stay closed, for staff and the opener alike
+    for who in (mod, op):
+        with pytest.raises(PrivateTicketReopenError):
+            await tickets.reopen(t.id, who)
+    assert (await tickets.require_ticket(t.id)).status == TicketStatus.CLOSED

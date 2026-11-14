@@ -114,10 +114,12 @@ S34. **New Worker name (`cloudsail-support-skin`), old Worker kept.** The old Wo
 
 S35. **A Worker's entry module can only export handlers** (found when `wrangler dev` refused the first version; the dry-run build hadn't). So the Worker is tested over HTTP against a stub origin rather than by importing its functions.
 
+S36. **The hostname is no longer behind a self-hosted Access application; the logout rewrite stays.** Zammad's own Cloudflare OIDC login is now the only gate, so `/__cloudsail/*` (CSS, JS and a logo, nothing secret) is served to anyone without a login, like the rest of Zammad's static assets. The rewrite (S33) is kept unchanged: logging out of Zammad still redirects to Access's logout through OIDC, and that ends the Access session for every app. No Worker code changed for this, only the docs.
+
 ## Not verified live
 
 - **The deploy itself.** No Cloudflare account from the build environment: `wrangler deploy`, the route on the `cloudsail.uk` zone, moving the route off the old Worker, `wrangler rollback`, and the dashboard variable were not run. Both configs build (`wrangler deploy --dry-run`), and the Worker runs in workerd locally.
-- **Behind Cloudflare Access.** The login page was checked against a plain Zammad login (stylesheet applied, footer hidden), not with the real OIDC button. The logout rewrite was checked against a stub origin, not real Access redirects. Whether Access lets `/__cloudsail/*` through for logged-in agents wasn't checked (the old Worker's `/__cloudsail/login.css` suggests it does).
+- **Zammad's Cloudflare OIDC login.** The login page was checked against a plain Zammad login (stylesheet applied, footer hidden), not with the real OIDC button. The logout rewrite was checked against a stub origin, not real Access redirects. (The earlier open question, whether a self-hosted Access application lets `/__cloudsail/*` through, no longer applies: see S36.)
 - **The production Zammad.** Its exact version, settings, custom attributes, core workflows, time accounting, checklists and any admin-added CSS. The skin was checked on a stock 7.2.3.
 - **Cloudsail's real colours** (S15).
 - **The Discord round trip.** That a note sent from the skin reaches the player's thread, and that its attachments are forwarded: the bot wasn't running. The articles are the same shape as the ones Zammad's own Update creates (type note, public, sender Agent).

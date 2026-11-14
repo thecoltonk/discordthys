@@ -55,6 +55,13 @@ def load_copy_or_exit(settings: Settings) -> None:
             f"{name} is no longer used: message text now lives in "
             f"{settings.copy_file}. Move your text there and unset {name}."
         )
+    from nephthys.config import REMOVED_ENV
+
+    for name in settings.removed_env_set:
+        logging.info(
+            f"{name} is set but no longer used ({REMOVED_ENV[name]}). It's "
+            "ignored; you can delete it from .env."
+        )
     from nephthys.core.ticket_categories import configure_ticket_categories
     from nephthys.core.ticket_categories import TicketCategoriesError
 

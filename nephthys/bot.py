@@ -143,17 +143,6 @@ class SupportBot(commands.Bot):
                 coalesce=True,
                 next_run_time=datetime.now(UTC) + timedelta(minutes=2),
             )
-        if self.settings.tickets_enabled:
-            from nephthys.tasks.archive_closed import SWEEP_MINUTES
-
-            self.scheduler.add_job(
-                self.run_archive_closed,
-                "interval",
-                minutes=SWEEP_MINUTES,
-                max_instances=1,
-                coalesce=True,
-                next_run_time=datetime.now(UTC) + timedelta(minutes=1),
-            )
         if self.zammad is not None and self.settings.zammad_reconcile_minutes:
             self.scheduler.add_job(
                 self.run_zammad_reconcile,
@@ -214,12 +203,6 @@ class SupportBot(commands.Bot):
 
         await self.wait_until_ready()
         await send_daily_summary(self)
-
-    async def run_archive_closed(self) -> None:
-        from nephthys.tasks.archive_closed import archive_expired_tickets
-
-        await self.wait_until_ready()
-        await archive_expired_tickets(self)
 
     async def run_zammad_reconcile(self) -> None:
         await self.wait_until_ready()

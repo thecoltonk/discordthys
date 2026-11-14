@@ -143,7 +143,6 @@ def test_buttons_take_label_and_emoji_from_copy():
     from nephthys.core.copytext import use_copy
     from nephthys.ui.buttons import ResolveButton
     from nephthys.ui.ticket_buttons import CloseTicketButton
-    from nephthys.ui.ticket_buttons import csat_view
 
     # Defaults: Close Ticket has no emoji (no more 🔒)
     close = CloseTicketButton(1).item
@@ -155,17 +154,12 @@ def test_buttons_take_label_and_emoji_from_copy():
             'resolve_button = "Solved"\nresolve_button_emoji = ""\n'
             "[tickets]\n"
             'close_button_emoji = "<:lock:123456789012345678>"\n'
-            'csat_button_1 = "1"\ncsat_button_1_emoji = ""\n'
-            'csat_button_5_emoji = "⭐"\n'
         )
     )
     resolve = ResolveButton(1).item
     assert (resolve.label, resolve.emoji) == ("Solved", None)  # "" = no emoji
     close = CloseTicketButton(1).item
     assert close.emoji is not None and close.emoji.id == 123456789012345678
-    first, *_, last = [b.item for b in csat_view(1).children]  # type: ignore[attr-defined]
-    assert (first.label, first.emoji) == ("1", None)
-    assert str(last.emoji) == "⭐"
 
 
 @pytest.mark.parametrize(
@@ -177,7 +171,6 @@ def test_buttons_take_label_and_emoji_from_copy():
             '[tickets]\nclose_button = ""\nclose_button_emoji = ""\n',
             "both empty",
         ),
-        ('[tickets]\ncsat_button_3_emoji = ""\n', "both empty"),
     ],
 )
 def test_bad_button_faces_are_rejected(toml: str, problem: str):
@@ -253,3 +246,35 @@ def test_compose_mounts_the_copy_directory_not_single_files():
         if "/app/copy" in line and not line.strip().startswith("#")
     ]
     assert mounts == ["./copy:/app/copy:ro"]
+
+
+def test_copy_files_from_before_the_cleanup_still_load(
+    caplog: pytest.LogCaptureFixture,
+):
+    """CSAT, the private re-open note and the alert ping line are gone. A
+    copy.local.toml that still sets them is ignored with a warning (unknown
+    keys are otherwise fatal at startup), and the rest of the file applies."""
+    old = (
+        "[tickets]\n"
+        'csat_prompt = "rate us"\ncsat_button_1 = "1"\ncsat_button_1_emoji = ""\n'
+        'csat_button_5_emoji = "⭐"\ncsat_thanks = "ta {rating} {emoji}"\n'
+        'csat_not_opener = "no"\ncsat_already = "done"\n'
+        'reopened = "re-opened by {user}"\n'
+        'alert_ping = "{roles} new {priority}"\n'
+        'close_button = "Shut"\n'
+        '[card]\nfield_csat = "Rating"\ncsat_value = "{rating}"\n'
+        '[stats]\nfield_csat = "Avg"\ncsat_value = "{average} {count}"\n'
+        'csat_none = "none"\n'
+    )
+    with caplog.at_level("WARNING"):
+        copy = parse_copy(old)
+    assert copy.tickets.close_button == "Shut"
+    warned = [r.getMessage() for r in caplog.records if "ignoring" in r.getMessage()]
+    assert len(warned) == 14
+    for section in (copy.tickets, copy.card, copy.stats):
+        fields = type(section).model_fields
+        assert not [f for f in fields if "csat" in f and f != "csat_retired"]
+    assert "alert_ping" not in type(copy.tickets).model_fields
+    assert "reopened" not in type(copy.tickets).model_fields
+    # #community-help re-opening is unchanged
+    assert copy.community.reopened and copy.commands.reopened

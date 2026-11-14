@@ -492,3 +492,69 @@ One commit per numbered request, all in one PR. Entries 48–53 (community staff
 212. **Profile updates are best effort.** Any failure is logged and never fails or delays the ticket/article row it rode along with. A 401/403 from the avatar call turns avatars off until the next restart and posts one @silent log-channel note naming `admin.user` (rate-limited per entry 202).
 213. **Migration `cloudsail_006`** adds `avatar_key`, `avatar_url`, `zammad_name`, `zammad_avatar_key`, `zammad_avatar_at` to `app_user`. Tested forwards and backwards. Existing customers get their name re-sent once (their `zammad_name` starts empty) and their avatar on their next message.
 214. **Tests**: the new flow tests run against the fake and the real Zammad: avatar on creation, name change applied at once, avatar change held for a day then applied, no re-upload when unchanged, and names-only without the token. The "token without `admin.user`" test is fake-only, because the suite would need a second real Zammad user and token; that case was checked live by hand (entry 207). The fake now implements `From` with Zammad's exact refusal and `POST /users/avatar`.
+
+## Cleanup: no CSAT, no re-opening #tickets, no role pings
+
+Made without review (the maintainer was asleep), as PR 1 of two. Three removals, each for a stated reason:
+
+- **CSAT.** About 20 tickets in 9 months is too few for ratings to mean anything, and Discord disables buttons in a locked thread, so the only way to collect a rating was to keep closed threads open (entries 113–120).
+- **Re-opening #tickets.** It's clunky in Discord: unlock, unarchive, re-add the player, and hope they notice an old thread. Closed private tickets stay closed and the player opens a new ticket.
+- **Role pings.** Whole-role pings on every new ticket are annoying.
+
+What this supersedes: entries 101–103, 113–120, 192 and 193 (CSAT and the wait before archiving); the CSAT parts of 97, 110, 112, 130 and 162; entries 104, 116 and 118, the `/reopen` part of 105 and the re-open parts of 147 and 162 (re-opening private tickets); entry 98, the roles bullet of 95 and the last sentence of 122 (role pings); and entry 151 (the Access bypass for avatars). Entry 100 already said private tickets never auto-reopen; that still holds.
+
+**Process**
+
+215. **Two PRs, the second stacked on the first.** PR 1 is this cleanup on `claude/cleanup-csat-reopening-z0zi6r`. PR 2 (the Jev FAQ matcher) is a new branch cut from PR 1's head and opened against PR 1's branch, so its diff shows only its own changes; once PR 1 merges it should be retargeted to `main`. The brief asked for "branch off PR 1", which is taken as permission to push a second branch.
+216. **The Zammad-login docs change rides in PR 1.** The brief didn't say which PR; it's cleanup of a removed assumption, and it touches the same DEPLOY.md sections.
+
+**CSAT removed**
+
+217. **Close Ticket and `/resolve` post the closing message, then lock and archive the thread in one edit,** the behaviour before entry 113. Nothing is posted after the closing message. The same flow runs for a close made in Zammad.
+218. **`archived_at` is dropped too, not kept.** The brief said to keep it only if the Zammad sync needs it. Its one reader there decided whether to put a thread away again after an agent replied on a closed ticket; now that closing always archives, "closed" already means "archived", so that check uses the ticket's status. No reader is left.
+219. **Migration `cloudsail_007`** drops `csat_rating`, `csat_at`, `archived_at` and the sweep's partial index. Stored ratings are deleted with the columns (there were a handful at most, and nothing shows them any more).
+     - Backwards re-creates the columns (with the 1–5 CHECK) and the index, empty, and backfills `archived_at` from `closed_at` for closed private tickets exactly as `cloudsail_004` did, so the old sweep would leave them alone.
+     - Tested both ways with rows in the table, including dropping a column that holds data, and run for real through `piccolo migrations forwards` / `backwards` / `forwards` on a scratch database. The older migrations aren't edited.
+220. **Tickets that were closed and still waiting for a rating at upgrade time** are locked but not archived, and nothing archives them now (the sweep is gone, and after the migration the bot can't tell which they are). Discord archives them itself after `THREAD_AUTO_ARCHIVE_MINUTES` of inactivity (a week by default). At this volume that's zero or one thread; it wasn't worth a one-off job. A moderator can archive it by hand.
+221. **Old rating buttons must not error.** Prompts posted before this change still sit in old threads, and their buttons have the custom ID `cs:csat:<ticket>:<rating>`. That ID stays registered on a stub (`RetiredCSATButton`): a click gets a private reply (`[tickets] csat_retired`, "we're no longer collecting ratings here — thanks anyway!") and records nothing. Without it Discord would show "This interaction failed". The bot never posts that button again, and old prompts aren't edited (that would mean unarchiving every old thread).
+     - If Discord refuses the private reply, the error is swallowed and logged.
+222. **`CSAT_TIMEOUT_HOURS` and `TICKETS_LOCK_ON_CLOSE` are never read,** so a `.env` that still has them starts fine whatever they contain (even values that used to be rejected). Startup logs one info line per leftover variable saying it's ignored. The same goes for `STORE_ROLE_ID` and `MOD_ROLE_ID` (entry 232). The list is `REMOVED_ENV` in `config.py`.
+223. **Removed copy keys are ignored with a warning** (the rule from entry 184), so an old `copy.local.toml` doesn't stop startup: `[tickets] csat_prompt`, `csat_button_1..5` and their `_emoji`, `csat_thanks`, `csat_not_opener`, `csat_already`, `reopened`, `alert_ping`; `[card] field_csat`, `csat_value`; `[stats] field_csat`, `csat_value`, `csat_none`. New keys: `[tickets] csat_retired` and `no_reopen`.
+224. **Also gone:** the CSAT field on the staff card, the CSAT average in `/stats` and the daily summary, the CSAT internal note in Zammad, `tasks/archive_closed.py` and its scheduler job, `awaiting_archive`, `rate_csat`, and `tests/flows/test_csat_archive.py`.
+
+**No re-opening #tickets**
+
+225. **The rule lives in the core state machine.** `tickets.reopen` raises `PrivateTicketReopenError` for a private ticket whoever asks (staff, the opener, or a sync), so no entry point can get around it. #community-help re-opening (the button, `/reopen`, the poster replying) is unchanged.
+226. **`/reopen` stays registered, and refuses privately inside a #tickets thread** with `[tickets] no_reopen` ("closed tickets can't be re-opened. if there's more to sort out, the player can open a new ticket in #tickets."). Discord can't limit a slash command to threads of one channel, and #community-help still needs it. Its description now says "#community-help". The refusal is sent before anything else happens: nothing is posted, the thread isn't touched.
+227. **The player is never stuck.** A closed ticket doesn't count towards `TICKETS_MAX_OPEN_PER_USER`, so they can always open a new one. A test checks this.
+228. **Tickets that were re-opened before this change** keep their history: `reopened_at` stays and the card still says "(re-opened)". If such a ticket is open now, it closes normally and then stays closed.
+
+**Re-opened in Zammad**
+
+229. **What happened before:** setting a closed Discord ticket to any non-closed state in Zammad re-opened it in Discord (unlock, unarchive, re-add the player, post a note). That contradicts "closed stays closed".
+230. **Now Zammad is brought back in line.** When the sync sees a ticket that's closed in Discord but not in Zammad, it changes nothing in Discord, sets the Zammad ticket back to closed, and adds one internal note: "This ticket is closed in Discord, and closed Discord tickets can't be re-opened, so it has been closed here again. Its Discord thread is locked and archived: the player can't see new replies there. If they need more help, ask them to open a new ticket in #tickets."
+     - **Rejected: ignoring it.** The two systems would disagree for good, an agent would believe they'd re-opened something the player can't see, and the reconcile job would re-queue the difference every 5 minutes.
+     - **Rejected: re-opening in Discord after all,** for the reasons at the top of this section.
+     - "Not closed" means any state other than `closed` or `merged` (entry 146), so a pending state on a closed Discord ticket is undone too.
+     - It settles in one round: the bot's own close echoes back as a no-op. A test checks there's no ping-pong and exactly one note.
+231. **Details.**
+     - An agent's public reply on a closed ticket is still posted in the thread (entry 155), which is archived again afterwards. If the agent also re-opened the ticket to write it, the reply is delivered and Zammad goes back to closed.
+     - The re-close is an ordinary outbox row, so it's retried if Zammad is down.
+     - The reconcile job only looks at tickets closed in the last 2 days (entry 152). A re-open of an older ticket whose webhook was also lost stays open in Zammad until its next event. Accepted.
+     - Outbox rows of kind `reopen` or `note` (CSAT) left over from before the upgrade complete without doing anything, rather than failing and alerting the maintainer.
+
+**No role pings**
+
+232. **Staff alert cards are posted with no content line and no allowed mentions:** no category role, no Staff role on High priority, no fallback. Removed with it: the `[tickets] alert_ping` copy key, `ping_roles` on the send helper (which can no longer allow a role mention at all), `STORE_ROLE_ID`, `MOD_ROLE_ID`, `Settings.role_id_for`, and `role` in `copy/ticket_categories.toml`.
+     - Nothing else used any of those. `STAFF_ROLE_ID` stays: it's how the bot knows who is staff.
+     - A categories file that still has `role` loads fine; the key is dropped with a warning. Unknown keys in that file are otherwise fatal at startup, and the file lives on the host.
+     - The first #tickets opener still pings the *player* (entry 92). Log-channel errors still ping `MAINTAINER_ID`, a user. Neither is a role.
+233. **Staff who want a notification per ticket** set the staff channel to "All Messages". DEPLOY.md says so, and no longer asks for mentionable roles or "Mention All Roles".
+
+**Zammad login (docs only)**
+
+234. **`support.cloudsail.uk` is no longer behind a self-hosted Cloudflare Access application; Zammad's own Cloudflare OIDC login is the only gate.** Supersedes entry 151.
+     - DEPLOY.md §7.5 is now "nothing to set up": Zammad serves `/api/v1/users/image/<hash>` without a login by design, so Discord can fetch agent avatars directly. The old bypass application does nothing and the guide says to delete it.
+     - §7.5 also states what being public means: API tokens now work from anywhere rather than only behind Access, so the existing advice (delete the setup token, keep the avatar token on its own user) matters more. That's a consequence worth writing down, not a new requirement.
+     - The Worker's logout rewrite stays: Zammad's OIDC logout still goes to Access's logout address, which ends the session for every Access app. No Worker code changed; `zammad-skin/README.md` and its DECISIONS (S36) explain why it's still there.
+     - No bot code depended on the gate. The bot reaches Zammad over the Docker network.

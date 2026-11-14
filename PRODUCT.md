@@ -75,13 +75,13 @@ Keeps Mava's flow, which players already know, with no seat limit. Players stay 
 
 ### Categories
 
-| Category | Subcategories → priority | Pings | Blurb asks for |
-|---|---|---|---|
-| ❗ **Server Issue** | 💥 Urgent → High · 🔧 Bug Report → Medium · 💻 Other Technical → Low | Staff role | What happened, IGN, where and when, screenshots |
-| 🛒 **Store** | none (Medium) | Store role | IGN, what you bought, roughly when, what's wrong |
-| 🔨 **Bans & Appeals** | none (Medium) | Mod role | IGN and what happened. If banned from Discord, use appeals.cloudsail.uk. |
-| 🚩 **Reports** | none (Medium) | Mod role | Who, what, where and when, evidence |
-| ❓ **Other** | none (Low) | Staff role | Description. This also covers partnerships and website issues. |
+| Category | Subcategories → priority | Blurb asks for |
+|---|---|---|
+| ❗ **Server Issue** | 💥 Urgent → High · 🔧 Bug Report → Medium · 💻 Other Technical → Low | What happened, IGN, where and when, screenshots |
+| 🛒 **Store** | none (Medium) | IGN, what you bought, roughly when, what's wrong |
+| 🔨 **Bans & Appeals** | none (Medium) | IGN and what happened. If banned from Discord, use appeals.cloudsail.uk. |
+| 🚩 **Reports** | none (Medium) | Who, what, where and when, evidence |
+| ❓ **Other** | none (Low) | Description. This also covers partnerships and website issues. |
 
 ### Staff side
 
@@ -90,11 +90,12 @@ Keeps Mava's flow, which players already know, with no seat limit. Players stay 
   - the player's first message
   - a link to the thread, and to the Zammad ticket
 
-  It pings the role that owns the category. High priority also pings the Staff role.
+  It pings nobody: no category role, no Staff role on High priority. Whole-role pings were more annoying than useful; staff watch the channel, and the card shows the priority.
 - **Staff reply in the thread as themselves.** The first staff reply claims the ticket.
 - **Closing:** staff or the player can close.
-  - The bot posts a closing message, then a separate **CSAT** message: "how did we do?" with one row of five grey emoji buttons (😡 🙁 😐 🙂 🤩 for 1–5, configurable). After a rating the row is disabled and the message reads e.g. "thanks! you rated 4/5 🙂".
-  - Then it locks and archives the thread.
+  - The bot posts a closing message, then locks and archives the thread straight away.
+  - **Closed is final.** Nobody can re-open a private ticket, from Discord or from Zammad. If there's more to sort out, the player opens a new ticket. (`/reopen` in a #tickets thread says so privately.)
+  - There is no satisfaction rating (CSAT). At about 20 tickets in 9 months the numbers wouldn't mean anything, and Discord disables buttons in a locked thread, so a rating could only be collected by keeping closed threads open.
 - **Zammad:** every ticket is mirrored to Zammad both ways. See §2b.
 
 ## 2b. Zammad ↔ #tickets (two-way)
@@ -126,11 +127,10 @@ Zammad is the core support platform. **Admins work tickets in Zammad; the Discor
 
 | Happens in | Effect on the other side |
 |---|---|
-| Closed in Zammad | The Discord close runs: closing message, CSAT prompt, lock, later archive |
+| Closed in Zammad | The Discord close runs: closing message, then lock and archive |
 | Closed in Discord | Zammad ticket set to closed, with an internal note saying who closed it |
-| Re-opened in Zammad | Discord thread unlocked and unarchived, player re-added |
-| Re-opened in Discord (`/reopen`) | Zammad ticket set back to open |
-| CSAT rating in Discord | Internal note on the Zammad ticket |
+| Re-opened in Zammad (any state that isn't closed) | Nothing changes in Discord: the thread stays locked and archived. The bot sets the Zammad ticket back to closed and adds an internal note saying that Discord tickets can't be re-opened and the player should open a new one |
+| Agent replies publicly on a closed ticket | The reply is still posted in the thread, which is then archived again (it stays locked) |
 | Group changed in Zammad | Recorded on the ticket (the card no longer shows the group) |
 
 Tickets created directly in Zammad are out of scope and left alone.
@@ -140,7 +140,7 @@ Tickets created directly in Zammad are out of scope and left alone.
 - Both directions go through an **outbox table** worked by a background task, with exponential backoff (5 seconds up to 15 minutes).
 - **Order is kept per ticket.** A message that fails holds back the ones behind it.
 - **Idempotent.** Zammad ticket and article IDs and the mirrored Discord message IDs are stored, so retries and repeated webhook deliveries never double-post.
-- **Discord never waits on Zammad.** Flows only write to the outbox. With Zammad down, tickets, replies, closing and CSAT all work, and everything is delivered afterwards.
+- **Discord never waits on Zammad.** Flows only write to the outbox. With Zammad down, tickets, replies and closing all work, and everything is delivered afterwards.
 - A periodic check picks up anything a webhook failed to deliver (for example while the bot was restarting).
 - Backlog and failures show in `/stats` and, rate-limited, in the log channel.
 
@@ -171,7 +171,7 @@ When someone posts in the channel, the bot deletes the old sticky and reposts it
 
 ## Roles & permissions
 
-- **Discord roles are the source of truth:** a Staff role, plus an owner role per category.
+- **The Discord Staff role is the source of truth** for who is staff. Categories have no owner role: alerts don't ping, and routing by category happens in Zammad groups.
 - **Zammad agents** are everyone who works tickets: the email inbox and, through the sync, #tickets. Their Zammad groups should match their Discord categories. Agents aren't linked to Discord accounts.
 - The bot has its own Zammad agent user with access to the ticket groups.
 
@@ -181,7 +181,6 @@ When someone posts in the channel, the bot deletes the old sticky and reposts it
 - Opened and resolved counts, per surface
 - Median time to first staff response
 - Tickets waiting more than 3 days with no staff reply
-- Average CSAT for the period
 
 Full stats can come later, either in a staff-only `/stats` command or in Zammad reporting.
 
@@ -195,14 +194,13 @@ Full stats can come later, either in a staff-only `/stats` command or in Zammad 
 ## Phases
 
 1. **v1:** #community-help (auto-reply, resolve and re-open, macros, sticky message)
-2. **v2:** #tickets (panel, categories, forms, private threads, routing, CSAT)
+2. **v2:** #tickets (panel, categories, forms, private threads, routing)
 3. **v3:** two-way Zammad ↔ #tickets sync (§2b), daily stats. Still to do: the `support@` email cutover.
 4. **Later:** full stats in Zammad reporting
 
 ## Open questions
 
 - Should staff stop replying in Discord threads once everyone works in Zammad? Today both work and both are mirrored.
-- Who owns the Store role versus the Mod role?
 - AI tagging: worth it at current volume? Which model would it use (Hack Club AI)?
 - How long to keep closed tickets, and should old threads be deleted or only archived?
 - Should OP-resolved community posts count toward staff stats?

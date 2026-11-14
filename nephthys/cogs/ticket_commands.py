@@ -2,7 +2,8 @@
 
 /faq and /ip post on staff's behalf but do NOT count as a staff reply: they
 don't claim the ticket and don't clear "waiting". /resolve and /reopen run the
-same flows as the buttons.
+same flows as the buttons. /reopen only works in #community-help: a closed
+#tickets thread stays closed, and the command says so privately there.
 """
 
 import logging
@@ -17,12 +18,14 @@ from nephthys.core import tickets
 from nephthys.core.copytext import get_copy
 from nephthys.core.permissions import Actor
 from nephthys.database.enums import BotMessageKind
+from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import flows
 from nephthys.discord_ops.send import followup_text
 from nephthys.discord_ops.send import respond_text
 from nephthys.discord_ops.threads import actor_from_user
 from nephthys.errors.errors import PermissionDenied
+from nephthys.errors.errors import PrivateTicketReopenError
 from nephthys.errors.errors import TicketAlreadyClosedError
 from nephthys.errors.errors import TicketNotClosedError
 from nephthys.errors.errors import TicketNotFoundError
@@ -31,6 +34,7 @@ log = logging.getLogger(__name__)
 
 REFUSALS = (
     PermissionDenied,
+    PrivateTicketReopenError,
     TicketAlreadyClosedError,
     TicketNotClosedError,
     TicketNotFoundError,
@@ -139,12 +143,19 @@ class TicketCommands(commands.Cog):
         await followup_text(interaction, get_copy().commands.resolved)
 
     @app_commands.command(
-        name="reopen", description="Staff: re-open this resolved ticket"
+        name="reopen",
+        description="Staff: re-open this resolved #community-help ticket",
     )
     @app_commands.guild_only()
     async def reopen(self, interaction: discord.Interaction) -> None:
         ctx = await self.ticket_context(interaction)
         if ctx is None:
+            return
+        if ctx.ticket.surface == TicketSurface.PRIVATE:
+            # Closed private tickets stay closed; the player opens a new one
+            await respond_text(
+                interaction, get_copy().tickets.no_reopen, ephemeral=True
+            )
             return
         await interaction.response.defer(ephemeral=True)
         try:

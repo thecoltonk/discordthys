@@ -78,13 +78,15 @@ def test_ai_client_only_with_key():
     assert bot.ai_client is not None and bot.ai_client.model == "m"
 
 
-def test_archive_sweep_scheduled_only_with_tickets():
+def test_no_archive_sweep_is_scheduled():
+    """Closing a #tickets thread archives it on the spot, so there's no
+    background sweep (and no module for one) any more."""
+    import importlib.util
+
     bot = SupportBot(make_settings(TICKETS_CHANNEL_ID="600"), connect_db=False)
     bot.configure_jobs()
-    names = {job.func.__name__ for job in bot.scheduler.get_jobs()}
-    assert "run_archive_closed" in names
-    off = SupportBot(make_settings(), connect_db=False)
-    off.configure_jobs()
-    assert "run_archive_closed" not in {
-        j.func.__name__ for j in off.scheduler.get_jobs()
+    assert {job.func.__name__ for job in bot.scheduler.get_jobs()} == {
+        "run_daily_summary"
     }
+    assert not hasattr(bot, "run_archive_closed")
+    assert importlib.util.find_spec("nephthys.tasks.archive_closed") is None

@@ -4,8 +4,8 @@ Create Ticket -> private thread named after the player -> opener message
 ("Ticket T-<n>", welcome, category buttons, Close Ticket). Each pick deletes and
 reposts the opener so the buttons stay at the bottom; the "You have selected"
 lines stack up; at a leaf the category buttons go away (Close stays) and the
-staff alert card is posted with role pings. Close -> closing message + CSAT
-1-5 (opener only, first click) -> lock + archive. Staff can /reopen.
+staff alert card is posted (no pings). Close -> closing message -> lock +
+archive. A closed ticket stays closed: the player opens a new one.
 """
 
 import logging
@@ -22,13 +22,11 @@ from nephthys.core.copytext import get_copy
 from nephthys.core.permissions import Actor
 from nephthys.core.permissions import can_resolve
 from nephthys.core.ticket_categories import get_ticket_categories
-from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import staff_card
 from nephthys.discord_ops import threads
 from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.heartbeat import send_heartbeat
-from nephthys.discord_ops.send import edit_text_response
 from nephthys.discord_ops.send import followup_text
 from nephthys.discord_ops.send import NO_MENTIONS
 from nephthys.discord_ops.send import respond_text
@@ -38,11 +36,8 @@ from nephthys.errors.errors import PermissionDenied
 from nephthys.errors.errors import TicketAlreadyClosedError
 from nephthys.errors.errors import TicketNotClosedError
 from nephthys.errors.errors import TicketNotFoundError
-from nephthys.ui.ticket_buttons import csat_face
-from nephthys.ui.ticket_buttons import csat_view
 from nephthys.ui.ticket_buttons import opener_view
 from nephthys.utils.metrics import TICKETS_OPENED
-from nephthys.utils.metrics import TICKETS_REOPENED
 from nephthys.utils.metrics import TICKETS_RESOLVED
 from nephthys.zammad import hooks as zammad_hooks
 
@@ -370,32 +365,16 @@ async def pick_from_interaction(
         await on_leaf(bot, ticket)
 
 
-def ping_role_ids(bot: "SupportBot", ticket: Ticket) -> list[int]:
-    category = get_ticket_categories().get(ticket.category)
-    roles = [bot.settings.role_id_for(category.role if category else "staff")]
-    if ticket.priority == "high" and bot.settings.staff_role_id not in roles:
-        roles.append(bot.settings.staff_role_id)
-    return roles
-
-
 async def on_leaf(bot: "SupportBot", ticket: Ticket) -> None:
-    """Post the staff alert card, pinging the owning role (+ Staff if High),
-    and start the Zammad mirror."""
+    """Post the staff alert card (it pings nobody) and start the Zammad mirror."""
     await zammad_hooks.ticket_ready(bot, ticket)
     if ticket.staff_card_message_id:
         return
-    roles = ping_role_ids(bot, ticket)
-    content = get_copy().tickets.alert_ping.format(
-        roles=" ".join(f"<@&{r}>" for r in roles),
-        priority=staff_card.priority_label(ticket.priority),
-    )
-    await staff_card.post_staff_card(
-        bot, ticket, ping_content=content, ping_roles=roles
-    )
+    await staff_card.post_staff_card(bot, ticket)
 
 
 # ---------------------------------------------------------------------------
-# Close / CSAT / reopen
+# Close
 # ---------------------------------------------------------------------------
 
 
@@ -409,10 +388,8 @@ async def close_private(
     by_name: str | None = None,
     mirror: bool = True,
 ) -> Ticket:
-    """Resolve and post the closing message + CSAT prompt. The thread stays
-    open (locked for the player when TICKETS_LOCK_ON_CLOSE) so the opener can
-    rate; it's archived when they rate or after CSAT_TIMEOUT_HOURS. A ticket
-    that was already rated has nothing to wait for and is archived now.
+    """Resolve, post the closing message, then lock + archive the thread.
+    That's final: a closed private ticket can't be re-opened.
     Raises the core refusal errors.
 
     `by_name` is who closed it when that isn't a Discord user (a Zammad agent);
@@ -443,15 +420,8 @@ async def close_private(
                 )
             else:
                 await send_text(thread, closed_text)
-        if ticket.csat_rating is None:
-            async with threads.best_effort("send_csat"):
-                await send_text(thread, copy.csat_prompt, view=csat_view(ticket.id))
-            if bot.settings.tickets_lock_on_close:
-                async with threads.best_effort("lock_on_close"):
-                    await thread.edit(locked=True)
-    await pt.clear_archived(ticket.id)
-    if ticket.csat_rating is not None:
-        await archive_private(bot, ticket)
+        async with threads.best_effort("lock_archive"):
+            await thread.edit(locked=True, archived=True)
     await staff_card.refresh_staff_card(bot, ticket.id)
     if mirror:
         await zammad_hooks.ticket_closed(bot, ticket, display_name_of(user))
@@ -472,54 +442,6 @@ def who_text(user: discord.abc.User | None, by_name: str | None) -> str:
     if by_name:
         return f"**{discord.utils.escape_markdown(by_name)}**"
     return get_copy().card.someone
-
-
-async def archive_private(bot: "SupportBot", ticket: Ticket) -> None:
-    """Lock + archive a closed ticket's thread and record that it's done.
-    Tolerates a thread that's already archived (or gone)."""
-    thread = await threads.get_thread(bot, ticket.thread_id)
-    if thread is not None and not (thread.archived and thread.locked):
-        async with threads.best_effort("lock_archive"):
-            await thread.edit(locked=True, archived=True)
-    await pt.mark_archived(ticket.id)
-    log.info(f"Archived closed ticket T-{ticket.number} id={ticket.id}")
-
-
-async def reopen_private(
-    bot: "SupportBot",
-    ticket_id: int,
-    actor: Actor | None,
-    user: discord.abc.User | None,
-    *,
-    source: str,
-    by_name: str | None = None,
-    mirror: bool = True,
-) -> Ticket:
-    """Staff only (the player can't reach a locked thread anyway). `actor=None`
-    with `by_name` is a re-open made in Zammad (`mirror=False`: not sent back)."""
-    if actor is not None and not actor.is_staff:
-        raise PermissionDenied(
-            "Only staff can re-open a private ticket", user_id=actor.discord_id
-        )
-    ticket = await tickets.reopen(ticket_id, actor)
-    TICKETS_REOPENED.labels(source=source).inc()
-    await pt.clear_archived(ticket.id)  # cancels any pending CSAT-timeout archive
-    thread = await threads.get_thread(bot, ticket.thread_id)
-    if thread is not None:
-        async with threads.best_effort("unlock_unarchive"):
-            await thread.edit(archived=False, locked=False)
-        opener = await tickets.get_opener(ticket)
-        async with threads.best_effort("readd_player"):
-            await thread.add_user(discord.Object(opener.discord_id))
-        async with threads.best_effort("send_reopened"):
-            await send_text(
-                thread,
-                get_copy().tickets.reopened.format(user=who_text(user, by_name)),
-            )
-    await staff_card.refresh_staff_card(bot, ticket.id)
-    if mirror:
-        await zammad_hooks.ticket_reopened(bot, ticket, display_name_of(user))
-    return ticket
 
 
 async def close_from_interaction(
@@ -549,47 +471,12 @@ async def close_from_interaction(
         await followup_text(interaction, refusal_message(e) or str(e))
 
 
-async def csat_from_interaction(
-    interaction: discord.Interaction[Any], ticket_id: int, rating: int
-) -> None:
-    bot = cast("SupportBot", interaction.client)
-    copy = get_copy()
-    actor = threads.actor_from_user(interaction.user, bot.settings.staff_role_id)
-    try:
-        ticket = await pt.rate_csat(ticket_id, rating, actor)
-    except pt.NotTicketOpenerError:
-        await respond_text(interaction, copy.tickets.csat_not_opener, ephemeral=True)
-        return
-    except pt.CSATAlreadyRatedError:
-        await respond_text(interaction, copy.tickets.csat_already, ephemeral=True)
-        return
-    except TicketNotFoundError:
-        await respond_text(interaction, copy.errors.ticket_missing, ephemeral=True)
-        return
-    thanks = copy.tickets.csat_thanks.format(
-        rating=rating, emoji=csat_face(rating)[1]
-    ).strip()
-    try:
-        # Keep the row, disabled, so it's clear the rating is done
-        await edit_text_response(
-            interaction, thanks, view=csat_view(ticket_id, disabled=True)
-        )
-    except discord.HTTPException as e:
-        # e.g. the thread was archived by the CSAT timeout: the rating is saved,
-        # so just thank them privately
-        log.info(f"Couldn't edit the CSAT prompt for ticket id={ticket_id}: {e}")
-        async with threads.best_effort("csat_thanks_fallback"):
-            await respond_text(interaction, thanks, ephemeral=True)
-    # Rating ends the CSAT wait. (A rating left on an old prompt after the
-    # ticket was re-opened is recorded, but doesn't archive an open ticket.)
-    if ticket.status == TicketStatus.CLOSED and ticket.archived_at is None:
-        await archive_private(bot, ticket)
-    await staff_card.refresh_staff_card(bot, ticket_id)
-    await zammad_hooks.internal_note(
-        bot,
-        ticket,
-        f"CSAT: the player rated this ticket {rating}/5 in Discord.",
-    )
+async def retired_csat_click(interaction: discord.Interaction[Any]) -> None:
+    """A rating button on a prompt posted before CSAT was removed. Nothing is
+    recorded; the click just gets a private answer instead of Discord's
+    "This interaction failed"."""
+    async with threads.best_effort("retired_csat_click"):
+        await respond_text(interaction, get_copy().tickets.csat_retired, ephemeral=True)
 
 
 # ---------------------------------------------------------------------------

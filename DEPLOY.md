@@ -48,7 +48,7 @@ The bot only makes **outbound** connections (to the Discord gateway and API). Yo
    - **Create Public Threads: ❌** and **Create Private Threads: ❌**. The bot creates the threads. If players make their own, the bot can't open the ticket thread.
    - Optional: a slowmode of a few seconds cuts down on accidental multi-message questions.
 3. Make sure the bot's role has the permissions above in #community-help. Either check that channel overrides don't remove them, or add an override for the bot role.
-4. **Staff role:** anyone with this role can claim tickets (by replying), resolve, re-open, rate AI suggestions, and use `/faq`, `/ip`, `/resolve`, `/reopen`, `/waiting` and `/stats`. Discord shows the slash commands to everyone; the bot refuses non-staff, privately. To hide them as well, use Server Settings → Integrations → Cloudsail Support → limit commands to the Staff role.
+4. **Staff role:** anyone with this role can claim tickets (by replying), resolve, re-open #community-help tickets, rate AI suggestions, and use `/faq`, `/ip`, `/resolve`, `/reopen` (#community-help only), `/waiting` and `/stats`. Discord shows the slash commands to everyone; the bot refuses non-staff, privately. To hide them as well, use Server Settings → Integrations → Cloudsail Support → limit commands to the Staff role.
 5. Optional channels (staff-only):
    - **Staff channel** (`STAFF_CHANNEL_ID`): #tickets alert cards, AI shadow suggestions (if AI is on), and the daily summary. #community-help tickets don't get cards here; they show up in `/stats`, `/waiting` and the summary.
    - **Log channel** (`LOG_CHANNEL_ID`): errors and notable events. Only real errors notify (and ping `MAINTAINER_ID` where it matters); everything else, such as "Zammad sync is behind" or "caught up", is posted @silent. The "online" notice at startup is off unless `LOG_STARTUP_NOTICE=true`.
@@ -65,23 +65,20 @@ Skip this section to run #community-help only: #tickets is off while `TICKETS_CH
    |---|---|---|
    | `@everyone` | View Channel, Read Message History, Send Messages in Threads | **Send Messages** (keeps the channel to just the panel), **Create Public Threads**, **Create Private Threads** |
    | Bot role | View Channel, Send Messages, Embed Links, Read Message History, **Create Private Threads**, Send Messages in Threads, **Manage Threads**, Manage Messages | |
-   | Staff role, plus the Store and Mod roles if you use them | View Channel, Read Message History, Send Messages in Threads, **Manage Threads** | |
+   | Staff role (and any other role that should work tickets) | View Channel, Read Message History, Send Messages in Threads, **Manage Threads** | |
 
 2. **How staff see private threads.** A private thread is visible only to the people in it, plus anyone with **Manage Threads** in the parent channel. So:
    - The player is added to their own thread automatically, and nobody else is.
-   - Staff (and the Store and Mod roles) need **Manage Threads** on #tickets. Without it they can't open tickets at all, even from the alert link.
+   - Staff need **Manage Threads** on #tickets. Without it they can't open tickets at all, even from the alert link.
    - Staff open a ticket from the **Open thread** link on its alert card in the staff channel. In #tickets, private threads appear under the threads icon (🧵) at the top of the channel. Posting in a ticket adds you to it, so you get notifications from then on.
    - The bot creates threads as non-invitable, so players can't add other people.
-3. **Alert pings.** When a player picks a category, the alert card in the staff channel pings that category's role (`STORE_ROLE_ID`, `MOD_ROLE_ID`, or the Staff role). High-priority tickets also ping the Staff role. For a ping to notify anyone, do one of these:
-   - make those roles mentionable (Server Settings → Roles → the role → **Allow anyone to @mention this role**), or
-   - give the bot **Mention @everyone, @here and All Roles** in the staff channel only.
+3. **Alerts don't ping.** When a player picks a category, an alert card is posted in the staff channel. It mentions no role, whatever the category or priority, so the bot needs no "Mention All Roles" permission and no role has to be mentionable. Staff who want a notification for every new ticket can set the staff channel to notify on all messages (right-click the channel → Notification Settings → All Messages).
 4. **Set these in `.env`:**
    - `TICKETS_CHANNEL_ID`: the #tickets channel.
-   - `STORE_ROLE_ID` and `MOD_ROLE_ID` (optional). Categories owned by an unset role ping the Staff role instead.
    - `TICKET_NUMBER_START`: default `26`, because Mava ended at T-25.
    - `TICKETS_MAX_OPEN_PER_USER`: default `2`; `0` means no limit.
-5. **Categories, subcategories, priorities, owning roles and blurbs** are in `copy/ticket_categories.toml`. The defaults are PRODUCT.md §2. Edit the file, check it with `docker compose exec bot python -m nephthys.core.ticket_categories --check /app/copy/ticket_categories.toml`, then run `docker compose restart bot`. This file is read at startup only. Don't rename the `key` of a category that open tickets use; add a new category instead.
-6. All #tickets text (the panel, welcome, closing, CSAT, escalation) is in the `[tickets]` section of `copy/copy.toml`, and reloads live like the rest of the copy.
+5. **Categories, subcategories, priorities and blurbs** are in `copy/ticket_categories.toml`. The defaults are PRODUCT.md §2. Edit the file, check it with `docker compose exec bot python -m nephthys.core.ticket_categories --check /app/copy/ticket_categories.toml`, then run `docker compose restart bot`. This file is read at startup only. Don't rename the `key` of a category that open tickets use; add a new category instead.
+6. All #tickets text (the panel, welcome, closing, escalation) is in the `[tickets]` section of `copy/copy.toml`, and reloads live like the rest of the copy.
 
 ## 3. Install Docker on the box (Ubuntu 22.04/24.04, arm64)
 
@@ -169,7 +166,7 @@ This should return `{"healthy": true, ...}`. `docker compose ps` shows the bot a
 3. Reply in the thread as staff. `/waiting` no longer lists the ticket, and `/stats` shows it as in progress.
 4. Click **Mark as resolved** as the poster. You should see the closing message with **Re-open**, ✅ on the question, and the thread archived.
 5. Reply in the archived thread as the poster. The ticket re-opens automatically (🤔 is back, along with a "re-opened by" message).
-6. As staff, run `/faq`, `/ip`, `/resolve` and `/reopen` inside a ticket thread. `/faq` and `/ip` post publicly. Afterwards, `/waiting` still lists the ticket, because these commands don't count as a reply. Running them outside a ticket thread gives a private error.
+6. As staff, run `/faq`, `/ip`, `/resolve` and `/reopen` inside a #community-help ticket thread. `/faq` and `/ip` post publicly. Afterwards, `/waiting` still lists the ticket, because these commands don't count as a reply. Running them outside a ticket thread gives a private error.
 7. Check that nothing was posted to the staff channel for these questions, and that `/stats` counts them (opened, claimed, resolved, top helpers).
 8. Optional: temporarily set `DAILY_SUMMARY_TIME` a couple of minutes ahead and restart the bot to see the summary.
 
@@ -182,14 +179,12 @@ This should return `{"healthy": true, ...}`. `docker compose ps` shows the bot a
     - The opener shows `Ticket T-26`, the welcome text, five category buttons, and **Close Ticket**.
 11. Pick **Server Issue**. The opener is reposted at the bottom with "You have selected: ❗ Server Issue", the question, and three subcategory buttons.
 12. Pick **Urgent**. The category buttons disappear, though **Close Ticket** stays.
-    - The staff channel gets an alert card pinging the Staff role, showing 🔴 High.
+    - The staff channel gets an alert card showing 🔴 High. It has no text above it and pings nobody.
     - Type a message as the player: it becomes the card's description.
 13. Reply as staff: the card shows 🔵 Claimed.
 14. Click **Close Ticket** as the player.
-    - You should see the closing message and 1–5 rating buttons. The thread locks, so the player can't post, but it stays open so they can rate.
-    - Rate it: the buttons are disabled and the message thanks the player ("thanks! you rated 4/5 🙂"), the card shows CSAT, and the thread archives.
-    - Unrated tickets archive on their own after `CSAT_TIMEOUT_HOURS` (default 24). Staff can `/reopen` at any point before or after that.
-15. As staff, open the thread from the card and run `/reopen`. The thread unlocks and the player is back in it.
+    - You should see the closing message, with no rating buttons. The thread locks and archives straight away, and the card shows ✅ Resolved.
+15. As staff, open the thread from the card and run `/reopen`. You get a private reply that closed tickets can't be re-opened, and nothing changes. As the player, **Create Ticket** again: a new ticket opens (a closed one doesn't count towards `TICKETS_MAX_OPEN_PER_USER`).
 16. In a #community-help thread, run `/escalate` as staff.
     - The poster gets a private #tickets thread linking back.
     - The public thread gets a note linking to it, then locks.
@@ -382,25 +377,30 @@ The command is idempotent. Run it again after changing the secret, the webhook a
 
 It prints a ✓ or ✗ per step and exits non-zero if anything needs attention. Afterwards, delete the setup token in Zammad and remove `ZAMMAD_SETUP_TOKEN` from `.env`.
 
-### 7.5 Avatars: a narrow Cloudflare Access bypass
+### 7.5 Avatars: nothing to set up
 
-Agent replies appear in Discord with the agent's Zammad name and picture. Discord's servers download the picture, so they need to reach it, and `support.cloudsail.uk` is behind Cloudflare Access.
+Agent replies appear in Discord with the agent's Zammad name and picture. Discord's servers download the picture from `ZAMMAD_PUBLIC_URL`, so they need to reach it without logging in.
 
-Zammad serves profile pictures at `/api/v1/users/image/<hash>` **without a login** (that's how its own login page shows them), and the address contains a hash of the image, not a user ID. So it's enough to let that one path through:
-
-1. Cloudflare Zero Trust → Access → Applications → **Add an application** → Self-hosted.
-2. Application domain: `support.cloudsail.uk`, path: `api/v1/users/image/*`. Name it e.g. "Zammad avatars (public)".
-3. Add one policy: Action **Bypass**, Include **Everyone**.
-4. Save. Cloudflare applies the most specific path first, so this takes precedence over the application protecting the rest of `support.cloudsail.uk`.
+They can. `support.cloudsail.uk` is no longer behind a self-hosted Cloudflare Access application: Zammad's own login (the "Sign in with Cloudflare" OIDC button) is the only gate. Zammad serves profile pictures at `/api/v1/users/image/<hash>` **without a login** by design (that's how its own login page shows them), and the address contains a hash of the image, not a user ID. So with `ZAMMAD_PUBLIC_URL` set, avatars work with no Cloudflare configuration.
 
 Check it from anywhere outside your network:
 
 ```bash
 curl -sI https://support.cloudsail.uk/api/v1/users/image/0 | head -1   # 200, a small grey placeholder
-curl -sI https://support.cloudsail.uk/api/v1/users/me | head -1        # still 302/403 from Access
+curl -sI https://support.cloudsail.uk/api/v1/users/me | head -1        # 401 or 403 from Zammad itself: the API still needs a login
 ```
 
-What this exposes: profile pictures of Zammad users to anyone who knows a picture's hash. Nothing else on the path. If you'd rather expose nothing, skip the bypass and leave `ZAMMAD_PUBLIC_URL` set for links only: Discord then shows a broken or default avatar, so set `ZAMMAD_DEFAULT_AVATAR_URL` and consider leaving agents without pictures in Zammad. Options that were considered and rejected are in DECISIONS.md.
+If the first check answers with a redirect to `cloudflareaccess.com`, a self-hosted Access application still covers the hostname: remove it (or see the next point).
+
+**Cleaning up from the old setup.** An earlier version of this guide had you create a self-hosted Access application "Zammad avatars (public)" for the path `api/v1/users/image/*` with a Bypass policy. It only existed to let that path through the gate. With the gate gone it does nothing, so delete it: Cloudflare Zero Trust → Access → Applications → that application → Delete. Leave the OIDC (SaaS) application that Zammad's login button uses.
+
+**What being public means.** The whole of Zammad is now reachable from the internet, protected by Zammad's own authentication rather than by Access in front of it:
+
+- Profile pictures of Zammad users are readable by anyone who knows a picture's hash. That was already the case for this one path under the old bypass.
+- The API accepts Zammad's API tokens from anywhere, not only from people who had passed Access first. Keep `ZAMMAD_TOKEN`, `ZAMMAD_SETUP_TOKEN` and `ZAMMAD_AVATAR_TOKEN` secret, delete the setup token after use (§7.4), and keep the avatar token on its separate user (§7.1 step 5).
+- The bot itself is unaffected: it talks to Zammad over the private Docker network (`ZAMMAD_URL`), never through `support.cloudsail.uk`.
+
+If you'd rather not serve agent pictures at all, leave agents without pictures in Zammad and set `ZAMMAD_DEFAULT_AVATAR_URL`.
 
 ### 7.6 How agents use it
 
@@ -408,7 +408,8 @@ What this exposes: profile pictures of Zammad users to anyone who knows a pictur
 - Every message in the Discord thread appears as an article starting with `<name> (Player via Discord)` or `<name> (Staff via Discord)`.
 - **To reply to the player, write a note and set its visibility to public.** Zammad makes new notes *internal* by default (the lock icon in the reply box). Internal notes never go to Discord. To make public the default for everyone: Admin → Settings → Ticket → "Note - default visibility".
 - Don't use the email reply type on these tickets: the customer's address is a placeholder (`<id>@discord.invalid`) that can't receive mail.
-- An agent's first public reply claims the ticket on the Discord side. Closing or re-opening in Zammad closes or re-opens the Discord ticket, and the other way round. Moving the ticket to another group updates the staff card.
+- An agent's first public reply claims the ticket on the Discord side. Closing in Zammad closes the Discord ticket, and the other way round. Moving the ticket to another group is recorded on the Discord side.
+- **A closed Discord ticket can't be re-opened.** Its thread is locked and archived, and the player may already have a new ticket. If you set a closed Discord ticket to open (or pending) in Zammad, the bot sets it back to closed within a few seconds and leaves an internal note saying why. If the player needs more help, ask them to open a new ticket in #tickets. A public reply written on a closed ticket is still delivered to the old thread, but the player gets no notification from an archived thread, so don't rely on it.
 - Tickets created directly in Zammad (email, or by hand) are never touched by the bot.
 
 ### 7.7 Smoke test
@@ -418,8 +419,8 @@ What this exposes: profile pictures of Zammad users to anyone who knows a pictur
 3. In Zammad, add a **public** note "hello from Zammad" with an attachment. It appears in the thread as "<your Zammad name> (Support)" with your picture, with the file. The staff card says "Claimed by <you> (Zammad)".
 4. Add an **internal** note. Nothing appears in Discord.
 5. Move the ticket to another group in Zammad. Nothing changes in Discord (the card doesn't show the group); the bot just records it.
-6. Close the ticket in Zammad. The thread gets the closing message and the 1–5 rating. Click a rating: Zammad gets an internal note "CSAT: … 4/5".
-7. In Discord run `/reopen` in the thread. The Zammad ticket goes back to open. Close it with **Close Ticket**: Zammad shows closed.
+6. Close the ticket in Zammad. The thread gets the closing message, then locks and archives.
+7. In Zammad, set that ticket back to **open**. Within a few seconds it's closed again, with an internal note explaining that Discord tickets can't be re-opened. Nothing changes in Discord. Then open a second ticket in Discord and close it with **Close Ticket**: Zammad shows it closed, with the note "Closed in Discord by …".
 8. `/stats` shows **Zammad sync: ✅ in sync** on the #tickets embed.
 9. Check the Zammad customer (Customers → search the Discord name): login `discord:<id>`, the Discord ID field filled, and no email-type articles on the ticket. With `ZAMMAD_AVATAR_TOKEN` set, it shows your Discord profile picture. Change your Discord display name and write in the ticket again: the customer's name follows.
 
@@ -449,7 +450,9 @@ What this exposes: profile pictures of Zammad users to anyone who knows a pictur
 | Threads don't archive | Give the bot **Manage Threads**. |
 | Create Ticket says "couldn't open a ticket" | The bot is missing **Create Private Threads** or **Manage Threads** in #tickets. The log channel has the exact error. |
 | Staff can't open a #tickets thread from the alert | Give that role **Manage Threads** in #tickets: private threads are only visible to members and people with Manage Threads. |
-| Alert cards don't notify the role | Make the role mentionable, or give the bot **Mention All Roles** in the staff channel. |
+| Alert cards don't notify anyone | By design: alerts never ping a role. Staff who want notifications set the staff channel to **All Messages**. |
+| A ticket I re-opened in Zammad closed itself again | By design: closed Discord tickets stay closed (§7.6). Ask the player to open a new ticket. |
+| Startup logs "`CSAT_TIMEOUT_HOURS` is set but no longer used" (or `TICKETS_LOCK_ON_CLOSE`, `STORE_ROLE_ID`, `MOD_ROLE_ID`) | Harmless. Those settings were removed and are ignored; delete them from `.env` when convenient. |
 | `copy/ticket_categories.toml: invalid categories` at startup | Fix the reported key. Check the file with `python -m nephthys.core.ticket_categories --check`. |
 | `zammad-setup`: "could not be resolved to a safe IP address" | Zammad can't resolve `cloudsail-support-bot`. The bot must be running with `docker-compose.zammad.yml` (§7.2), and the command must be run with `docker compose exec bot …`. |
 | `zammad-setup`: `network … declared as external, but could not be found` on `docker compose up` | `ZAMMAD_DOCKER_NETWORK` is wrong. Check `docker network ls \| grep zammad`. |
@@ -458,4 +461,4 @@ What this exposes: profile pictures of Zammad users to anyone who knows a pictur
 | Log channel: "No lookup value found for 'group'" | A category's group doesn't exist in Zammad. Create it or set `zammad_group`, then `nephthys zammad-retry`. |
 | Agent replies show as "**Name (Support):** …" from the bot | The webhook post failed; the log channel has the reason. Usually the bot lacks **Manage Webhooks** in #tickets. |
 | An agent's reply doesn't reach Discord | It was an internal note (the default in Zammad): set the note to public. Otherwise check Zammad → Admin → Webhooks → the webhook's recent logs, and the bot's log for "bad signature" (the secret changed: run `zammad-setup` again). |
-| Agent avatars are missing in Discord | The Cloudflare Access bypass (§7.5) isn't in place, or `ZAMMAD_PUBLIC_URL` is unset. |
+| Agent avatars are missing in Discord | `ZAMMAD_PUBLIC_URL` is unset or wrong, or something in front of Zammad still asks for a login on `/api/v1/users/image/*` (run the two checks in §7.5). |

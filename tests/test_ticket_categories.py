@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from nephthys.core import ticket_categories as tc
+from nephthys.core.ticket_categories import Category
 from nephthys.core.ticket_categories import DEFAULT_TICKET_CATEGORIES
 from nephthys.core.ticket_categories import dump_toml
 from nephthys.core.ticket_categories import parse_ticket_categories
@@ -27,17 +28,17 @@ def test_defaults_match_product_md():
         ("Bug Report", "medium"),
         ("Other Technical", "low"),
     ]
-    assert {c.key: (c.role, c.priority) for c in cats.categories if c.is_leaf} == {
-        "store": ("store", "medium"),
-        "bans_appeals": ("mod", "medium"),
-        "reports": ("mod", "medium"),
-        "other": ("staff", "low"),
+    assert {c.key: c.priority for c in cats.categories if c.is_leaf} == {
+        "store": "medium",
+        "bans_appeals": "medium",
+        "reports": "medium",
+        "other": "low",
     }
+    assert "role" not in Category.model_fields  # nothing is pinged any more
     assert (cats.get("bans_appeals") or server).blurb == (
         "Please tell us your **IGN** and **what happened**. If you're banned "
         "from Discord, use https://appeals.cloudsail.uk instead."
     )
-    assert server.role == "staff"
     assert cats.label_for("store") == "🛒 Store"
     assert cats.label_for("gone") == "gone"
 
@@ -56,7 +57,6 @@ BASE = '[[categories]]\nkey = "a"\nlabel = "A"\nblurb = "b"\n'
         ("", "categories"),
         (BASE + BASE, "duplicate category keys"),
         ('[[categories]]\nkey = "Bad Key"\nlabel = "A"\nblurb = "b"\n', "must match"),
-        (BASE + 'role = "admins"\n', "role must be"),
         (BASE + 'priority = "urgent"\n', "priority"),
         (BASE + 'colour = "red"\n', "colour"),
         (
@@ -74,11 +74,20 @@ def test_invalid_files(toml: str, expected: str):
     assert expected in str(exc.value)
 
 
-def test_numeric_role_and_configure(tmp_path: Path):
+def test_leftover_role_is_ignored_and_configure(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    """`role` named who an alert pinged. A file written before pings were
+    removed still loads (whatever the value); the key is dropped with a warning."""
     f = tmp_path / "cats.toml"
-    f.write_text(BASE + 'role = "123456"\n')
-    cats = tc.configure_ticket_categories(f, required=True)
-    assert cats.categories[0].role == "123456"
+    f.write_text(BASE + 'role = "123456"\n' + BASE.replace('"a"', '"b"') + "role = 5\n")
+    with caplog.at_level("WARNING"):
+        cats = tc.configure_ticket_categories(f, required=True)
+    assert [c.key for c in cats.categories] == ["a", "b"]
+    warned = [
+        r.getMessage() for r in caplog.records if "ignoring `role`" in r.getMessage()
+    ]
+    assert len(warned) == 2
     assert tc.get_ticket_categories() is cats
     assert (
         tc.configure_ticket_categories(tmp_path / "nope", required=False)

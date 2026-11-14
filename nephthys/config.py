@@ -28,6 +28,14 @@ DEFAULT_COPY_OVERRIDE_FILE = "copy/copy.local.toml"
 DEFAULT_TICKET_CATEGORIES_FILE = "copy/ticket_categories.toml"
 # Env vars that used to hold text; text now lives in copy/copy.toml
 DEPRECATED_TEXT_ENV = ("STICKY_TITLE", "STICKY_BODY")
+# Env vars whose feature was removed. They're never read, so a .env that still
+# has them (with any value) starts fine; startup logs that they're ignored.
+REMOVED_ENV: dict[str, str] = {
+    "CSAT_TIMEOUT_HOURS": "CSAT ratings were removed",
+    "TICKETS_LOCK_ON_CLOSE": "closed #tickets threads are always locked and archived",
+    "STORE_ROLE_ID": "staff alerts no longer ping roles",
+    "MOD_ROLE_ID": "staff alerts no longer ping roles",
+}
 
 
 class ConfigError(ValueError):
@@ -44,15 +52,9 @@ class Settings:
     staff_channel_id: int | None
     # #tickets (Phase 2): disabled when tickets_channel_id is unset
     tickets_channel_id: int | None
-    store_role_id: int | None
-    mod_role_id: int | None
     ticket_number_start: int
     tickets_max_open_per_user: int
     ticket_categories_file: str
-    # Closed #tickets threads: lock right away (player can't post), archive
-    # when the opener rates or after csat_timeout_hours
-    tickets_lock_on_close: bool
-    csat_timeout_hours: float
     ticket_categories_file_explicit: bool
     log_channel_id: int | None
     maintainer_id: int | None
@@ -78,6 +80,8 @@ class Settings:
     copy_override_file: str
     copy_override_file_explicit: bool
     deprecated_env_set: tuple[str, ...]
+    # Removed variables still present in the environment (ignored, logged)
+    removed_env_set: tuple[str, ...]
     timezone: str
 
     # Categories (#community-help)
@@ -137,17 +141,6 @@ class Settings:
     @property
     def tickets_enabled(self) -> bool:
         return self.tickets_channel_id is not None
-
-    def role_id_for(self, role: str) -> int:
-        """Resolve a ticket category's role ("staff" | "store" | "mod" | ID).
-        Store/Mod fall back to the Staff role when their IDs aren't set."""
-        if role.isdigit():
-            return int(role)
-        if role == "store" and self.store_role_id:
-            return self.store_role_id
-        if role == "mod" and self.mod_role_id:
-            return self.mod_role_id
-        return self.staff_role_id
 
     @property
     def zammad_enabled(self) -> bool:
@@ -303,16 +296,6 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
     if ticket_number_start is None or ticket_number_start < 1:
         errors.append("TICKET_NUMBER_START must be at least 1")
         ticket_number_start = 26
-    csat_timeout_raw = get("CSAT_TIMEOUT_HOURS", "24") or "24"
-    try:
-        csat_timeout = float(csat_timeout_raw)
-        if csat_timeout <= 0:
-            raise ValueError
-    except ValueError:
-        errors.append(
-            f"CSAT_TIMEOUT_HOURS must be a positive number, got {csat_timeout_raw!r}"
-        )
-        csat_timeout = 24.0
     max_open = integer("TICKETS_MAX_OPEN_PER_USER", 2)
     if max_open is None or max_open < 0:
         errors.append("TICKETS_MAX_OPEN_PER_USER must be 0 (unlimited) or more")
@@ -375,8 +358,6 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         staff_role_id=snowflake("STAFF_ROLE_ID") or 0,
         staff_channel_id=snowflake("STAFF_CHANNEL_ID", optional=True),
         tickets_channel_id=snowflake("TICKETS_CHANNEL_ID", optional=True),
-        store_role_id=snowflake("STORE_ROLE_ID", optional=True),
-        mod_role_id=snowflake("MOD_ROLE_ID", optional=True),
         ticket_number_start=ticket_number_start,
         tickets_max_open_per_user=max_open,
         ticket_categories_file=get(
@@ -384,8 +365,6 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         )
         or DEFAULT_TICKET_CATEGORIES_FILE,
         ticket_categories_file_explicit=get("TICKET_CATEGORIES_FILE") is not None,
-        tickets_lock_on_close=boolean("TICKETS_LOCK_ON_CLOSE", True),
-        csat_timeout_hours=csat_timeout,
         log_channel_id=snowflake("LOG_CHANNEL_ID", optional=True),
         maintainer_id=snowflake("MAINTAINER_ID", optional=True),
         log_startup_notice=boolean("LOG_STARTUP_NOTICE", False),
@@ -404,6 +383,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         or DEFAULT_COPY_OVERRIDE_FILE,
         copy_override_file_explicit=get("COPY_OVERRIDE_FILE") is not None,
         deprecated_env_set=tuple(n for n in DEPRECATED_TEXT_ENV if get(n) is not None),
+        removed_env_set=tuple(n for n in REMOVED_ENV if get(n) is not None),
         timezone=get("TIMEZONE", "Europe/London") or "Europe/London",
         ticket_categories=categories,
         daily_summary_enabled=boolean("DAILY_SUMMARY_ENABLED", True),

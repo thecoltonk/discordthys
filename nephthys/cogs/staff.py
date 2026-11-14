@@ -19,7 +19,6 @@ from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.formatting import categories_text
-from nephthys.discord_ops.formatting import csat_text
 from nephthys.discord_ops.formatting import format_minutes
 from nephthys.discord_ops.formatting import leaderboard_text
 from nephthys.discord_ops.formatting import priorities_text
@@ -96,17 +95,12 @@ def stats_embed(
         name=stats.field_waiting.format(days=WAITING_THRESHOLD.days),
         value=str(summary.waiting_over_threshold),
     )
-    if surface == TicketSurface.PRIVATE:
+    if surface == TicketSurface.PRIVATE and summary.by_priority:
         embed.add_field(
-            name=stats.field_csat,
-            value=csat_text(summary.csat_average, summary.csat_count),
+            name=stats.field_by_priority,
+            value=priorities_text(summary.by_priority),
+            inline=False,
         )
-        if summary.by_priority:
-            embed.add_field(
-                name=stats.field_by_priority,
-                value=priorities_text(summary.by_priority),
-                inline=False,
-            )
     if summary.by_category:
         embed.add_field(
             name=stats.field_by_category,

@@ -111,14 +111,3 @@ async def ticket_closed(bot: "SupportBot", ticket: Ticket, by: str | None) -> No
         return
     await outbox.drop_unstarted(ticket.id)
     await _enqueue(bot, ticket, outbox.CLOSE, {"by": by})
-
-
-async def ticket_reopened(bot: "SupportBot", ticket: Ticket, by: str | None) -> None:
-    if enabled(bot, ticket):
-        await _enqueue(bot, ticket, outbox.REOPEN, {"by": by})
-
-
-async def internal_note(bot: "SupportBot", ticket: Ticket, text: str) -> None:
-    """An internal (agents-only) note, e.g. the CSAT rating."""
-    if enabled(bot, ticket):
-        await _enqueue(bot, ticket, outbox.NOTE, {"text": text})

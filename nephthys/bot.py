@@ -17,7 +17,7 @@ from discord.ext import commands
 from nephthys.config import Settings
 
 if TYPE_CHECKING:
-    from nephthys.ai.client import ChatClient
+    from nephthys.ai.jev import DecisionClient
     from nephthys.zammad.sync import ZammadSync
 
 log = logging.getLogger(__name__)
@@ -27,6 +27,9 @@ discord.VoiceClient.warn_nacl = False
 discord.VoiceClient.warn_dave = False
 
 # Cogs loaded on startup, in order
+# Loaded only when FAQ_WATCH_CHANNEL_IDS is set (and the FAQ matcher is on)
+FAQ_WATCH_EXTENSION = "nephthys.cogs.faq_watch"
+
 EXTENSIONS: list[str] = [
     "nephthys.cogs.community_help",
     "nephthys.cogs.staff",
@@ -64,9 +67,12 @@ class SupportBot(commands.Bot):
         self.announced_online = False
         self.background_tasks: set[asyncio.Task[None]] = set()
 
-        from nephthys.ai.client import build_client
+        from nephthys.ai.faq import FAQStore
+        from nephthys.ai.jev import build_client
 
-        self.ai_client: ChatClient | None = build_client(settings)
+        # Jev (None while AI_API_KEY is unset) and the FAQ entries in kb/
+        self.jev: DecisionClient | None = build_client(settings)
+        self.faq = FAQStore(settings.kb_dir)
         # The Zammad two-way sync for #tickets (None while it's off)
         self.zammad: ZammadSync | None = None
 
@@ -110,7 +116,10 @@ class SupportBot(commands.Bot):
         else:
             log.info("Zammad sync: off")
 
-        for ext in EXTENSIONS:
+        extensions = list(EXTENSIONS)
+        if self.settings.faq_watch_enabled:
+            extensions.append(FAQ_WATCH_EXTENSION)
+        for ext in extensions:
             await self.load_extension(ext)
             log.info(f"Loaded extension {ext}")
 
@@ -122,15 +131,29 @@ class SupportBot(commands.Bot):
         self.configure_jobs()
         self.scheduler.start()
         self.spawn(self.watch_copy(), name="copy-watcher")
+        self.log_faq_status()
+
+    def log_faq_status(self) -> None:
+        settings = self.settings
+        if self.jev is None:
+            log.info("Jev: off (AI_API_KEY is unset): no FAQ matching, no categories")
+            return
         log.info(
-            f"AI: {'on' if self.ai_client else 'off'}"
-            + (
-                f" (model={self.settings.ai_model}, answers={self.settings.ai_answer_mode},"
-                f" categorise={self.settings.ai_categorize})"
-                if self.ai_client
-                else ""
-            )
+            f"Jev: on (model={settings.jev_model}, FAQ_MODE={settings.faq_mode}, "
+            f"threshold={settings.faq_threshold}, categorise={settings.ai_categorize}, "
+            f"watching {len(settings.faq_watch_channel_ids)} other channel(s) at "
+            f"{settings.faq_watch_threshold}, pointer={settings.faq_watch_pointer})"
         )
+        if settings.faq_enabled:
+            if not self.faq.entries():
+                log.warning(
+                    f"FAQ matcher is on but {settings.kb_dir}/ has no usable entries"
+                )
+            if not settings.faq_public and not settings.staff_channel_id:
+                log.warning(
+                    "FAQ_MODE=shadow but STAFF_CHANNEL_ID is unset: matches are "
+                    "only logged"
+                )
 
     def configure_jobs(self) -> None:
         """Register scheduled jobs (stale auto-close, daily summary)."""
@@ -166,7 +189,7 @@ class SupportBot(commands.Bot):
             )
 
     def spawn(self, coro: Coroutine[Any, Any, None], *, name: str) -> None:
-        """Run work in the background (e.g. AI) without blocking event handlers.
+        """Run work in the background (e.g. Jev) without blocking event handlers.
         Failures are logged and reported to the log channel."""
 
         async def guarded() -> None:
@@ -243,6 +266,8 @@ class SupportBot(commands.Bot):
             self.scheduler.shutdown(wait=False)
         if self.zammad is not None:
             await self.zammad.stop()
+        if self.jev is not None:
+            await self.jev.close()
         await super().close()
         if self.db_ready:
             from piccolo_conf import DB

@@ -27,7 +27,7 @@ The bot only makes **outbound** connections (to the Discord gateway and API). Yo
      | Embed Links | sticky, `/stats` and `/waiting` embeds |
      | Create Public Threads | one thread per #community-help question |
      | Create Private Threads | one private thread per #tickets ticket |
-     | Send Messages in Threads | auto-reply, closing messages, AI answers |
+     | Send Messages in Threads | auto-reply, closing messages, FAQ answers |
      | Manage Threads | archive, unarchive, lock and unlock threads; add players to private threads; delete orphaned threads |
      | Manage Messages | remove reactions and delete the old sticky |
      | Manage Webhooks | only for the Zammad sync (§7): one webhook on #tickets posts agent replies under the agent's name |
@@ -48,9 +48,9 @@ The bot only makes **outbound** connections (to the Discord gateway and API). Yo
    - **Create Public Threads: ❌** and **Create Private Threads: ❌**. The bot creates the threads. If players make their own, the bot can't open the ticket thread.
    - Optional: a slowmode of a few seconds cuts down on accidental multi-message questions.
 3. Make sure the bot's role has the permissions above in #community-help. Either check that channel overrides don't remove them, or add an override for the bot role.
-4. **Staff role:** anyone with this role can claim tickets (by replying), resolve, re-open #community-help tickets, rate AI suggestions, and use `/faq`, `/ip`, `/resolve`, `/reopen` (#community-help only), `/waiting` and `/stats`. Discord shows the slash commands to everyone; the bot refuses non-staff, privately. To hide them as well, use Server Settings → Integrations → Cloudsail Support → limit commands to the Staff role.
+4. **Staff role:** anyone with this role can claim tickets (by replying), resolve, re-open #community-help tickets, and use `/faq`, `/ip`, `/resolve`, `/reopen` (#community-help only), `/waiting` and `/stats`. Discord shows the slash commands to everyone; the bot refuses non-staff, privately. To hide them as well, use Server Settings → Integrations → Cloudsail Support → limit commands to the Staff role.
 5. Optional channels (staff-only):
-   - **Staff channel** (`STAFF_CHANNEL_ID`): #tickets alert cards, AI shadow suggestions (if AI is on), and the daily summary. #community-help tickets don't get cards here; they show up in `/stats`, `/waiting` and the summary.
+   - **Staff channel** (`STAFF_CHANNEL_ID`): #tickets alert cards, FAQ matches while `FAQ_MODE=shadow`, and the daily summary. #community-help tickets don't get cards here; they show up in `/stats`, `/waiting` and the summary.
    - **Log channel** (`LOG_CHANNEL_ID`): errors and notable events. Only real errors notify (and ping `MAINTAINER_ID` where it matters); everything else, such as "Zammad sync is behind" or "caught up", is posted @silent. The "online" notice at startup is off unless `LOG_STARTUP_NOTICE=true`.
    - The bot needs View Channel, Send Messages and Embed Links in both.
 6. Copy these IDs: the server (`GUILD_ID`), #community-help (`COMMUNITY_CHANNEL_ID`), the Staff role (`STAFF_ROLE_ID`), and optionally the staff channel, the log channel and your own user ID (`MAINTAINER_ID`).
@@ -151,7 +151,7 @@ docker compose ps
 docker compose logs -f bot
 ```
 
-You should see `Synced 7 application commands to guild`, `AI: off` (or `AI: on (...)`) and `Logged in as …`. If you set a log channel, "🟢 Cloudsail Support is online" is posted there.
+You should see `Synced 7 application commands to guild`, `Jev: off …` (or `Jev: on (...)`) and `Logged in as …`. If you set a log channel, "🟢 Cloudsail Support is online" is posted there.
 
 ```bash
 curl -s http://127.0.0.1:3000/health
@@ -188,32 +188,43 @@ This should return `{"healthy": true, ...}`. `docker compose ps` shows the bot a
 16. In a #community-help thread, run `/escalate` as staff.
     - The poster gets a private #tickets thread linking back.
     - The public thread gets a note linking to it, then locks.
-## 5b. Optional: AI auto-categorisation and answers
+## 5b. Optional: the FAQ matcher and auto-categorisation (Jev)
 
-Everything AI is off while `AI_API_KEY` is blank. To turn it on:
+Everything here is off while `AI_API_KEY` is blank.
 
-1. Get an API key for an OpenAI-compatible provider. The default `AI_BASE_URL` is Hack Club AI (`https://ai.hackclub.com/proxy/v1`).
-2. In `.env`, set `AI_API_KEY` and `AI_MODEL` (a model ID your provider serves). Leave `AI_ANSWER_MODE=shadow` for now.
-3. **Fill in `kb/`.** The assistant may only answer from the markdown files there, and it must cite them. The shipped `faq.md`, `ip.md` and `rules.md` are placeholders marked `TODO`. Edits apply immediately, with no restart, because `./kb` is mounted into the container.
-4. Restart: `docker compose up -d`. The log should say `AI: on (model=…, answers=shadow, categorise=True)`.
+**What it is.** Jev is a *decision* model (by TypeSafe, served by Hack Club AI). It doesn't write text. For each message the bot asks it "which of these FAQ entries fits, or none?" and it answers with an entry's id and a confidence. If the match is confident enough, the bot posts that entry's pre-written answer, exactly as it's written in `kb/`. Nothing the model returns is ever shown to anyone. (A previous Cloudsail AI bot was abused into producing NSFW output; this design makes that impossible rather than unlikely.)
+
+To turn it on:
+
+1. In `.env`, set `AI_API_KEY` to your Hack Club AI key. That's the only required setting: `JEV_BASE_URL` (`https://ai.hackclub.com/proxy/v1/jev`) and `JEV_MODEL` (`jev-latest`) have defaults. Leave `FAQ_MODE=shadow`.
+2. **Write the FAQ in `kb/`.** One file per entry: an `id`, a `description` of what it covers (only the matcher reads it), and the answer, which is posted word for word. The format is in [kb/README.md](kb/README.md).
+   - The shipped `kb/server-ip.md` is a starter with a **placeholder address**, marked `draft: true` so it can't be matched. Put the real address in and delete the `draft` line.
+   - Edits apply within seconds, with no restart. In Docker, `kb/` is mounted read-only from the host.
+   - Check the folder: `docker compose exec bot python -m nephthys.ai.faq /app/kb`. A file that isn't a valid entry is skipped and reported in the log (`FAQ entry skipped: …`); the rest keep working.
+3. Restart: `docker compose up -d`. The log should say `Jev: on (model=jev-latest, FAQ_MODE=shadow, …)` and `FAQ loaded from kb: N entries (…)`.
 
 What happens next:
 
-- **Categories:** new #community-help tickets get an AI category, counted in `/stats` and the daily summary ("Opened by category").
-- **Shadow mode:**
-  - When the model is confident (`AI_ANSWER_MIN_CONFIDENCE`, default 0.8) and cites real `kb/` files, it posts the suggestion to the staff channel (linking to the thread), with 👍/👎 buttons. Players never see these.
-  - Rate as many as you can. The daily summary reports shadow accuracy for the last 24h and 7 days.
-- **Going public:** once accuracy has been consistently high, set `AI_ANSWER_MODE=public`. A reasonable bar is 90% or better over at least 30 ratings.
-  - Answers then appear in the thread, labelled as automated, with **This fixed it** (resolves the ticket) and **I still need a human** buttons.
-  - AI answers never claim a ticket and never take it off `/waiting`.
-- **Privacy:** the question title and text are sent to the AI provider. Don't enable AI if that isn't acceptable for your community.
+- **Categories:** each new #community-help ticket gets one of `TICKET_CATEGORIES`, counted in `/stats` and the daily summary ("Opened by category"). Turn this off with `AI_CATEGORIZE=false`.
+- **Shadow mode (the default):** players see nothing new. When a new ticket matches an entry at `FAQ_THRESHOLD` (default 0.9) or above, the staff channel gets "FAQ match (shadow) · `<id>`" with the confidence, a link to the thread, and the exact text that would have been posted. Use this to tune the descriptions: a wrong match usually means a description is too broad.
+- **Going public:** when the shadow matches look right, set `FAQ_MODE=public` and restart. The answer is then posted in the ticket's thread with **Mark as resolved**, and nothing goes to the staff channel. If there's no confident match the bot says nothing, and the ticket waits for a human as usual. An answer never claims a ticket and never takes it off `/waiting`.
+- **Other channels (optional):** set `FAQ_WATCH_CHANNEL_IDS` to the IDs of channels such as #general.
+  - The bot replies there only when Jev is at least `FAQ_WATCH_THRESHOLD` (default 0.95) confident of *both* things: that the message is a genuine question about the server, and that an entry answers it. The reply is the answer followed by a pointer to #community-help.
+  - `FAQ_WATCH_POINTER=true` also replies with just the pointer when Jev is that confident it's a support question but no entry fits.
+  - After a reply the bot stays quiet in that channel for `FAQ_CHANNEL_COOLDOWN_SECONDS` (default 120) and towards that person for `FAQ_USER_COOLDOWN_SECONDS` (default 600).
+  - It never replies to bots or webhooks, and it never creates a ticket from these channels.
+  - The bot needs View Channel, Send Messages and Read Message History in each watched channel. `FAQ_MODE=shadow` applies here too: the would-be replies go to the staff channel.
+- **Privacy and cost:** the text of each new #community-help question is sent to Hack Club AI (one request per ticket). With watched channels, so is every message of 8 characters or more that people post there, except while a cooldown is running (one request per message). Don't watch a channel if that isn't acceptable.
+- **If Jev is down or slow,** nothing is posted and tickets work as normal. Failures are logged (`Jev request failed …`), not retried.
+
+**Coming from the old AI assistant.** `AI_MODEL`, `AI_BASE_URL`, `AI_ANSWER_MODE` and `AI_ANSWER_MIN_CONFIDENCE` are no longer used; startup logs that they're ignored. An old `AI_ANSWER_MODE=public` does **not** carry over: the matcher starts in shadow mode until you set `FAQ_MODE=public`. Buttons on the old assistant's messages now answer "that button belonged to the old AI assistant". Its stored suggestions are deleted by a migration on first start.
 
 ## 6. Operations
 
 **Change what the bot says.** Every player- and staff-facing message is in `copy/copy.toml`, mounted read-only into the container from `./copy`. That includes:
 
-- the auto-reply, closing and re-open messages, the sticky, staff card labels, command replies, `/stats` and `/waiting`, the daily summary, and AI answer labels;
-- **how each embed looks.** The `[embeds.*]` sections set the title, description, colour (hex), footer and an optional thumbnail URL for the sticky, the ticket panel, staff cards (one colour per status), `/stats`, `/waiting`, the daily summary and the AI answers. The #tickets opener and closing message are plain text by default; set `enabled = true` under `[embeds.ticket_opener]` or `[embeds.ticket_closed]` to send them as embeds.
+- the auto-reply, closing and re-open messages, the sticky, staff card labels, command replies, `/stats` and `/waiting`, the daily summary, and the text around FAQ answers (the answers themselves are the files in `kb/`);
+- **how each embed looks.** The `[embeds.*]` sections set the title, description, colour (hex), footer and an optional thumbnail URL for the sticky, the ticket panel, staff cards (one colour per status), `/stats`, `/waiting`, the daily summary and the FAQ shadow reports. The #tickets opener and closing message are plain text by default; set `enabled = true` under `[embeds.ticket_opener]` or `[embeds.ticket_closed]` to send them as embeds.
 
 **Prefer a local override file for your changes.** That way `copy.toml` stays the shipped defaults and `git pull` never conflicts with your text:
 
@@ -241,7 +252,7 @@ Every key is listed there, commented out, with its default value. Uncomment and 
 
 If you set `STICKY_TITLE` / `STICKY_BODY` in an older `.env`, they're ignored now (the bot logs a warning). Move that text into `[embeds.sticky]`.
 
-Some keys have moved into `[embeds.*]`: the sticky, the panel and card titles, the summary title and period, the `/stats` and `/waiting` titles, and the AI titles and footers. A copy file that still uses an old key fails validation with a message naming its new location, e.g. `[sticky] body moved to [embeds.sticky] description`.
+Some keys have moved into `[embeds.*]`: the sticky, the panel and card titles, the summary title and period, the `/stats` and `/waiting` titles, and so on. A copy file that still uses an old key fails validation with a message naming its new location, e.g. `[sticky] body moved to [embeds.sticky] description`.
 
 The daily summary is posted as an **@silent** message: it shows up in the staff channel but doesn't send push notifications.
 
@@ -445,8 +456,9 @@ If you'd rather not serve agent pictures at all, leave agents without pictures i
 | No thread appears for a question; the log channel says "Couldn't open a thread" | The bot is missing **Create Public Threads** in #community-help, or a player created a thread on the message first (turn off thread creation for `@everyone`). |
 | `/waiting` or `/stats` don't show up | The bot was invited without the `applications.commands` scope. Re-invite it with the URL from step 1.3. `GUILD_ID` must also be correct. |
 | No #tickets alert cards or daily summary | `STAFF_CHANNEL_ID` is unset, or the bot can't Send Messages / Embed Links there. |
-| `AI_MODEL is required when AI_API_KEY is set` | Set `AI_MODEL` to a model your provider serves. |
-| AI suggestions never appear | Check the logs for `AI answer … not posted: <reason>`. The common reasons are `low_confidence` and `no_answer` (the knowledge base doesn't cover the question). Add the missing facts to `kb/`. |
+| FAQ matches never appear in the staff channel | Check the log. `FAQ: no match for ticket … (top: <id> at NN%)` means Jev wasn't confident enough: sharpen that entry's `description`, or lower `FAQ_THRESHOLD`. `FAQ matcher is on but kb/ has no usable entries` means every entry is invalid or still `draft: true`. `Jev request failed` means the key or `JEV_BASE_URL` is wrong, or Hack Club AI is down. |
+| The bot answers in the wrong situations | Narrow the entry's `description` to the exact question it answers, or raise `FAQ_THRESHOLD` / `FAQ_WATCH_THRESHOLD`. Set `FAQ_MODE=shadow` while you tune it. |
+| An FAQ edit didn't apply | The log says `FAQ entry skipped: <file>: <reason>`. Run `python -m nephthys.ai.faq` on the folder. |
 | Threads don't archive | Give the bot **Manage Threads**. |
 | Create Ticket says "couldn't open a ticket" | The bot is missing **Create Private Threads** or **Manage Threads** in #tickets. The log channel has the exact error. |
 | Staff can't open a #tickets thread from the alert | Give that role **Manage Threads** in #tickets: private threads are only visible to members and people with Manage Threads. |

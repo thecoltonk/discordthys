@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from nephthys.core import ai_store
 from nephthys.core import private_tickets
 from nephthys.core import tickets
 from nephthys.core.copytext import get_copy
@@ -24,7 +23,6 @@ from nephthys.core.ticket_categories import get_ticket_categories
 from nephthys.core.users import get_user
 from nephthys.database.enums import TicketStatus
 from nephthys.database.enums import TicketSurface
-from nephthys.database.tables import AISuggestion
 from nephthys.database.tables import Ticket
 from nephthys.database.tables import User
 from nephthys.discord_ops.embeds import make_embed
@@ -50,7 +48,6 @@ class CardContext:
     claimer: User | None
     closer: User | None
     past_tickets: int
-    suggestion: AISuggestion | None
     escalated_from: Ticket | None = None
     escalated_to: Ticket | None = None
 
@@ -66,7 +63,6 @@ async def load_card_context(ticket: Ticket) -> CardContext:
         claimer=await user(ticket.assigned_to),
         closer=await user(ticket.closed_by),
         past_tickets=await tickets.count_past_tickets(ticket),
-        suggestion=await ai_store.latest_posted_for_ticket(ticket.id),
         escalated_from=(
             await tickets.get_ticket(ticket.escalated_from)
             if ticket.escalated_from is not None
@@ -129,30 +125,6 @@ def past_tickets_text(count: int) -> str:
         return card.first_ticket
     template = card.past_tickets_one if count == 1 else card.past_tickets_many
     return template.format(count=count)
-
-
-def ai_outcome_label(outcome: str) -> str:
-    card = get_copy().card
-    return {
-        ai_store.PENDING: card.ai_pending,
-        ai_store.HELPFUL: card.ai_helpful,
-        ai_store.NOT_HELPFUL: card.ai_not_helpful,
-        ai_store.FIXED: card.ai_fixed,
-        ai_store.NEEDS_HUMAN: card.ai_needs_human,
-    }.get(outcome, outcome)
-
-
-def ai_line(suggestion: AISuggestion | None) -> str | None:
-    if suggestion is None:
-        return None
-    confidence = (
-        f"{suggestion.confidence:.0%}" if suggestion.confidence is not None else "?"
-    )
-    return get_copy().card.ai_line.format(
-        mode=suggestion.mode,
-        confidence=confidence,
-        outcome=ai_outcome_label(suggestion.outcome),
-    )
 
 
 def priority_label(priority: str | None) -> str:
@@ -244,8 +216,6 @@ def build_card_embed(ctx: CardContext, guild_id: int) -> discord.Embed:
             ),
             inline=True,
         )
-    if (line := ai_line(ctx.suggestion)) is not None:
-        embed.add_field(name=card.field_ai, value=line, inline=False)
     return embed
 
 

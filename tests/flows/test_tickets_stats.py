@@ -116,8 +116,6 @@ async def test_daily_summary_has_a_tickets_embed():
     community, private = await build_daily_summary(
         now=now() + timedelta(minutes=1),
         guild_id=100,
-        ai_enabled=False,
-        ai_mode="shadow",
         tickets_enabled=True,
     )
     assert community.title == "📊 #community-help daily summary"

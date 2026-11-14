@@ -2,7 +2,7 @@
 
 - Text messages are always sent with `suppress_embeds=True`, so links (FAQ,
   thread links, anything players write into copy) never unfurl into previews.
-- Rich-embed messages (cards, sticky, summaries, AI answers) carry no message
+- Rich-embed messages (cards, sticky, summaries, FAQ shadow reports) carry no message
   content, so there's nothing to unfurl. `suppress_embeds` can't be used on them
   because Discord would hide the bot's own embed too.
 - Mentions never ping unless a caller explicitly allows it.

@@ -103,7 +103,6 @@ def test_override_live_reload(files, monkeypatch):
         ('[summary]\ntitle = "x"\n', "[embeds.daily_summary] title"),
         ('[stats]\nstats_title = "x"\n', "[embeds.stats] title"),
         ('[commands]\nwaiting_title = "x"\n', "[embeds.waiting] title"),
-        ('[ai]\npublic_footer = "x"\n', "[embeds.ai_public] footer"),
     ],
 )
 def test_moved_keys_get_a_pointer(toml: str, moved_to: str):

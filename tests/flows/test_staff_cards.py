@@ -121,8 +121,6 @@ async def test_community_activity_counts_everywhere_without_cards():
     [summary] = await build_daily_summary(
         now=datetime.now(UTC) + timedelta(minutes=1),
         guild_id=bot.settings.guild_id,
-        ai_enabled=False,
-        ai_mode="shadow",
     )
     f = fields(summary)
     assert f["Opened"] == "2"

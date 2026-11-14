@@ -158,8 +158,6 @@ class ErrorsCopy(Section):
     ticket_missing: str = "i couldn't find a ticket for this thread."
     staff_only: str = "this command is for staff only."
     not_a_ticket_thread: str = "use this inside a ticket thread."
-    already_rated: str = "someone already rated this one."
-    ai_already_answered: str = "this has already been answered, thanks!"
 
 
 class CommandsCopy(Section):
@@ -215,7 +213,6 @@ class CardCopy(Section):
         "resolved_by": {"user"},
         "credit": {"user"},
         "category_ai": {"category"},
-        "ai_line": {"mode", "confidence", "outcome"},
         "escalated_value": {"id", "link"},
         "escalated_to_value": {"number", "link"},
         "zammad_agent": {"name"},
@@ -243,15 +240,8 @@ class CardCopy(Section):
     field_category: str = "Category"
     category_none: str = "—"
     category_ai: str = Field(
-        default="{category} (AI)", description="An AI-set category."
+        default="{category} (AI)", description="A category picked by Jev."
     )
-    field_ai: str = "🤖 AI"
-    ai_line: str = "{mode} answer ({confidence}) — {outcome}"
-    ai_pending: str = "awaiting feedback"
-    ai_helpful: str = "👍 rated helpful"
-    ai_not_helpful: str = "👎 rated not helpful"
-    ai_fixed: str = "✅ player said it fixed it"
-    ai_needs_human: str = "🙋 player still needs a human"
     open_thread_button: str = Field(
         default="Open in Discord",
         description="Card link button to the ticket's Discord thread.",
@@ -330,18 +320,6 @@ class SummaryCopy(Section):
         "field_waiting": {"days", "count"},
         "waiting_line": {"id", "ref", "title", "link", "last_message"},
         "waiting_more": {"count"},
-        "ai_shadow_accuracy": {
-            "day_pct",
-            "day_helpful",
-            "day_rated",
-            "week_pct",
-            "week_helpful",
-            "week_rated",
-        },
-        "ai_shadow_counts": {"posted", "unrated"},
-        "ai_public": {"posted", "fixed", "needs_human", "no_response", "week_fix_rate"},
-        "ai_attempts": {"attempts", "skipped"},
-        "ai_attempts_reasons": {"attempts", "skipped", "reasons"},
     }
 
     field_by_category: str = "By category"
@@ -349,53 +327,58 @@ class SummaryCopy(Section):
     waiting_none: str = "none 🎉"
     waiting_line: str = "• [{ref} {title}]({link}) — {last_message}"
     waiting_more: str = "…and {count} more (see /waiting)"
-    field_ai: str = "🤖 AI"
-    ai_none: str = "no AI activity"
-    ai_shadow_accuracy: str = (
-        "**Shadow accuracy** (👍 / rated): 24h {day_pct} ({day_helpful}/{day_rated}), "
-        "7d {week_pct} ({week_helpful}/{week_rated})"
-    )
-    ai_shadow_counts: str = "Suggestions 24h: {posted} posted, {unrated} unrated"
-    ai_public: str = (
-        "**Public answers** 24h: {posted} posted — {fixed} fixed, {needs_human} "
-        "needed a human, {no_response} no response; 7d fix rate {week_fix_rate}"
-    )
-    ai_attempts: str = "Attempts 24h: {attempts} ({skipped} not posted)"
-    ai_attempts_reasons: str = (
-        "Attempts 24h: {attempts} ({skipped} not posted: {reasons})"
-    )
 
 
-class AICopy(Section):
-    """AI answers (shadow suggestions for staff, public answers for players)."""
+class FAQCopy(Section):
+    """The FAQ matcher. The answers themselves are the files in kb/, posted word
+    for word; this is only the text around them."""
 
     PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
-        "rated_helpful": {"user"},
-        "rated_not_helpful": {"user"},
-        "outcome_fixed": {"user"},
-        "outcome_needs_human": {"user"},
+        "watch_reply": {"answer", "channel"},
+        "watch_pointer": {"channel"},
+        "shadow_where_ticket": {"id", "link"},
+        "shadow_where_channel": {"channel", "link"},
+        "shadow_confidence_watch": {"match", "question"},
+        "shadow_confidence_pointer": {"question"},
     }
 
-    fixed_button: str = "This fixed it"
-    fixed_button_emoji: str = "✅"
-    need_human_button: str = "I still need a human"
-    need_human_button_emoji: str = "🙋"
-    need_human_reply: str = (
-        "no worries — a human will be along to help soon! feel free to add any extra "
-        "details while you wait."
+    watch_reply: str = Field(
+        default="{answer}\n\n-# got another question? ask in {channel}",
+        description=(
+            "Reply to a question in a watched channel (FAQ_WATCH_CHANNEL_IDS): "
+            "{answer} is the FAQ entry's answer, word for word; {channel} is "
+            "#community-help."
+        ),
+    )
+    watch_pointer: str = Field(
+        default=(
+            "that sounds like one for {channel} — post it there and someone "
+            "will help you out!"
+        ),
+        description=(
+            "Reply to a support question in a watched channel that no FAQ entry "
+            "answers (only with FAQ_WATCH_POINTER=true)."
+        ),
+    )
+    retired_button: str = Field(
+        default="that button belonged to the old AI assistant, which has been removed.",
+        description="Private reply to a click on a button of the removed AI assistant.",
     )
     shadow_field_confidence: str = "Confidence"
-    shadow_field_sources: str = "Sources"
-    no_sources: str = "none"
-    helpful_button: str = "Helpful"
-    helpful_button_emoji: str = "👍"
-    not_helpful_button: str = "Not helpful"
-    not_helpful_button_emoji: str = "👎"
-    field_outcome: str = "Outcome"
-    rated_helpful: str = "👍 helpful — rated by {user}"
-    rated_not_helpful: str = "👎 not helpful — rated by {user}"
-    outcome_fixed: str = "✅ {user} said this fixed it"
-    outcome_needs_human: str = "🙋 {user} still needs a human"
+    shadow_field_where: str = "Where"
+    shadow_field_question: str = "Message"
+    shadow_no_text: str = "*(no text)*"
+    shadow_where_ticket: str = "new ticket [#{id}]({link})"
+    shadow_where_channel: str = "{channel} · [message]({link})"
+    shadow_confidence_watch: str = Field(
+        default="match {match} · real question {question}",
+        description="Watched channels: both of Jev's confidence scores.",
+    )
+    shadow_confidence_pointer: str = "support question {question} · no FAQ match"
+    shadow_pointer_name: str = Field(
+        default="pointer to #community-help",
+        description="Stands in for the entry id when only the pointer would be sent.",
+    )
 
 
 class TicketsCopy(Section):
@@ -711,35 +694,19 @@ class WaitingEmbed(EmbedStyle):
     color: str = ORANGE
 
 
-class AIShadowEmbed(EmbedStyle):
-    """AI suggestions posted to staff (shadow mode)."""
+class FAQShadowEmbed(EmbedStyle):
+    """Shadow mode: what the FAQ matcher would have posted, shown to staff only.
+    {entry} is the FAQ entry's id; {text} is the exact text players would get."""
 
     PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
-        "title": {"id", "title"},
-        "description": {"answer"},
+        "title": {"entry"},
+        "description": {"text"},
     }
 
-    title: str = "🤖 AI suggestion (shadow) · #{id} {title}"
-    description: str = "{answer}"
+    title: str = "FAQ match (shadow) · {entry}"
+    description: str = "{text}"
     color: str = DARK_TEAL
-    footer: str = "Not shown to the player. Would this have been a good answer?"
-
-
-class AIPublicEmbed(EmbedStyle):
-    """AI answers posted to players (public mode)."""
-
-    PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
-        "description": {"answer"},
-        "footer": {"sources"},
-    }
-
-    title: str = "🤖 Automated answer"
-    description: str = "{answer}"
-    color: str = DARK_TEAL
-    footer: str = (
-        "I'm a bot answering from the Cloudsail knowledge base, and I can be wrong. "
-        "Sources: {sources}"
-    )
+    footer: str = "Not shown to the player. Set FAQ_MODE=public to post these."
 
 
 class EmbedsCopy(BaseModel):
@@ -755,8 +722,7 @@ class EmbedsCopy(BaseModel):
     daily_summary: DailySummaryEmbed = DailySummaryEmbed()
     stats: StatsEmbed = StatsEmbed()
     waiting: WaitingEmbed = WaitingEmbed()
-    ai_shadow: AIShadowEmbed = AIShadowEmbed()
-    ai_public: AIPublicEmbed = AIPublicEmbed()
+    faq_shadow: FAQShadowEmbed = FAQShadowEmbed()
 
 
 class Copy(BaseModel):
@@ -768,7 +734,7 @@ class Copy(BaseModel):
     card: CardCopy = CardCopy()
     stats: StatsCopy = StatsCopy()
     summary: SummaryCopy = SummaryCopy()
-    ai: AICopy = AICopy()
+    faq: FAQCopy = FAQCopy()
     tickets: TicketsCopy = TicketsCopy()
     zammad: ZammadCopy = ZammadCopy()
     embeds: EmbedsCopy = EmbedsCopy()
@@ -797,16 +763,13 @@ MOVED_KEYS: dict[tuple[str, str], str] = {
     ("stats", "stats_title"): "embeds.stats.title",
     ("stats", "stats_title_one_day"): "embeds.stats.title_one_day",
     ("commands", "waiting_title"): "embeds.waiting.title",
-    ("ai", "shadow_title"): "embeds.ai_shadow.title",
-    ("ai", "shadow_footer"): "embeds.ai_shadow.footer",
-    ("ai", "public_title"): "embeds.ai_public.title",
-    ("ai", "public_footer"): "embeds.ai_public.footer",
 }
 
 
 # Keys that no longer exist because what they labelled is gone. They're ignored
 # with a warning (not rejected), so an old copy.local.toml doesn't stop startup.
 CSAT_REMOVED = "CSAT ratings were removed"
+AI_REMOVED = "the generative AI assistant was replaced by the FAQ matcher"
 REMOVED_KEYS: dict[tuple[str, str], str] = {
     ("card", "category_placeholder"): "#community-help staff cards were removed",
     ("card", "field_zammad"): "the card links to Zammad with a button now",
@@ -826,6 +789,29 @@ REMOVED_KEYS: dict[tuple[str, str], str] = {
     ("tickets", "csat_already"): CSAT_REMOVED,
     ("tickets", "reopened"): "closed #tickets threads can't be re-opened any more",
     ("tickets", "alert_ping"): "staff alerts no longer ping roles",
+    ("errors", "already_rated"): AI_REMOVED,
+    ("errors", "ai_already_answered"): AI_REMOVED,
+    ("card", "field_ai"): AI_REMOVED,
+    ("card", "ai_line"): AI_REMOVED,
+    ("card", "ai_pending"): AI_REMOVED,
+    ("card", "ai_helpful"): AI_REMOVED,
+    ("card", "ai_not_helpful"): AI_REMOVED,
+    ("card", "ai_fixed"): AI_REMOVED,
+    ("card", "ai_needs_human"): AI_REMOVED,
+    ("summary", "field_ai"): AI_REMOVED,
+    ("summary", "ai_none"): AI_REMOVED,
+    ("summary", "ai_shadow_accuracy"): AI_REMOVED,
+    ("summary", "ai_shadow_counts"): AI_REMOVED,
+    ("summary", "ai_public"): AI_REMOVED,
+    ("summary", "ai_attempts"): AI_REMOVED,
+    ("summary", "ai_attempts_reasons"): AI_REMOVED,
+}
+
+# Whole sections that are gone (same treatment: ignored with a warning)
+REMOVED_SECTIONS: dict[tuple[str, ...], str] = {
+    ("ai",): AI_REMOVED,
+    ("embeds", "ai_shadow"): AI_REMOVED,
+    ("embeds", "ai_public"): AI_REMOVED,
 }
 
 
@@ -838,6 +824,13 @@ def _load_toml(text: str, source: str) -> dict[str, Any]:
         if isinstance(data.get(section), dict) and key in data[section]:
             data[section].pop(key)
             log.warning(f"{source}: ignoring [{section}] {key} ({why})")
+    for path, why in REMOVED_SECTIONS.items():
+        parent: Any = data
+        for part in path[:-1]:
+            parent = parent.get(part) if isinstance(parent, dict) else None
+        if isinstance(parent, dict) and path[-1] in parent:
+            parent.pop(path[-1])
+            log.warning(f"{source}: ignoring [{'.'.join(path)}] ({why})")
     moved = []
     for (section, key), new in MOVED_KEYS.items():
         if isinstance(data.get(section), dict) and key in data[section]:

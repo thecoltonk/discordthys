@@ -16,9 +16,12 @@ A Discord support bot for **The Cloudsail Project**'s `#community-help` channel.
   - inside ticket threads: `/faq`, `/ip`, `/resolve`, and (#community-help threads only) `/reopen` and `/escalate`;
   - anywhere: `/waiting`, `/stats`.
 - No staff cards for #community-help: the staff channel is for #tickets. Community tickets still count in `/stats`, `/waiting` and the daily summary.
-- Optional AI, off unless `AI_API_KEY` is set:
-  - auto-categorises new tickets;
-  - suggests answers grounded only in [`kb/`](kb/). It runs in shadow mode by default: suggestions go to staff only, with 👍/👎 buttons.
+- Optional FAQ matcher, off unless `AI_API_KEY` is set. It uses Jev, a decision model that **never writes text**: it only picks which pre-written answer fits.
+  - Each file in [`kb/`](kb/) is one FAQ entry: an id, a description of what it covers, and the exact answer.
+  - On a new ticket, a confident match (`FAQ_THRESHOLD`, default 0.9) posts that answer in the thread, word for word, with **Mark as resolved**. Otherwise the bot says nothing.
+  - In other channels you choose (`FAQ_WATCH_CHANNEL_IDS`, e.g. #general) it replies only when very confident it's a real question that an entry answers: the answer plus a pointer to #community-help. It never opens tickets there.
+  - Jev also picks each new ticket's category.
+  - **Shadow mode by default:** matches, confidence and the would-be text go to the staff channel, not to players, until `FAQ_MODE=public`.
 - A sticky "how it works" message stays at the bottom of the channel.
 
 ## #tickets (Phase 2, optional)

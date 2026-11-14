@@ -1,3 +1,6 @@
+from typing import Any
+from typing import cast
+
 from nephthys.bot import SupportBot
 from nephthys.ui.buttons import DYNAMIC_ITEMS
 from nephthys.ui.buttons import ReopenButton
@@ -72,10 +75,35 @@ def test_scheduled_jobs():
     assert quiet.scheduler.get_jobs() == []
 
 
-def test_ai_client_only_with_key():
-    assert SupportBot(make_settings(), connect_db=False).ai_client is None
-    bot = SupportBot(make_settings(AI_API_KEY="k", AI_MODEL="m"), connect_db=False)
-    assert bot.ai_client is not None and bot.ai_client.model == "m"
+def test_jev_client_only_with_key():
+    assert SupportBot(make_settings(), connect_db=False).jev is None
+    bot = SupportBot(make_settings(AI_API_KEY="k"), connect_db=False)
+    assert bot.jev is not None and bot.jev.model == "jev-latest"
+    assert cast(Any, bot.jev).url == "https://ai.hackclub.com/proxy/v1/jev/systemone"
+    # A leftover AI_MODEL from the generative assistant doesn't leak in
+    old = SupportBot(make_settings(AI_API_KEY="k", AI_MODEL="gpt"), connect_db=False)
+    assert old.jev is not None and old.jev.model == "jev-latest"
+
+
+async def test_faq_watch_cog_loads_only_when_channels_are_watched():
+    from nephthys.bot import EXTENSIONS
+    from nephthys.bot import FAQ_WATCH_EXTENSION
+
+    assert FAQ_WATCH_EXTENSION not in EXTENSIONS
+    for env, watching in (
+        ({}, False),
+        ({"FAQ_WATCH_CHANNEL_IDS": "700"}, False),  # no key: Jev is off
+        ({"AI_API_KEY": "k"}, False),
+        ({"AI_API_KEY": "k", "FAQ_WATCH_CHANNEL_IDS": "700"}, True),
+        ({"AI_API_KEY": "k", "FAQ_WATCH_CHANNEL_IDS": "700", "FAQ_MODE": "off"}, False),
+    ):
+        assert make_settings(**env).faq_watch_enabled is watching, env
+    bot = SupportBot(
+        make_settings(AI_API_KEY="k", FAQ_WATCH_CHANNEL_IDS="700"), connect_db=False
+    )
+    await bot.load_extension(FAQ_WATCH_EXTENSION)
+    assert bot.get_cog("FAQWatch") is not None
+    await bot.close()
 
 
 def test_no_archive_sweep_is_scheduled():

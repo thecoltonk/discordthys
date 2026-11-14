@@ -1,7 +1,5 @@
-from piccolo.columns import Array
 from piccolo.columns import BigInt
 from piccolo.columns import Boolean
-from piccolo.columns import DoublePrecision
 from piccolo.columns import ForeignKey
 from piccolo.columns import Integer
 from piccolo.columns import JSONB
@@ -91,7 +89,8 @@ class Ticket(Table, tablename="ticket"):
     )
     reopened_at = Timestamptz(null=True, default=None)
 
-    # One of TICKET_CATEGORIES (stored by name), and who set it: "ai" | "staff"
+    # One of TICKET_CATEGORIES (stored by name), and who set it: "ai" (picked
+    # by Jev) | "staff" | "player"
     category = Text(null=True, default=None)
     category_source = Text(null=True, default=None)
 
@@ -135,26 +134,6 @@ class StickyMessage(Table, tablename="sticky_message"):
     channel_id = BigInt(primary_key=True)
     message_id = BigInt()
     updated_at = Timestamptz(default=TimestamptzNow())
-
-
-class AISuggestion(Table, tablename="ai_suggestion"):
-    """Every AI answer attempt, whether or not it was posted, and its outcome."""
-
-    id = Serial(primary_key=True)
-    ticket = ForeignKey(references=Ticket, on_delete=OnDelete.cascade)
-    mode = Text()  # shadow | public
-    model = Text()
-    answer = Text(null=True, default=None)
-    confidence = DoublePrecision(null=True, default=None)
-    kb_sources = Array(base_column=Text(), default=list)
-    posted = Boolean(default=False)
-    skip_reason = Text(null=True, default=None)
-    outcome = Text(default="pending")
-    channel_id = BigInt(null=True, default=None)
-    message_id = BigInt(null=True, default=None)
-    rated_by = ForeignKey(references=User, null=True, on_delete=OnDelete.set_null)
-    rated_at = Timestamptz(null=True, default=None)
-    created_at = Timestamptz(default=TimestamptzNow())
 
 
 class ZammadOutbox(Table, tablename="zammad_outbox"):

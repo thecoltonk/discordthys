@@ -106,103 +106,27 @@ def reopen_view(ticket_id: int) -> discord.ui.View:
 
 
 # ---------------------------------------------------------------------------
-# AI answers
+# Buttons of the removed generative assistant
 # ---------------------------------------------------------------------------
 
 
-class AIFeedbackButton(
+class RetiredAIButton(
     discord.ui.DynamicItem[discord.ui.Button],
-    template=r"cs:aifb:(?P<suggestion_id>[0-9]+):(?P<verdict>up|down)",
+    template=r"cs:(?P<kind>aifb|aifix|aihuman):(?P<rest>[0-9a-z:]+)",
 ):
-    """Shadow mode: staff rate a suggestion 👍 / 👎."""
+    """The generative assistant is gone, and the bot never posts these any
+    more. The custom IDs of its buttons (👍/👎 on staff suggestions, "This fixed
+    it" / "I still need a human" on public answers) stay registered only so
+    that a click on an old message gets a private answer, not "This
+    interaction failed". Nothing is recorded and no ticket is touched."""
 
-    def __init__(self, suggestion_id: int, verdict: str) -> None:
-        self.suggestion_id = suggestion_id
-        self.verdict = verdict
-        up = verdict == "up"
-        ai_copy = get_copy().ai
+    def __init__(self, custom_id: str) -> None:
         super().__init__(
             discord.ui.Button(
-                **(
-                    face(ai_copy.helpful_button, ai_copy.helpful_button_emoji)
-                    if up
-                    else face(
-                        ai_copy.not_helpful_button, ai_copy.not_helpful_button_emoji
-                    )
-                ),
-                style=discord.ButtonStyle.success if up else discord.ButtonStyle.danger,
-                custom_id=f"cs:aifb:{suggestion_id}:{verdict}",
-            )
-        )
-
-    @classmethod
-    async def from_custom_id(
-        cls,
-        interaction: discord.Interaction[Any],
-        item: discord.ui.Item[Any],
-        match: re.Match[str],
-        /,
-    ) -> "AIFeedbackButton":
-        return cls(int(match["suggestion_id"]), match["verdict"])
-
-    async def callback(self, interaction: discord.Interaction[Any]) -> None:
-        from nephthys.discord_ops.ai_flow import shadow_feedback_from_interaction
-
-        await shadow_feedback_from_interaction(
-            interaction, self.suggestion_id, helpful=self.verdict == "up"
-        )
-
-
-class AIFixedButton(
-    discord.ui.DynamicItem[discord.ui.Button],
-    template=r"cs:aifix:(?P<suggestion_id>[0-9]+)",
-):
-    """Public mode: "This fixed it" (resolves the ticket)."""
-
-    def __init__(self, suggestion_id: int) -> None:
-        self.suggestion_id = suggestion_id
-        super().__init__(
-            discord.ui.Button(
-                **face(get_copy().ai.fixed_button, get_copy().ai.fixed_button_emoji),
-                style=discord.ButtonStyle.success,
-                custom_id=f"cs:aifix:{suggestion_id}",
-            )
-        )
-
-    @classmethod
-    async def from_custom_id(
-        cls,
-        interaction: discord.Interaction[Any],
-        item: discord.ui.Item[Any],
-        match: re.Match[str],
-        /,
-    ) -> "AIFixedButton":
-        return cls(int(match["suggestion_id"]))
-
-    async def callback(self, interaction: discord.Interaction[Any]) -> None:
-        from nephthys.discord_ops.ai_flow import public_outcome_from_interaction
-
-        await public_outcome_from_interaction(
-            interaction, self.suggestion_id, fixed=True
-        )
-
-
-class AINeedHumanButton(
-    discord.ui.DynamicItem[discord.ui.Button],
-    template=r"cs:aihuman:(?P<suggestion_id>[0-9]+)",
-):
-    """Public mode: "I still need a human"."""
-
-    def __init__(self, suggestion_id: int) -> None:
-        self.suggestion_id = suggestion_id
-        super().__init__(
-            discord.ui.Button(
-                **face(
-                    get_copy().ai.need_human_button,
-                    get_copy().ai.need_human_button_emoji,
-                ),
+                label="-",
                 style=discord.ButtonStyle.secondary,
-                custom_id=f"cs:aihuman:{suggestion_id}",
+                custom_id=custom_id,
+                disabled=True,
             )
         )
 
@@ -213,15 +137,18 @@ class AINeedHumanButton(
         item: discord.ui.Item[Any],
         match: re.Match[str],
         /,
-    ) -> "AINeedHumanButton":
-        return cls(int(match["suggestion_id"]))
+    ) -> "RetiredAIButton":
+        return cls(match.group(0))
 
     async def callback(self, interaction: discord.Interaction[Any]) -> None:
-        from nephthys.discord_ops.ai_flow import public_outcome_from_interaction
+        from nephthys.discord_ops.send import respond_text
 
-        await public_outcome_from_interaction(
-            interaction, self.suggestion_id, fixed=False
-        )
+        try:
+            await respond_text(
+                interaction, get_copy().faq.retired_button, ephemeral=True
+            )
+        except discord.HTTPException as e:
+            log.info(f"Couldn't answer a click on a retired AI button: {e}")
 
 
 def card_links_view(
@@ -247,24 +174,8 @@ def card_links_view(
     return view
 
 
-def shadow_feedback_view(suggestion_id: int) -> discord.ui.View:
-    view = discord.ui.View(timeout=None)
-    view.add_item(AIFeedbackButton(suggestion_id, "up"))
-    view.add_item(AIFeedbackButton(suggestion_id, "down"))
-    return view
-
-
-def public_answer_view(suggestion_id: int) -> discord.ui.View:
-    view = discord.ui.View(timeout=None)
-    view.add_item(AIFixedButton(suggestion_id))
-    view.add_item(AINeedHumanButton(suggestion_id))
-    return view
-
-
 DYNAMIC_ITEMS = (
     ResolveButton,
     ReopenButton,
-    AIFeedbackButton,
-    AIFixedButton,
-    AINeedHumanButton,
+    RetiredAIButton,
 )

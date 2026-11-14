@@ -90,30 +90,99 @@ def test_daily_summary_settings():
         make_settings(DAILY_SUMMARY_TIMEZONE="Mars/Olympus")
 
 
-def test_ai_settings():
+def test_jev_and_faq_settings():
     off = make_settings()
-    assert (
-        not off.ai_enabled
-        and not off.ai_answers_enabled
-        and not off.ai_categorize_enabled
-    )
-    assert off.ai_base_url == "https://ai.hackclub.com/proxy/v1"
-    assert off.ai_answer_mode == "shadow"
-    on = make_settings(AI_API_KEY="k", AI_MODEL="m")
-    assert on.ai_enabled and on.ai_answers_enabled and on.ai_categorize_enabled
-    assert on.ai_answer_min_confidence == 0.8
+    assert not off.ai_enabled and not off.faq_enabled
+    assert not off.ai_categorize_enabled and not off.faq_watch_enabled
+    # Defaults: Jev on Hack Club AI, shadow mode, ~0.9, a higher bar elsewhere
+    assert off.jev_base_url == "https://ai.hackclub.com/proxy/v1/jev"
+    assert off.jev_model == "jev-latest"
+    assert off.faq_mode == "shadow" and not off.faq_public
+    assert off.faq_threshold == 0.9
+    assert off.faq_watch_threshold == 0.95 > off.faq_threshold
+    assert off.faq_watch_channel_ids == () and off.faq_watch_pointer is False
+    assert off.faq_user_cooldown_seconds == 600
+    assert off.faq_channel_cooldown_seconds == 120
+
+    # The existing HCAI key is all it takes
+    on = make_settings(AI_API_KEY="k")
+    assert on.ai_enabled and on.faq_enabled and on.ai_categorize_enabled
+    assert not on.faq_public
+    assert make_settings(AI_API_KEY="k", FAQ_MODE="PUBLIC").faq_public
+    quiet = make_settings(AI_API_KEY="k", FAQ_MODE="off")
+    assert not quiet.faq_enabled and quiet.ai_categorize_enabled
     assert not make_settings(
-        AI_API_KEY="k", AI_MODEL="m", AI_ANSWER_MODE="off"
-    ).ai_answers_enabled
-    assert not make_settings(
-        AI_API_KEY="k", AI_MODEL="m", AI_CATEGORIZE="false"
+        AI_API_KEY="k", AI_CATEGORIZE="false"
     ).ai_categorize_enabled
-    with pytest.raises(ConfigError):
-        make_settings(AI_API_KEY="k")  # model required
-    with pytest.raises(ConfigError):
-        make_settings(AI_ANSWER_MODE="loud")
-    with pytest.raises(ConfigError):
-        make_settings(AI_ANSWER_MIN_CONFIDENCE="1.5")
+
+    custom = make_settings(
+        AI_API_KEY="k",
+        JEV_BASE_URL="https://jev.example/v1/",
+        JEV_MODEL="jev-2",
+        FAQ_THRESHOLD="0.8",
+        FAQ_WATCH_THRESHOLD="0.99",
+        FAQ_WATCH_CHANNEL_IDS=" 700, 701 ,700,",
+        FAQ_WATCH_POINTER="true",
+        FAQ_USER_COOLDOWN_SECONDS="30",
+        FAQ_CHANNEL_COOLDOWN_SECONDS="0",
+    )
+    assert custom.jev_base_url == "https://jev.example/v1"
+    assert custom.jev_model == "jev-2"
+    assert (custom.faq_threshold, custom.faq_watch_threshold) == (0.8, 0.99)
+    assert custom.faq_watch_channel_ids == (700, 701)
+    assert custom.faq_watch_pointer and custom.faq_watch_enabled
+    assert custom.faq_user_cooldown_seconds == 30
+    assert custom.faq_channel_cooldown_seconds == 0
+
+
+@pytest.mark.parametrize(
+    ("env", "problem"),
+    [
+        ({"FAQ_MODE": "live"}, "FAQ_MODE"),
+        ({"FAQ_THRESHOLD": "1.5"}, "FAQ_THRESHOLD"),
+        ({"FAQ_THRESHOLD": "high"}, "FAQ_THRESHOLD"),
+        ({"FAQ_WATCH_THRESHOLD": "-0.1"}, "FAQ_WATCH_THRESHOLD"),
+        ({"FAQ_WATCH_CHANNEL_IDS": "general"}, "FAQ_WATCH_CHANNEL_IDS"),
+        ({"FAQ_USER_COOLDOWN_SECONDS": "-5"}, "FAQ_USER_COOLDOWN_SECONDS"),
+        ({"JEV_BASE_URL": "ai.hackclub.com"}, "JEV_BASE_URL"),
+        # Watching a channel the bot already runs is refused
+        ({"FAQ_WATCH_CHANNEL_IDS": "200"}, "COMMUNITY_CHANNEL_ID"),
+        ({"FAQ_WATCH_CHANNEL_IDS": "700,400"}, "STAFF_CHANNEL_ID"),
+        (
+            {"FAQ_WATCH_CHANNEL_IDS": "600", "TICKETS_CHANNEL_ID": "600"},
+            "TICKETS_CHANNEL_ID",
+        ),
+    ],
+)
+def test_bad_faq_settings(env: dict[str, str], problem: str):
+    with pytest.raises(ConfigError, match=problem):
+        make_settings(**env)
+
+
+def test_generative_assistant_variables_are_ignored():
+    """A .env from before the switch keeps working: AI_MODEL is no longer
+    required or read, and the old base URL can't redirect Jev's requests."""
+    s = make_settings(
+        AI_API_KEY="k",
+        AI_MODEL="some-chat-model",
+        AI_BASE_URL="https://ai.hackclub.com/proxy/v1",
+        AI_ANSWER_MODE="public",
+        AI_ANSWER_MIN_CONFIDENCE="2",
+    )
+    assert s.jev_base_url == "https://ai.hackclub.com/proxy/v1/jev"
+    assert s.jev_model == "jev-latest"
+    # The old "public" switch does NOT carry over: shadow until FAQ_MODE says so
+    assert s.faq_mode == "shadow" and not s.faq_public
+    assert {
+        "AI_MODEL",
+        "AI_BASE_URL",
+        "AI_ANSWER_MODE",
+        "AI_ANSWER_MIN_CONFIDENCE",
+    } <= set(s.removed_env_set)
+    for gone in ("ai_model", "ai_base_url", "ai_answer_mode", "ai_answers_enabled"):
+        assert not hasattr(s, gone)
+    # Values the old settings would have rejected no longer stop startup
+    make_settings(AI_ANSWER_MODE="loud", AI_ANSWER_MIN_CONFIDENCE="1.5")
 
 
 def test_tickets_settings():
@@ -146,7 +215,7 @@ def test_removed_variables_are_ignored_whatever_they_hold():
         "MOD_ROLE_ID": "302",
     }
     s = make_settings(TICKETS_CHANNEL_ID="600", **leftovers)
-    assert set(s.removed_env_set) == set(leftovers) == set(REMOVED_ENV)
+    assert set(s.removed_env_set) == set(leftovers) <= set(REMOVED_ENV)
     for gone in (
         "csat_timeout_hours",
         "tickets_lock_on_close",

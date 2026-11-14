@@ -87,10 +87,10 @@ async def open_ticket(bot: "SupportBot", message: discord.Message) -> Ticket | N
     await threads.add_reaction(bot, ticket, settings.open_reaction)
     # No staff card: STAFF_CHANNEL_ID is for #tickets. Community tickets still
     # count in /stats, /waiting and the daily summary (they're read from the DB).
-    if bot.ai_client is not None:
-        from nephthys.discord_ops.ai_flow import process_new_ticket
+    if bot.jev is not None:
+        from nephthys.discord_ops.faq_flow import process_new_ticket
 
-        bot.spawn(process_new_ticket(bot, ticket.id), name=f"ai-ticket-{ticket.id}")
+        bot.spawn(process_new_ticket(bot, ticket.id), name=f"faq-ticket-{ticket.id}")
     return ticket
 
 

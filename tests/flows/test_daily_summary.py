@@ -6,9 +6,7 @@ from typing import cast
 
 import pytest
 
-from nephthys.core import ai_store
 from nephthys.core import tickets
-from nephthys.core.users import upsert_user
 from nephthys.database.tables import Ticket
 from nephthys.tasks.daily_summary import build_daily_summary
 from nephthys.tasks.daily_summary import send_daily_summary
@@ -36,32 +34,12 @@ async def seed():
     await tickets.resolve(t1.id, op, at=NOW - timedelta(hours=1))
     await tickets.set_category(t1.id, "Bug", source="staff", allowed=("Bug",))
     old = await new_ticket(created_at=NOW - timedelta(days=5))
-    shadow = await ai_store.record_attempt(
-        ticket_id=t1.id,
-        mode="shadow",
-        model="m",
-        answer="a",
-        confidence=0.9,
-        kb_sources=["faq.md"],
-        posted=True,
-        skip_reason=None,
-    )
-    rater = await upsert_user(staff())
-    await ai_store.set_outcome(shadow.id, ai_store.HELPFUL, rater.id)
-    # Make the AI rows fall inside the window
-    from nephthys.database.tables import AISuggestion
-
-    await AISuggestion.update(
-        {AISuggestion.created_at: NOW - timedelta(hours=2)}
-    ).where(AISuggestion.id == shadow.id)
     return t1, old
 
 
 async def test_summary_contents():
     _t1, old = await seed()
-    [embed] = await build_daily_summary(
-        now=NOW, guild_id=100, ai_enabled=True, ai_mode="shadow"
-    )
+    [embed] = await build_daily_summary(now=NOW, guild_id=100)
     f = fields(embed)
     assert f["Opened"] == "1"
     assert f["Resolved"] == "1 (0 without staff)"
@@ -70,15 +48,7 @@ async def test_summary_contents():
     waiting = f["Waiting > 3 days (1)"]
     assert f"[#{old.id}" in waiting and f"/100/{old.thread_id})" in waiting
     assert "<@" in f["Top helpers (resolved, by claimer)"]
-    assert "Shadow accuracy" in f["🤖 AI"] and "24h 100% (1/1)" in f["🤖 AI"]
-
-
-async def test_summary_without_ai():
-    await seed()
-    [embed] = await build_daily_summary(
-        now=NOW, guild_id=100, ai_enabled=False, ai_mode="shadow"
-    )
-    assert "🤖 AI" not in fields(embed)
+    assert "🤖 AI" not in f  # the generative assistant's stats are gone
 
 
 async def test_send_daily_summary():

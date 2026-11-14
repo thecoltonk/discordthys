@@ -558,3 +558,91 @@ What this supersedes: entries 101–103, 113–120, 192 and 193 (CSAT and the wa
      - §7.5 also states what being public means: API tokens now work from anywhere rather than only behind Access, so the existing advice (delete the setup token, keep the avatar token on its own user) matters more. That's a consequence worth writing down, not a new requirement.
      - The Worker's logout rewrite stays: Zammad's OIDC logout still goes to Access's logout address, which ends the session for every Access app. No Worker code changed; `zammad-skin/README.md` and its DECISIONS (S36) explain why it's still there.
      - No bot code depended on the gate. The bot reaches Zammad over the Docker network.
+
+## Jev FAQ matcher (replaces the generative assistant)
+
+PR 2 of two, stacked on the cleanup above. Made without review. Supersedes entries 59–70 (the generative assistant and its gates), the AI parts of 57, 65–68, 71, 128, 131 and 180, and entry 181 where it says "the AI" (categories now come from Jev).
+
+**Why**
+
+235. **No model-written text ever reaches a player.** A previous Cloudsail AI bot was abused into producing NSFW output. The old assistant here tried to make that unlikely (a strict prompt, confidence and source gates, entry 64). The new one makes it impossible: Jev, TypeSafe's decision model, never writes anything. It's shown a message and a list of options, and returns the name of one option and a confidence. The bot then posts text that a human wrote in `kb/`, word for word, or nothing.
+236. **How that's enforced, not just intended.**
+     - The client keeps only `(choice, confidence)` from each answer, and only if the choice is one of the options it offered and the confidence is a number from 0 to 1. Everything else in the response is discarded before any other code sees it.
+     - The flow then looks the choice up among the current FAQ entries (or the configured categories) again, rather than trusting the client.
+     - The generative code is deleted, not disabled: the prompts, the OpenAI client, the `openai` dependency, the answer parser, the `ai_suggestion` table and its store.
+     - A test drives both surfaces in both modes with a hostile "model" and asserts that every message sent outside the staff channel is one of the pre-written strings. Another asserts the old modules and the dependency are gone.
+
+**Access**
+
+237. **`POST {JEV_BASE_URL}/systemone`, default base `https://ai.hackclub.com/proxy/v1/jev`, model `jev-latest`, `Authorization: Bearer <AI_API_KEY>`.** The key is the existing Hack Club AI one, and it's the only setting needed to turn this on.
+238. **The request and response shapes come from upstream Nephthys's own Jev client** (commit `bfffb55`, "Category tags v2 … using a decision model (Jev)"), because the endpoint couldn't be reached from the build environment (the sandbox proxy refuses it):
+     - request `{"model", "state", "questions": {name: {"type": "choice", "instructions", "criteria": {option: description}}}}`;
+     - response `{"answers": {name: {"type": "choice", "choice", "confidence", "probabilities"?}}}`.
+
+     **Not verified against the live endpoint.** If the real shape differs, every answer is dropped as unusable and the bot simply stays silent (and logs it), so the failure is safe. An answer with no `confidence` falls back to `probabilities[choice]`; with neither, it's unusable.
+239. **One call per message, every question in it.** A new ticket sends `faq` and `category` together; a watched-channel message sends `faq` and `kind`. A question that isn't needed (no entries, categorising off) is left out, and with nothing to ask no request is made.
+240. **New variables `JEV_BASE_URL` and `JEV_MODEL` instead of reusing `AI_BASE_URL` and `AI_MODEL`.** An existing `.env` has `AI_BASE_URL=https://ai.hackclub.com/proxy/v1` (the chat endpoint) and a chat model name; reusing them would point Jev at the wrong place. The old four (`AI_MODEL`, `AI_BASE_URL`, `AI_ANSWER_MODE`, `AI_ANSWER_MIN_CONFIDENCE`) are ignored with a startup notice (entry 222's mechanism). `AI_API_KEY`, `AI_CATEGORIZE`, `AI_TIMEOUT_SECONDS` and `KB_DIR` keep their names and meaning.
+241. **An old `AI_ANSWER_MODE=public` does not carry over.** The matcher starts in shadow until `FAQ_MODE=public` is set, as the brief asks. A test pins this.
+242. **aiohttp, not a new HTTP library.** It's already a dependency (the health server and the Zammad client use it). `openai` is removed from `pyproject.toml` and the lock file.
+243. **What's sent:** the message text (at most 2000 characters) and which kind of channel it's from. No usernames, IDs or thread history.
+244. **A failed request is never retried** and never surfaces to players or the log channel: the bot says nothing and logs a warning. A ticket is created, auto-replied and reacted to before Jev is asked, in a background task (entry 60's rule, kept).
+
+**FAQ format**
+
+245. **One file per entry in `kb/`:** a small header between `---` lines with `id` and `description`, then the answer.
+     - `id`: 1–40 characters of `a-z`, `0-9`, `-`, `_`. `other` is reserved for "no match".
+     - `description` (at most 500 characters) is what Jev matches on. Players never see it.
+     - The answer is everything after the header, posted word for word (only the blank lines around it are dropped). At most 1800 characters, which leaves room under Discord's 2000 for the pointer added in watched channels. Braces are plain text; nothing is substituted.
+     - The header is parsed by hand (`key: value` lines). No YAML dependency for two fields.
+246. **Edits apply live, like `copy/`.** The folder's files are checked (name, mtime, size, inode, entry 204's rule) whenever entries are needed, and re-read only when something changed.
+     - A file that isn't a valid entry is skipped and logged once per change (`FAQ entry skipped: <file>: <reason>`); the other entries keep working. A duplicate `id` skips the later file. This differs from `copy/` (where a bad edit keeps the previous text) on purpose: there is no "previous text" worth keeping for one answer, and silently serving a stale answer is worse than not answering.
+     - `python -m nephthys.ai.faq <dir>` checks a folder without the bot.
+     - At most 50 entries.
+247. **`draft: true` (optional) keeps an entry out of matching.** It isn't in the brief. The starter `kb/server-ip.md` has a placeholder address (`play.example.invalid`), and without this, flipping `FAQ_MODE=public` would post a made-up address to players. As a draft it's validated but never offered to Jev. Removing one line makes it live.
+248. **The old `kb/faq.md`, `ip.md` and `rules.md` are deleted.** They were source documents for the generative assistant, full of `TODO`s, and aren't FAQ entries. `kb/README.md` now documents the format and is the one file that isn't an entry.
+
+**#community-help**
+
+249. **On each new ticket:** if Jev's top choice isn't `other`, is a current non-draft entry, and its confidence is at least `FAQ_THRESHOLD` (default 0.9, inclusive), the answer is posted in the thread as a plain message with the **Mark as resolved** button (the same button as the auto-reply). Otherwise nothing is said: no "I couldn't find an answer", no fallback.
+     - It's plain text, not an embed, so it reads like a staff reply and is literally the entry's text. Links don't unfurl (entry 81).
+     - There's no "This fixed it / I still need a human" pair any more. Mark as resolved covers the first; for the second the player just keeps talking.
+     - The answer never claims the ticket and never clears "waiting" (entry 68's rule, kept and tested).
+     - A ticket resolved while Jev was deciding gets no answer.
+250. **Buttons on the old assistant's messages** (👍/👎, This fixed it, I still need a human) get a private "that button belonged to the old AI assistant, which has been removed." Same reasoning as the old CSAT buttons (entry 221).
+
+**Other channels**
+
+251. **`FAQ_WATCH_CHANNEL_IDS`** (comma-separated). The cog that listens is only loaded when it's set and the matcher is on. The IDs can't include #community-help, #tickets, the staff channel or the log channel: startup refuses that.
+     - Only the channels themselves, not threads under them.
+252. **Two questions, one bar.** Jev is asked `kind` ("is this a genuine question asking for help with the server?", `support_question` or `other`) and `faq`. The bot replies only when **both** reach `FAQ_WATCH_THRESHOLD` (default 0.95, deliberately above 0.9).
+     - `kind` is a `choice` question too. Upstream's types also have a yes/no ("noul") question, but its answer has no `confidence` field and the brief says to act on `confidence`.
+     - One threshold for both, not two settings: nobody needs to tune them apart yet.
+253. **The reply** is `[faq] watch_reply`, by default the answer, a blank line, then small text "got another question? ask in #community-help". The answer inside it is untouched. It's sent as a reply to the message, with no mentions (the author isn't pinged).
+254. **Pointer only, behind `FAQ_WATCH_POINTER` (default off):** when `kind` clears the bar and Jev's `faq` choice is `other`, the bot replies with `[faq] watch_pointer`. If Jev picked an entry but below the bar, the bot says nothing: pointing someone away when an answer probably exists helps nobody, and it's the ambiguous case.
+255. **Cooldowns:** after a reply the bot stays quiet in that channel for `FAQ_CHANNEL_COOLDOWN_SECONDS` (default 120) and towards that person, in any watched channel, for `FAQ_USER_COOLDOWN_SECONDS` (default 600).
+     - Checked before asking Jev (no request is spent on a message that couldn't get a reply) and again after, so two questions arriving together get one reply.
+     - Only a reply starts a cooldown; a message that gets nothing doesn't.
+     - In memory. A restart forgets them, which costs at most one early reply.
+     - In shadow mode the staff reports follow the same cooldowns, so staff see what would really be posted.
+256. **Never bots, never tickets.** Bot, webhook and system messages are dropped before anything else. The watched-channel code has no path to ticket creation; a test asserts no ticket, thread or reaction results.
+257. **Messages under 8 characters are skipped** without a request. They can't be a question worth answering, and it trims cost.
+258. **Cost and privacy, stated in DEPLOY.md:** watching a channel sends every message of 8+ characters there to Hack Club AI, one request each, except during a cooldown. There's no rate cap beyond that. Whether that volume is acceptable on a busy #general is the maintainer's call; it's off by default.
+
+**Categorisation**
+
+259. **Jev picks the #community-help category** in the same request as the FAQ question, with `TICKET_CATEGORIES` as the options (names only: they have no descriptions). It's applied as before: only if nobody set one, stored with source `ai`, shown as "(AI)". No confidence threshold, matching the old behaviour; a wrong category is staff-side and harmless.
+
+**Shadow mode**
+
+260. **`FAQ_MODE` is `shadow` by default** (also `off`, `public`). In shadow nothing new reaches players on either surface. Each would-be reply goes to `STAFF_CHANNEL_ID` as an embed: the entry id in the title, the exact text that would have been posted as the description, the confidence, where it was (linked), and the player's message (first 300 characters).
+     - Only matches are reported, as the brief says. Non-matches are logged at info with Jev's top choice and confidence, which is what you need to tune a description.
+     - No 👍/👎 buttons and no accuracy numbers in the daily summary. With a fixed set of answers, "would this have been right?" is visible at a glance in the report; a rating store would be machinery for its own sake at this volume.
+     - Without a staff channel, shadow matches are only logged (startup warns).
+     - `off` turns FAQ matching off and keeps categorisation.
+261. **Nothing about matches is stored.** Prometheus counter `cloudsail_faq_decisions_total{surface,result}` and the log are the record.
+
+**Removed**
+
+262. **Migration `cloudsail_008` drops `ai_suggestion`** (model-written answers and staff ratings of them). Backwards re-creates it empty, as `cloudsail_002` defined it. Tested both ways, and run through `piccolo migrations` forwards, backwards and forwards on a scratch database.
+263. **Copy:** the `[ai]` section, `[embeds.ai_shadow]`, `[embeds.ai_public]`, the card's AI line, the summary's AI block and two error strings are gone; a copy file that still has them loads with a warning per key or section (entry 184's rule, extended to whole sections). New: `[faq]` and `[embeds.faq_shadow]`.
+264. **Also removed:** the AI field on staff cards, the AI block of the daily summary, `nephthys/ai/{answer,categorize,client,kb,parsing}.py`, `discord_ops/ai_flow.py`, `core/ai_store.py`, and their tests.

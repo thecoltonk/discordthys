@@ -13,7 +13,6 @@ import pytest
 from nephthys.cogs.community_help import CommunityHelp
 from nephthys.cogs.staff import Staff
 from nephthys.cogs.ticket_commands import TicketCommands
-from nephthys.core import ai_store
 from nephthys.core import tickets
 from nephthys.core.copytext import Copy
 from nephthys.core.copytext import DEFAULT_COPY
@@ -26,11 +25,10 @@ from nephthys.discord_ops.sticky import build_sticky_embed
 from nephthys.discord_ops.threads import auto_reply_text
 from nephthys.tasks.close_stale import close_stale_tickets
 from nephthys.tasks.daily_summary import build_daily_summary
-from nephthys.ui.buttons import AIFeedbackButton
-from nephthys.ui.buttons import AINeedHumanButton
 from nephthys.ui.buttons import ReopenButton
 from nephthys.ui.buttons import ResolveButton
-from tests.ai.fake_client import FakeChatClient
+from nephthys.ui.buttons import RetiredAIButton
+from tests.ai.fake_jev import FakeJev
 from tests.fakes import FakeBot
 from tests.fakes import make_interaction
 from tests.fakes import make_message
@@ -132,39 +130,48 @@ async def run_everything(bot: FakeBot, kb_dir: Path) -> list[Any]:
     )
     await help_cog.on_message(make_message(bot, op, "it broke again", channel=thread))
 
-    # AI: shadow suggestion + rating, public answer + "need a human"
-    shadow = await ai_store.latest_posted_for_ticket(ticket.id)
-    assert shadow is not None, "the shadow suggestion should have been posted"
-    msg = bot.message(bot.settings.staff_channel_id or 0, shadow.message_id or 0)
-    await AIFeedbackButton(shadow.id, "up").callback(
-        interaction(mod, message=SimpleNamespace(embeds=[msg.embed]))
-    )
-    await AIFeedbackButton(shadow.id, "down").callback(interaction(mod))
-    await AIFeedbackButton(shadow.id, "down").callback(interaction(rando))
+    # FAQ matcher. Shadow: the new ticket above was reported to the staff
+    # channel. A button left over from the old assistant gets a private reply.
+    assert any(
+        (m.embed.title or "").startswith(("title:", "FAQ match"))
+        for m in bot.sends(bot.settings.staff_channel_id or 0)
+        if getattr(m, "embed", None) is not None
+    ), "the shadow report should have been posted"
+    await RetiredAIButton("cs:aifb:1:up").callback(interaction(mod))
     # Cards posted for community tickets before they were #tickets-only still
-    # render (with the AI line and category)
+    # render (with the Jev-picked category)
     await staff_card.render(cast(Any, bot), await tickets.require_ticket(ticket.id))
-    from nephthys.discord_ops.ai_flow import answer_ticket
 
-    object.__setattr__(
-        bot,
-        "settings",
-        make_settings(
-            AI_API_KEY="k",
-            AI_MODEL="m",
-            KB_DIR=str(kb_dir),
-            AI_ANSWER_MODE="public",
-            STALE_TICKET_DAYS="3",
-            TICKETS_CHANNEL_ID="600",
-        ),
-    )
-    public = await answer_ticket(
-        cast(Any, bot), await tickets.require_ticket(ticket.id)
-    )
-    assert public and public.posted
-    await AINeedHumanButton(public.id).callback(
-        interaction(op, message=SimpleNamespace(embeds=[]))
-    )
+    # Watched channel, shadow then public: an answer, then a pointer
+    from nephthys.discord_ops import faq_flow
+
+    general = bot.get_partial_messageable(700)
+    for mode in ("shadow", "public"):
+        object.__setattr__(
+            bot,
+            "settings",
+            make_settings(
+                AI_API_KEY="k",
+                KB_DIR=str(kb_dir),
+                FAQ_MODE=mode,
+                FAQ_WATCH_CHANNEL_IDS="700",
+                FAQ_WATCH_POINTER="true",
+                STALE_TICKET_DAYS="3",
+                TICKETS_CHANNEL_ID="600",
+            ),
+        )
+        for faq_choice in ("claim", "other"):
+            bot.jev.set(faq=(faq_choice, 0.99), kind=("support_question", 0.99))
+            outcome = await faq_flow.handle_watched_message(
+                cast(Any, bot),
+                make_message(bot, make_user(), "how do i claim land?", channel=general),
+                faq_flow.Cooldowns(0, 0),
+            )
+            assert outcome.endswith(("answer", "pointer")), outcome
+    # Public answer in a new ticket's thread
+    bot.jev.set(faq=("claim", 0.99), category=("Claims", 0.9))
+    await help_cog.on_message(make_message(bot, op, "how do claims work?"))
+    await bot.drain()
 
     # Staff overviews
     await cast(Any, Staff.waiting).callback(staff_cog, interaction(mod))
@@ -182,7 +189,10 @@ async def run_everything(bot: FakeBot, kb_dir: Path) -> list[Any]:
 
 @pytest.fixture
 def kb_dir(tmp_path: Path) -> Path:
-    (tmp_path / "faq.md").write_text("Use /claim to claim land.")
+    (tmp_path / "claim.md").write_text(
+        "---\nid: claim\ndescription: How to claim land.\n---\n"
+        "Use /claim to claim land: https://example.com/claims"
+    )
     return tmp_path
 
 
@@ -190,13 +200,12 @@ def ai_bot(kb_dir: Path, **env: str) -> FakeBot:
     bot = FakeBot(
         make_settings(
             AI_API_KEY="k",
-            AI_MODEL="m",
             KB_DIR=str(kb_dir),
             TICKETS_CHANNEL_ID="600",
             **env,
         )
     )
-    bot.ai_client = FakeChatClient(category='{"category": "Claims"}')
+    bot.jev = FakeJev(faq=("claim", 0.99), category=("Claims", 0.9))
     make_text_channel(bot, 600)
     return bot
 
@@ -302,7 +311,12 @@ async def test_code_supplies_every_declared_placeholder(
     assert any(t.startswith("resolved:") for t in texts)
     assert any(t.startswith("reopened:") for t in texts)
     assert any(t.startswith("resolved_stale:") for t in texts)
-    assert any(t.startswith("need_human_reply:") for t in texts)
+    # Watched-channel replies use their templates; the answer inside is the
+    # entry's text, untouched
+    answer = "Use /claim to claim land: https://example.com/claims"
+    assert f"watch_reply:{answer}|<#200>" in texts
+    assert "watch_pointer:<#200>" in texts
+    assert answer in texts  # in a ticket thread: the answer alone
     if embeds_enabled:
         embed_texts = [
             f"{m.embed.title or ''} {m.embed.description or ''} {m.embed.footer.text or ''}"
@@ -330,11 +344,8 @@ async def test_code_supplies_every_declared_placeholder(
     assert alerts and all(m.content is None for m in alerts)
 
     now = datetime.now(UTC)
-    embed, *_ = await build_daily_summary(
-        now=now + timedelta(minutes=1), guild_id=1, ai_enabled=True, ai_mode="shadow"
-    )
+    embed, *_ = await build_daily_summary(now=now + timedelta(minutes=1), guild_id=1)
     assert (embed.title or "").startswith("title:")
-    assert any((f.value or "").startswith("ai_shadow_accuracy:") for f in embed.fields)
     sticky = build_sticky_embed("https://faq")
     assert sticky.description and sticky.description.startswith("description:")
 

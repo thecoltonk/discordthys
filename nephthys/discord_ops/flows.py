@@ -22,6 +22,7 @@ from nephthys.discord_ops import threads
 from nephthys.discord_ops.heartbeat import send_heartbeat
 from nephthys.discord_ops.send import followup_text
 from nephthys.errors.errors import PermissionDenied
+from nephthys.errors.errors import PrivateTicketReopenError
 from nephthys.errors.errors import TicketAlreadyClosedError
 from nephthys.errors.errors import TicketNotClosedError
 from nephthys.errors.errors import TicketNotFoundError
@@ -132,7 +133,7 @@ async def resolve_ticket(
     source: str,
 ) -> Ticket:
     """Resolve and apply side effects. Raises the core errors on refusal.
-    Private (#tickets) tickets get the close + CSAT + lock flow instead."""
+    Private (#tickets) tickets get the close + lock + archive flow instead."""
     existing = await tickets.require_ticket(ticket_id)
     if existing.surface == TicketSurface.PRIVATE:
         from nephthys.discord_ops.private_flow import close_private
@@ -158,11 +159,8 @@ async def reopen_ticket(
     *,
     source: str,
 ) -> Ticket:
-    existing = await tickets.require_ticket(ticket_id)
-    if existing.surface == TicketSurface.PRIVATE:
-        from nephthys.discord_ops.private_flow import reopen_private
-
-        return await reopen_private(bot, ticket_id, actor, user, source=source)
+    """#community-help only. A closed private ticket stays closed (the player
+    opens a new one), whoever asks and however they ask."""
     ticket = await tickets.reopen(ticket_id, actor)
     TICKETS_REOPENED.labels(source=source).inc()
     await threads.post_reopened(bot, ticket, reopened_by=user)
@@ -173,6 +171,8 @@ async def reopen_ticket(
 def refusal_message(error: Exception) -> str | None:
     """User-facing text for an expected refusal, or None if unexpected."""
     errors = get_copy().errors
+    if isinstance(error, PrivateTicketReopenError):
+        return get_copy().tickets.no_reopen
     if isinstance(error, PermissionDenied):
         return errors.not_allowed
     if isinstance(error, TicketAlreadyClosedError):
@@ -202,6 +202,7 @@ async def _run_from_interaction(
             )
     except (
         PermissionDenied,
+        PrivateTicketReopenError,
         TicketAlreadyClosedError,
         TicketNotClosedError,
         TicketNotFoundError,

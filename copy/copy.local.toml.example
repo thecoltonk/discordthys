@@ -129,9 +129,6 @@
 # category_pending = "category not picked yet"
 # awaiting_first_message = "*(waiting for the player's first message)*"
 # field_priority = "Priority"
-# field_csat = "CSAT"
-# Placeholders: {rating}
-# csat_value = "{rating}/5"
 # field_escalated = "Escalated from"
 # Placeholders: {id}, {link}
 # escalated_value = "[#{id}]({link})"
@@ -161,10 +158,6 @@
 # uncategorised = "Uncategorised"
 # field_by_priority = "By priority"
 # priority_unset = "not picked yet"
-# field_csat = "CSAT average"
-# Placeholders: {average}, {count}
-# csat_value = "{average}/5 from {count} rating(s)"
-# csat_none = "no ratings yet"
 # field_top_helpers = "Top helpers (resolved, by claimer)"
 # Placeholders: {count}, {rank}, {user}
 # leaderboard_line = "{rank}. {user} — {count}"
@@ -234,7 +227,7 @@
 # outcome_needs_human = "🙋 {user} still needs a human"
 
 [tickets]
-# #tickets: the panel, private ticket threads, closing, CSAT and escalation.
+# #tickets: the panel, private ticket threads, closing and escalation.
 # create_button = "Create Ticket"
 # Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
 # create_button_emoji = "🎫"
@@ -268,34 +261,10 @@
 # Posted when a ticket is closed (button or /resolve).
 # Placeholders: {user}
 # closed = "this ticket has been closed by {user}. thanks for reaching out!"
-# Posted as its own message after the closing message, above the rating buttons.
-# csat_prompt = "how did we do?"
-# CSAT buttons 1 (worst) to 5 (best): label (often empty) and emoji.
-# csat_button_1 = ""
-# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
-# csat_button_1_emoji = "😡"
-# csat_button_2 = ""
-# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
-# csat_button_2_emoji = "🙁"
-# csat_button_3 = ""
-# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
-# csat_button_3_emoji = "😐"
-# csat_button_4 = ""
-# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
-# csat_button_4_emoji = "🙂"
-# csat_button_5 = ""
-# Button emoji: Unicode, or <:name:id> for a custom one ("" = none).
-# csat_button_5_emoji = "🤩"
-# Replaces the prompt after a rating (the buttons stay, disabled). {emoji} is that rating's button emoji.
-# Placeholders: {emoji}, {rating}
-# csat_thanks = "thanks! you rated {rating}/5 {emoji}"
-# csat_not_opener = "only the person who opened this ticket can rate it."
-# csat_already = "you've already rated this ticket — thanks!"
-# Placeholders: {user}
-# reopened = "this ticket has been re-opened by {user}."
-# Text above the staff alert card; {roles} are the pinged roles.
-# Placeholders: {priority}, {roles}
-# alert_ping = "{roles} new **{priority}** ticket"
+# Private reply to /reopen inside a #tickets thread.
+# no_reopen = "closed tickets can't be re-opened. if there's more to sort out, the player can open a new ticket in #tickets."
+# Private reply to a click on a rating button left in a thread from before ratings were removed.
+# csat_retired = "we're no longer collecting ratings here — thanks anyway!"
 # priority_low = "🟢 Low"
 # priority_medium = "🟡 Medium"
 # priority_high = "🔴 High"

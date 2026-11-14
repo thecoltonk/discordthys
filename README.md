@@ -13,7 +13,7 @@ A Discord support bot for **The Cloudsail Project**'s `#community-help` channel.
 - Anyone can help. The **first staff reply claims** the ticket.
 - The original poster or any staff member can resolve. Resolving adds ✅ to the question, posts a closing message with **Re-open**, and archives the thread. If the poster replies after it's resolved, the ticket re-opens.
 - Staff slash commands:
-  - inside ticket threads: `/faq`, `/ip`, `/resolve`, `/reopen`, and `/escalate` (#community-help threads only);
+  - inside ticket threads: `/faq`, `/ip`, `/resolve`, and (#community-help threads only) `/reopen` and `/escalate`;
   - anywhere: `/waiting`, `/stats`.
 - No staff cards for #community-help: the staff channel is for #tickets. Community tickets still count in `/stats`, `/waiting` and the daily summary.
 - Optional AI, off unless `AI_API_KEY` is set:
@@ -27,9 +27,9 @@ A private, Mava-style ticket system, enabled by setting `TICKETS_CHANNEL_ID`:
 
 - A sticky **Create Ticket** panel opens a private thread named after the player.
 - The player picks a category, then a subcategory. Each pick reposts the opener so the buttons stay at the bottom.
-- At a leaf category, the staff channel gets an alert card that pings the owning role (plus Staff for High priority).
+- At a leaf category, the staff channel gets an alert card. It pings nobody, whatever the category or priority.
 - The first staff reply claims the ticket.
-- **Close Ticket** (by the player or staff) locks the thread and asks the player for a 1–5 CSAT rating (one row of emoji buttons). The thread archives when they rate, or after `CSAT_TIMEOUT_HOURS` (default 24). Staff can `/reopen` at any time.
+- **Close Ticket** (by the player or staff) posts a closing message, then locks and archives the thread straight away. A closed ticket stays closed: there's no re-opening from Discord or from Zammad, and the player opens a new ticket instead.
 - `/escalate` moves a sensitive #community-help post into a private ticket.
 - Categories live in [`copy/ticket_categories.toml`](copy/ticket_categories.toml). Setup is in DEPLOY.md.
 
@@ -40,7 +40,7 @@ Admins work #tickets tickets in Zammad; players stay in their Discord thread. En
 - A leaf category creates a Zammad ticket (`T-<n> <category>`) in the category's group, with one Zammad customer per Discord player. The customer's name follows their Discord display name; with the optional `ZAMMAD_AVATAR_TOKEN` (`admin.user`, see DEPLOY.md §7.1) it also gets their Discord profile picture.
 - Every thread message becomes a public note article; attachments are copied.
 - An agent's **public** article is posted into the thread as "<Zammad name> (Support)" with their Zammad avatar. Internal notes never leave Zammad.
-- Close, re-open, CSAT and group changes sync both ways.
+- Closing syncs both ways, and group changes come back from Zammad. A closed ticket that's re-opened in Zammad is closed there again, with an internal note telling the agent why.
 - Everything goes through an outbox with retries, so Discord never waits on Zammad and nothing is posted twice.
 - `nephthys zammad-setup` configures Zammad (attribute, webhook, trigger); `nephthys zammad-retry` re-queues failed items.
 

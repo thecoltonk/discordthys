@@ -1,4 +1,4 @@
-"""#tickets (private tickets): numbers, category picks, first message, CSAT.
+"""#tickets (private tickets): numbers, category picks, first message.
 
 No Discord imports. Status changes (claim/resolve/reopen) reuse core.tickets.
 """
@@ -8,10 +8,7 @@ from datetime import datetime
 
 from nephthys.core.permissions import Actor
 from nephthys.core.tickets import create_ticket
-from nephthys.core.tickets import fk_id
 from nephthys.core.tickets import require_ticket
-from nephthys.core.tickets import utcnow
-from nephthys.core.users import upsert_user
 from nephthys.database.enums import TicketStatus
 from nephthys.database.enums import TicketSurface
 from nephthys.database.tables import Ticket
@@ -153,56 +150,10 @@ async def set_first_message(ticket_id: int, text: str) -> bool:
     return bool(rows)
 
 
-class CSATAlreadyRatedError(Exception):
-    pass
-
-
-class NotTicketOpenerError(Exception):
-    pass
-
-
-async def rate_csat(ticket_id: int, rating: int, rater: Actor) -> Ticket:
-    """Only the ticket opener may rate, and only the first rating counts."""
-    if not 1 <= rating <= 5:
-        raise ValueError("CSAT rating must be 1-5")
-    ticket = await require_ticket(ticket_id)
-    user = await upsert_user(rater)
-    if user.id != fk_id(ticket.opened_by):
-        raise NotTicketOpenerError(ticket_id)
-    rows = (
-        await Ticket.update({Ticket.csat_rating: rating, Ticket.csat_at: utcnow()})
-        .where((Ticket.id == ticket_id) & Ticket.csat_rating.is_null())
-        .returning(Ticket.id)
-    )
-    if not rows:
-        raise CSATAlreadyRatedError(ticket_id)
-    log.info(f"CSAT {rating}/5 for ticket id={ticket_id}")
-    return await require_ticket(ticket_id)
-
-
 async def escalation_of(community_ticket_id: int) -> Ticket | None:
     """The private ticket created from a community ticket, if any."""
     return (
         await Ticket.objects()
         .where(Ticket.escalated_from == community_ticket_id)
         .first()
-    )
-
-
-async def mark_archived(ticket_id: int) -> None:
-    await Ticket.update({Ticket.archived_at: utcnow()}).where(Ticket.id == ticket_id)
-
-
-async def clear_archived(ticket_id: int) -> None:
-    await Ticket.update({Ticket.archived_at: None}).where(Ticket.id == ticket_id)
-
-
-async def awaiting_archive(closed_before: datetime) -> list[Ticket]:
-    """Closed #tickets tickets whose CSAT window has passed but that haven't
-    been archived yet (the opener never rated)."""
-    return await Ticket.objects().where(
-        (Ticket.surface == TicketSurface.PRIVATE)
-        & (Ticket.status == TicketStatus.CLOSED)
-        & Ticket.archived_at.is_null()
-        & (Ticket.closed_at < closed_before)
     )

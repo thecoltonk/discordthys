@@ -4,6 +4,7 @@ from datetime import UTC
 from typing import Any
 from typing import cast
 
+import discord
 import pytest
 
 from nephthys.cogs.community_help import CommunityHelp
@@ -160,3 +161,27 @@ async def test_waiting_empty():
     mod = make_interaction(bot, make_user(staff=True))
     await cast(Any, Staff.waiting).callback(staff_cog, mod)
     assert "nothing waiting" in mod.followup.send.call_args.args[0]
+
+
+async def test_send_embed_can_never_ping_a_role():
+    """The helper every embed goes through has no way to allow a role mention
+    any more: `ping_roles` is gone, and roles stay off even when a player is
+    pinged (the #tickets opener)."""
+    import inspect
+
+    from nephthys.discord_ops.send import send_embed
+
+    assert "ping_roles" not in inspect.signature(send_embed).parameters
+    bot = FakeBot()
+    target = bot.get_partial_messageable(900)
+    embed = discord.Embed(title="t")
+    plain = await send_embed(target, embed)
+    assert plain.content is None
+    assert plain.allowed_mentions.roles is False
+    assert plain.allowed_mentions.users is False
+    pinged = await send_embed(
+        target, embed, ping_content="<@42> <@&300>", ping_users=[42]
+    )
+    assert pinged.allowed_mentions.roles is False
+    assert pinged.allowed_mentions.everyone is False
+    assert [u.id for u in pinged.allowed_mentions.users] == [42]

@@ -242,12 +242,11 @@ title = "Ticket closed"
     assert "You have selected: **🛒 Store**" in repost.embed.description
 
     await CloseTicketButton(ticket.id).callback(make_interaction(bot, user))
-    closing, csat = bot.sends(ticket.thread_id)[-2:]
+    closing = bot.sends(ticket.thread_id)[-1]  # nothing follows it (no CSAT)
     assert closing.content is None
     assert closing.embed.title == "Ticket closed"
     assert closing.embed.description == C.tickets.closed.format(user=user.mention)
     assert colour(closing.embed) == 0x2ECC71
-    assert csat.content == C.tickets.csat_prompt  # CSAT prompt stays text
 
 
 async def test_ticket_opener_defaults_to_text():

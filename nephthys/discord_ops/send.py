@@ -85,21 +85,20 @@ async def send_embed(
     view: discord.ui.View | None = None,
     reference: Any = None,
     ping_content: str | None = None,
-    ping_roles: list[int] | None = None,
     ping_users: list[int] | None = None,
 ) -> Any:
     """Send an embed message. The only content allowed alongside an embed is a
-    link-free ping line (e.g. role mentions on a staff alert), so there's still
-    nothing to unfurl."""
+    link-free line mentioning users (the player on their ticket's opener), so
+    there's still nothing to unfurl. Roles are never pinged."""
     if ping_content is not None and URL_PATTERN.search(ping_content):
         raise ValueError("ping_content must not contain links (they would unfurl)")
     allowed = (
         discord.AllowedMentions(
             everyone=False,
             users=[discord.Object(u) for u in ping_users] if ping_users else False,
-            roles=[discord.Object(r) for r in ping_roles] if ping_roles else False,
+            roles=False,
         )
-        if ping_roles or ping_users
+        if ping_users
         else NO_MENTIONS
     )
     return await target.send(
@@ -107,19 +106,6 @@ async def send_embed(
         embed=embed,
         allowed_mentions=allowed,
         **_extras(view, reference=reference),
-    )
-
-
-async def edit_text_response(
-    interaction: discord.Interaction[Any],
-    content: str,
-    *,
-    view: discord.ui.View | None = None,
-) -> None:
-    """Replace a message's text from a component interaction. Its buttons are
-    removed, or replaced by `view` (e.g. the same buttons, disabled)."""
-    await interaction.response.edit_message(
-        content=content, view=view, suppress_embeds=True
     )
 
 

@@ -1,7 +1,7 @@
 """Staff ticket cards in STAFF_CHANNEL_ID, for #tickets only.
 
 One card per private ticket: the question, who asked (and how many tickets
-they've opened before), status and claimer, priority and CSAT, with link
+they've opened before), status and claimer and priority, with link
 buttons to the Zammad ticket (once mirrored) and the Discord thread. The card is edited whenever any of that changes.
 
 #community-help tickets no longer get cards (they're counted in /stats,
@@ -216,12 +216,6 @@ def build_card_embed(ctx: CardContext, guild_id: int) -> discord.Embed:
         embed.add_field(
             name=card.field_priority, value=priority_label(t.priority), inline=True
         )
-        if t.csat_rating is not None:
-            embed.add_field(
-                name=card.field_csat,
-                value=card.csat_value.format(rating=t.csat_rating),
-                inline=True,
-            )
     else:
         if t.category:
             category = (
@@ -280,13 +274,9 @@ async def render(bot: "SupportBot", ticket: Ticket):
     return embed, view
 
 
-async def post_staff_card(
-    bot: "SupportBot",
-    ticket: Ticket,
-    *,
-    ping_content: str | None = None,
-    ping_roles: list[int] | None = None,
-) -> None:
+async def post_staff_card(bot: "SupportBot", ticket: Ticket) -> None:
+    """Post the alert card. It carries no content line and mentions nobody:
+    staff alerts never ping a role."""
     channel_id = bot.settings.staff_channel_id
     if not channel_id or ticket.surface != TicketSurface.PRIVATE:
         return
@@ -296,8 +286,6 @@ async def post_staff_card(
             bot.get_partial_messageable(channel_id),
             embed,
             view=view,
-            ping_content=ping_content,
-            ping_roles=ping_roles,
         )
         await tickets.set_staff_card(ticket.id, channel_id, msg.id)
 

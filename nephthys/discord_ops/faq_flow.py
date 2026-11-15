@@ -246,6 +246,14 @@ async def process_new_ticket(bot: "SupportBot", ticket_id: int) -> None:
     await answer_ticket(bot, ticket, match)
 
 
+def author_name(author: Any) -> str:
+    """A message author's display name (markdown-escaped), or the copy fallback."""
+    name = getattr(author, "display_name", None)
+    if isinstance(name, str) and name:
+        return discord.utils.escape_markdown(name)
+    return get_copy().faq.name_fallback
+
+
 async def opener_name(thread: Any, ticket: Ticket) -> str:
     """The ticket opener's server display name (markdown-escaped), or the copy
     fallback when it can't be found. Never raises."""
@@ -256,7 +264,9 @@ async def opener_name(thread: Any, ticket: Ticket) -> str:
             member = guild.get_member(user.discord_id) or await guild.fetch_member(
                 user.discord_id
             )
-            return discord.utils.escape_markdown(member.display_name)
+            name = getattr(member, "display_name", None)
+            if isinstance(name, str) and name:
+                return discord.utils.escape_markdown(name)
     except (discord.HTTPException, AttributeError) as e:  # gone, or no guild
         log.info(f"FAQ: couldn't get the opener's name for ticket {ticket.id}: {e}")
     return get_copy().faq.name_fallback
@@ -398,7 +408,7 @@ async def handle_watched_message(
         reply = copy.watch_reply.format(
             answer=match.entry.answer,
             channel=pointer_channel,
-            name=discord.utils.escape_markdown(message.author.display_name),
+            name=author_name(message.author),
         )
         confidence = copy.shadow_confidence_watch.format(
             match=pct(match.confidence), question=pct(kind.confidence)

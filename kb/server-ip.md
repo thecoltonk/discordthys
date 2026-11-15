@@ -1,8 +1,5 @@
 ---
 id: server-ip
-description: How to join or connect to the Minecraft server - the server address (IP), port, supported game versions, Java or Bedrock.
-draft: true
+description: How do I join the server? What's the IP? Also asked as: server ip, how to join, can I play, is it open, whitelist, how do I get on.
 ---
-The server address is `play.example.invalid` (Java Edition).
-
-Add it under **Multiplayer → Add Server** and you're in!
+We’re not public yet since we’re in development. If you’re interested in becoming a play tester (test the server and get early access while in development), apply at https://cloudsail.uk/playtester.

@@ -307,7 +307,7 @@ async def test_edits_to_kb_apply_to_the_next_ticket(kb: Path):
         "---\nid: rules\ndescription: The rules, rewritten.\n---\nNew rules text."
     )
     _, ticket, _ = await ask(bot)
-    assert thread_texts(bot, ticket)[-1] == "New rules text."
+    assert thread_texts(bot, ticket)[-1] == greeted("New rules text.")
     assert bot.jev.requests[-1][1]["faq"].criteria["rules"] == "The rules, rewritten."
 
 

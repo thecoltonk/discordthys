@@ -40,7 +40,6 @@ from nephthys.discord_ops import threads
 from nephthys.discord_ops.embeds import make_embed
 from nephthys.discord_ops.send import send_embed
 from nephthys.discord_ops.send import send_text
-from nephthys.ui.buttons import resolve_view
 from nephthys.utils.metrics import AI_CATEGORIES
 from nephthys.utils.metrics import FAQ_DECISIONS
 
@@ -300,7 +299,8 @@ async def answer_ticket(bot: "SupportBot", ticket: Ticket, match: Match) -> Any:
         text = get_copy().faq.community_reply.format(
             answer=entry.answer, name=await opener_name(thread, ticket)
         )
-        message = await send_text(thread, text, view=resolve_view(ticket.id))
+        # No button: the auto-reply above already carries Mark as resolved
+        message = await send_text(thread, text)
     except discord.HTTPException as e:
         log.warning(f"Couldn't post FAQ answer {entry.id} in ticket {ticket.id}: {e}")
         FAQ_DECISIONS.labels(surface="community", result="send_failed").inc()

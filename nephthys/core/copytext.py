@@ -344,7 +344,10 @@ class FAQCopy(Section):
     }
 
     community_reply: str = Field(
-        default="hey, {name}! i think i can help with this question\n\n{answer}",
+        default=(
+            "hey, {name}! i think i can help with this question!\n\n{answer}\n\n"
+            "if this response is helpful, please mark this thread as resolved as above."
+        ),
         description=(
             "Reply in a #community-help ticket the FAQ answers: {answer} is the "
             "FAQ entry's answer, word for word; {name} is the poster's display name."

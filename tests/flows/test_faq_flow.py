@@ -18,7 +18,6 @@ from nephthys.database.tables import Ticket
 from nephthys.discord_ops import faq_flow
 from nephthys.discord_ops.faq_flow import Cooldowns
 from nephthys.ui.buttons import DYNAMIC_ITEMS
-from nephthys.ui.buttons import ResolveButton
 from nephthys.ui.buttons import RetiredAIButton
 from tests.ai.fake_jev import FakeJev
 from tests.fakes import FakeBot
@@ -117,9 +116,8 @@ async def test_public_match_posts_the_exact_answer_with_mark_as_resolved(kb: Pat
     assert getattr(answer, "embed", None) is None
     assert answer.suppress_embeds is True
     assert answer.allowed_mentions.to_dict() == NOBODY
-    [button] = answer.view.children
-    assert isinstance(button, ResolveButton)
-    assert button.custom_id == f"cs:resolve:{ticket.id}"
+    # No second button: the auto-reply's Mark as resolved covers it
+    assert getattr(answer, "view", None) is None
     # Public mode posts nothing to the staff channel
     assert bot.sends(STAFF) == []
 
@@ -142,12 +140,6 @@ async def test_public_match_posts_the_exact_answer_with_mark_as_resolved(kb: Pat
     assert (ticket.category, ticket.category_source) == ("Gameplay", "ai")
     assert ticket.status == TicketStatus.OPEN and ticket.assigned_to is None
     assert ticket.last_msg_by == UserType.AUTHOR
-
-    # The button resolves the ticket like the auto-reply's does
-    op = make_user()
-    op.id = (await tickets.get_opener(ticket)).discord_id
-    await button.callback(make_interaction(bot, op))
-    assert (await tickets.require_ticket(ticket.id)).status == TicketStatus.CLOSED
 
 
 @pytest.mark.parametrize(

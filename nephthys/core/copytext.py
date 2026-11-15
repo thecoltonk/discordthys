@@ -334,7 +334,8 @@ class FAQCopy(Section):
     for word; this is only the text around them."""
 
     PLACEHOLDERS: ClassVar[dict[str, set[str]]] = {
-        "watch_reply": {"answer", "channel"},
+        "community_reply": {"answer", "name"},
+        "watch_reply": {"answer", "channel", "name"},
         "watch_pointer": {"channel"},
         "shadow_where_ticket": {"id", "link"},
         "shadow_where_channel": {"channel", "link"},
@@ -342,12 +343,23 @@ class FAQCopy(Section):
         "shadow_confidence_pointer": {"question"},
     }
 
+    community_reply: str = Field(
+        default="hey, {name}! i think i can help with this question\n\n{answer}",
+        description=(
+            "Reply in a #community-help ticket the FAQ answers: {answer} is the "
+            "FAQ entry's answer, word for word; {name} is the poster's display name."
+        ),
+    )
+    name_fallback: str = Field(
+        default="there",
+        description="Stands in for {name} when the poster's name can't be found.",
+    )
     watch_reply: str = Field(
         default="{answer}\n\n-# got another question? ask in {channel}",
         description=(
             "Reply to a question in a watched channel (FAQ_WATCH_CHANNEL_IDS): "
             "{answer} is the FAQ entry's answer, word for word; {channel} is "
-            "#community-help."
+            "#community-help; {name} is the poster's display name."
         ),
     )
     watch_pointer: str = Field(

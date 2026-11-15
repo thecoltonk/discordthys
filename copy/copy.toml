@@ -180,8 +180,16 @@ waiting_more = "…and {count} more (see /waiting)"
 [faq]
 # The FAQ matcher. The answers themselves are the files in kb/, posted word
 # for word; this is only the text around them.
-# Reply to a question in a watched channel (FAQ_WATCH_CHANNEL_IDS): {answer} is the FAQ entry's answer, word for word; {channel} is #community-help.
-# Placeholders: {answer}, {channel}
+# Reply in a #community-help ticket the FAQ answers: {answer} is the FAQ entry's answer, word for word; {name} is the poster's display name.
+# Placeholders: {answer}, {name}
+community_reply = '''
+hey, {name}! i think i can help with this question
+
+{answer}'''
+# Stands in for {name} when the poster's name can't be found.
+name_fallback = "there"
+# Reply to a question in a watched channel (FAQ_WATCH_CHANNEL_IDS): {answer} is the FAQ entry's answer, word for word; {channel} is #community-help; {name} is the poster's display name.
+# Placeholders: {answer}, {channel}, {name}
 watch_reply = '''
 {answer}
 

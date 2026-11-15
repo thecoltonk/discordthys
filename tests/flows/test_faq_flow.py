@@ -34,6 +34,14 @@ STAFF = 400
 COMMUNITY = 200
 IP_ANSWER = "The address is `play.cloudsail.example`.\n\n**Java** 1.21+ · see https://example.com/join"
 RULES_ANSWER = "Rules: be kind, no cheats."
+
+
+def greeted(answer: str) -> str:
+    """An answer as posted in a #community-help ticket (the fake world has no
+    member to name, so the fallback name is used)."""
+    return C.faq.community_reply.format(answer=answer, name=C.faq.name_fallback)
+
+
 POINTER = "<#200>"
 SUPPORT = ("support_question", 0.99)
 NOBODY = discord.AllowedMentions.none().to_dict()
@@ -105,7 +113,7 @@ async def test_public_match_posts_the_exact_answer_with_mark_as_resolved(kb: Pat
         faq_url=bot.settings.faq_url
     )
     # The entry's text, word for word, as a plain message: nothing added
-    assert answer.content == IP_ANSWER
+    assert answer.content == greeted(IP_ANSWER)
     assert getattr(answer, "embed", None) is None
     assert answer.suppress_embeds is True
     assert answer.allowed_mentions.to_dict() == NOBODY
@@ -169,7 +177,7 @@ async def test_threshold_is_inclusive_and_configurable(kb: Path):
     bot = faq_bot(kb, FAQ_MODE="public")
     bot.jev.set(faq=("rules", 0.9))
     _, ticket, _ = await ask(bot)
-    assert thread_texts(bot, ticket)[-1] == RULES_ANSWER
+    assert thread_texts(bot, ticket)[-1] == greeted(RULES_ANSWER)
 
     strict = faq_bot(kb, FAQ_MODE="public", FAQ_THRESHOLD="0.99")
     strict.jev.set(faq=("rules", 0.98))
@@ -243,7 +251,7 @@ async def test_faq_off_still_categorises_and_categorise_off_still_matches(kb: Pa
     _, ticket, _ = await ask(no_cat)
     [(_, questions)] = no_cat.jev.requests
     assert set(questions) == {"faq"}
-    assert thread_texts(no_cat, ticket)[-1] == RULES_ANSWER
+    assert thread_texts(no_cat, ticket)[-1] == greeted(RULES_ANSWER)
     assert (await tickets.require_ticket(ticket.id)).category is None
 
     # Nothing to ask (no entries, no categorising): no request is made
@@ -294,12 +302,12 @@ async def test_edits_to_kb_apply_to_the_next_ticket(kb: Path):
     bot = faq_bot(kb, FAQ_MODE="public")
     bot.jev.set(faq=("rules", 0.99))
     _, ticket, _ = await ask(bot)
-    assert thread_texts(bot, ticket)[-1] == RULES_ANSWER
+    assert thread_texts(bot, ticket)[-1] == greeted(RULES_ANSWER)
     (kb / "rules.md").write_text(
         "---\nid: rules\ndescription: The rules, rewritten.\n---\nNew rules text."
     )
     _, ticket, _ = await ask(bot)
-    assert thread_texts(bot, ticket)[-1] == "New rules text."
+    assert thread_texts(bot, ticket)[-1] == greeted("New rules text.")
     assert bot.jev.requests[-1][1]["faq"].criteria["rules"] == "The rules, rewritten."
 
 
@@ -317,6 +325,8 @@ async def test_nothing_a_model_returns_can_be_posted(kb: Path):
     allowed = {
         IP_ANSWER,
         RULES_ANSWER,
+        greeted(IP_ANSWER),
+        greeted(RULES_ANSWER),
         C.community.auto_reply.format(faq_url="https://example.com/faq"),
         C.faq.watch_reply.format(answer=IP_ANSWER, channel=POINTER),
         C.faq.watch_reply.format(answer=RULES_ANSWER, channel=POINTER),

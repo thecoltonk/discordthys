@@ -32,6 +32,8 @@ from nephthys.ai.jev import ChoiceQuestion
 from nephthys.ai.jev import JevError
 from nephthys.core import tickets
 from nephthys.core.copytext import get_copy
+from nephthys.core.tickets import fk_id
+from nephthys.core.users import get_user
 from nephthys.database.enums import TicketStatus
 from nephthys.database.tables import Ticket
 from nephthys.discord_ops import threads
@@ -244,6 +246,32 @@ async def process_new_ticket(bot: "SupportBot", ticket_id: int) -> None:
     await answer_ticket(bot, ticket, match)
 
 
+def author_name(author: Any) -> str:
+    """A message author's display name (markdown-escaped), or the copy fallback."""
+    name = getattr(author, "display_name", None)
+    if isinstance(name, str) and name:
+        return discord.utils.escape_markdown(name)
+    return get_copy().faq.name_fallback
+
+
+async def opener_name(thread: Any, ticket: Ticket) -> str:
+    """The ticket opener's server display name (markdown-escaped), or the copy
+    fallback when it can't be found. Never raises."""
+    try:
+        user = await get_user(fk_id(ticket.opened_by))
+        if user is not None:
+            guild = thread.guild
+            member = guild.get_member(user.discord_id) or await guild.fetch_member(
+                user.discord_id
+            )
+            name = getattr(member, "display_name", None)
+            if isinstance(name, str) and name:
+                return discord.utils.escape_markdown(name)
+    except (discord.HTTPException, AttributeError) as e:  # gone, or no guild
+        log.info(f"FAQ: couldn't get the opener's name for ticket {ticket.id}: {e}")
+    return get_copy().faq.name_fallback
+
+
 async def answer_ticket(bot: "SupportBot", ticket: Ticket, match: Match) -> Any:
     settings = bot.settings
     entry = match.entry
@@ -268,8 +296,11 @@ async def answer_ticket(bot: "SupportBot", ticket: Ticket, match: Match) -> Any:
     if thread is None:
         return None
     try:
-        # The entry's answer, word for word, and nothing else
-        message = await send_text(thread, entry.answer, view=resolve_view(ticket.id))
+        # The entry's answer, word for word, inside the greeting from copy
+        text = get_copy().faq.community_reply.format(
+            answer=entry.answer, name=await opener_name(thread, ticket)
+        )
+        message = await send_text(thread, text, view=resolve_view(ticket.id))
     except discord.HTTPException as e:
         log.warning(f"Couldn't post FAQ answer {entry.id} in ticket {ticket.id}: {e}")
         FAQ_DECISIONS.labels(surface="community", result="send_failed").inc()
@@ -375,7 +406,9 @@ async def handle_watched_message(
     if match is not None:
         name = match.entry.id
         reply = copy.watch_reply.format(
-            answer=match.entry.answer, channel=pointer_channel
+            answer=match.entry.answer,
+            channel=pointer_channel,
+            name=author_name(message.author),
         )
         confidence = copy.shadow_confidence_watch.format(
             match=pct(match.confidence), question=pct(kind.confidence)

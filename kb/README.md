@@ -17,7 +17,7 @@ Add it under **Multiplayer → Add Server** and you're in!
 | `id` | The entry's name: 1–40 characters of `a-z`, `0-9`, `-`, `_`. It shows up in logs and in the staff channel. `other` is reserved (it means "no match"). |
 | `description` | What the entry covers, in a sentence (at most 500 characters). **Only the matcher reads this.** Say which questions it answers, including other ways people phrase them. Players never see it. |
 | `draft: true` | Optional. The entry is loaded and checked but never matched. Remove the line when the answer is ready. |
-| everything after the second `---` | **The answer, posted to players word for word** (at most 1800 characters). Discord markdown works. Nothing is added to it in #community-help; in other channels a short pointer to #community-help follows it. |
+| everything after the second `---` | **The answer, posted to players word for word** (at most 1800 characters). Discord markdown works. In #community-help it's wrapped in the `[faq] community_reply` greeting from `copy/copy.toml` ("hey, {name}! …"); in other channels, in `[faq] watch_reply`. |
 
 ## How it's used
 

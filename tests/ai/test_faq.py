@@ -177,18 +177,14 @@ def test_store_with_no_directory_has_no_entries(tmp_path: Path):
     assert store.entries() == [] and store.get("x") is None
 
 
-def test_shipped_kb_is_valid_and_the_starter_is_a_placeholder_draft():
+def test_shipped_kb_is_valid_and_has_no_placeholder_address():
     entries, problems = load_entries(REPO_KB)
     assert problems == []
-    [starter] = [e for e in entries if e.id == "server-ip"]
-    assert starter.path == "server-ip.md"
-    # A placeholder address must never reach players: the entry ships as a
-    # draft, so it isn't matched until someone fills it in
-    assert starter.draft is True
-    assert "play.example.invalid" in starter.answer
-    assert FAQStore(REPO_KB).entries() == []
-    # The old generative knowledge-base documents are gone
-    assert {p.name for p in REPO_KB.glob("*.md")} == {"README.md", "server-ip.md"}
+    [ip] = [e for e in entries if e.id == "server-ip"]
+    assert ip.path == "server-ip.md"
+    # The starter's placeholder address must never reach players
+    assert all("example.invalid" not in e.answer for e in entries)
+    assert ip in FAQStore(REPO_KB).entries()
 
 
 def test_cli_check(tmp_path: Path, capsys: pytest.CaptureFixture[str]):

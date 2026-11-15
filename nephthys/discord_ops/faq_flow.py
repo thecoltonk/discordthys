@@ -257,7 +257,7 @@ async def opener_name(thread: Any, ticket: Ticket) -> str:
                 user.discord_id
             )
             return discord.utils.escape_markdown(member.display_name)
-    except Exception as e:  # a missing member or an API hiccup is not fatal
+    except (discord.HTTPException, AttributeError) as e:  # gone, or no guild
         log.info(f"FAQ: couldn't get the opener's name for ticket {ticket.id}: {e}")
     return get_copy().faq.name_fallback
 

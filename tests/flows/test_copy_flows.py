@@ -314,9 +314,10 @@ async def test_code_supplies_every_declared_placeholder(
     # Watched-channel replies use their templates; the answer inside is the
     # entry's text, untouched
     answer = "Use /claim to claim land: https://example.com/claims"
-    assert f"watch_reply:{answer}|<#200>" in texts
+    assert any(t.startswith(f"watch_reply:{answer}|<#200>|") for t in texts)
     assert "watch_pointer:<#200>" in texts
-    assert answer in texts  # in a ticket thread: the answer alone
+    # in a ticket thread: the answer inside community_reply
+    assert any(t.startswith(f"community_reply:{answer}|") for t in texts)
     if embeds_enabled:
         embed_texts = [
             f"{m.embed.title or ''} {m.embed.description or ''} {m.embed.footer.text or ''}"
